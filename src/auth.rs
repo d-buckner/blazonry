@@ -86,6 +86,30 @@ pub async fn verify_user(State(st): State<SharedState>, Json(body): Json<serde_j
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
+/// Who am I (the SPA's boot check): email + role from the bearer token.
+pub async fn me(State(st): State<SharedState>, req: axum::http::Request<axum::body::Body>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let token = req.headers().get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT u.email, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token = ? AND s.expires_at > datetime('now') AND u.role IN ('admin','user')")
+        .bind(token).fetch_optional(&st.pool).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (email, role) = row.ok_or((StatusCode::UNAUTHORIZED, "invalid or expired session".to_string()))?;
+    Ok(Json(serde_json::json!({ "email": email, "role": role })))
+}
+
+/// User list for the admin verification UI.
+pub async fn list_users(State(st): State<SharedState>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let rows: Vec<(i64, String, String)> = sqlx::query_as("SELECT id, email, role FROM users ORDER BY id")
+        .fetch_all(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(rows.into_iter().map(|(id, email, role)| serde_json::json!({
+        "id": id, "email": email, "role": role
+    })).collect::<Vec<_>>())))
+}
+
 /// Admin middleware: requires `Authorization: Bearer <session token>` for a
 /// user whose role is admin or user. 401 otherwise.
 pub async fn require_admin(State(st): State<SharedState>, req: Request, next: Next) -> Result<Response, (StatusCode, String)> {

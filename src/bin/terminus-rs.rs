@@ -61,9 +61,16 @@ async fn main() -> anyhow::Result<()> {
             .patch(terminus_rs::admin::patch_model)
             .delete(terminus_rs::admin::delete_model))
         .route("/users/verify", post(terminus_rs::auth::verify_user))
+        .route("/users", get(terminus_rs::auth::list_users))
+        .route("/me", get(terminus_rs::auth::me))
         .route_layer(middleware::from_fn_with_state(state.clone(), terminus_rs::auth::require_admin));
 
     let app = Router::new()
+        // admin SPA (static; auth happens in JS against /admin/me)
+        .route("/", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+             include_str!("../../web/index.html"))
+        }))
         // device plane (TRMNL firmware wire contract)
         .route("/api/display", get(terminus_rs::api::display))
         .route("/api/display/current", get(terminus_rs::api::display_current))

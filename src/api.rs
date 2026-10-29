@@ -351,8 +351,16 @@ pub async fn create_screen(
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
     let name = body.get("name").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "name required".into()))?;
     let template = body.get("template").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "template required".into()))?;
-    let vars = body.get("vars").map(|v| v.to_string()).unwrap_or_else(|| "{}".into());
-    let id = sqlx::query("INSERT INTO screens (name, template, vars) VALUES (?, ?, ?)")
+    // vars may arrive as a JSON object or as a JSON-encoded string (the SPA's
+    // textarea); store the raw JSON text either way, validated.
+    let vars = match body.get("vars") {
+        Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+        Some(v) => v.to_string(),
+        None => "{}".into(),
+    };
+    serde_json::from_str::<serde_json::Value>(&vars)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("vars must be valid JSON: {e}")))?;
+    let id = sqlx::query("INSERT INTO screens (name, template, vars, updated_at) VALUES (?, ?, ?, datetime('now'))")
         .bind(name).bind(template).bind(&vars)
         .execute(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .last_insert_rowid();

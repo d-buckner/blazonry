@@ -190,7 +190,12 @@ pub async fn list_playlists(State(st): State<SharedState>) -> Res {
     let rows: Vec<String> = sqlx::query_scalar(
         "SELECT json_object('id', p.id, 'name', p.name, 'mirror', p.mirror,
             'screen_ids', (SELECT json_group_array(screen_id) FROM playlist_screens ps
-                           WHERE ps.playlist_id = p.id AND ps.visible = 1 ORDER BY ps.position))
+                           WHERE ps.playlist_id = p.id AND ps.visible = 1 ORDER BY ps.position),
+            'items', (SELECT json_group_array(json_object(
+                        'item_id', ps2.screen_id, 'screen_id', ps2.screen_id,
+                        'position', ps2.position, 'visible', ps2.visible, 'name', s2.name))
+                      FROM playlist_screens ps2 JOIN screens s2 ON s2.id = ps2.screen_id
+                      WHERE ps2.playlist_id = p.id ORDER BY ps2.position))
          FROM playlists p ORDER BY p.id",
     )
     .fetch_all(&st.pool).await.map_err(err)?;

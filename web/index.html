@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>terminus-rs</title>
+<style>
+:root { --bg:#f5f4f0; --card:#fff; --ink:#1a1a1a; --mut:#777; --line:#e2e0da; --acc:#2457e6; }
+* { box-sizing:border-box; margin:0 }
+body { font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--ink) }
+header { background:var(--card); border-bottom:1px solid var(--line); padding:12px 20px;
+  display:flex; align-items:center; gap:16px }
+header h1 { font-size:17px; letter-spacing:-.3px }
+header nav { display:flex; gap:4px }
+header nav button { border:0; background:none; padding:6px 12px; border-radius:8px;
+  font:inherit; cursor:pointer; color:var(--mut) }
+header nav button.on { background:var(--ink); color:#fff }
+header .sp { flex:1 }
+main { max-width:1100px; margin:20px auto; padding:0 16px }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:16px; margin-bottom:16px }
+table { width:100%; border-collapse:collapse; font-size:14px }
+th { text-align:left; color:var(--mut); font-weight:500; font-size:12px;
+  text-transform:uppercase; letter-spacing:.4px; padding:6px 8px }
+td { padding:8px; border-top:1px solid var(--line); vertical-align:top }
+button.act { border:1px solid var(--line); background:#fff; border-radius:8px;
+  padding:4px 10px; font:inherit; font-size:13px; cursor:pointer }
+button.act:hover { border-color:var(--ink) }
+button.act.danger:hover { border-color:#c0392b; color:#c0392b }
+button.pri { background:var(--acc); color:#fff; border:0; border-radius:8px;
+  padding:8px 14px; font:inherit; cursor:pointer }
+input,textarea,select { font:inherit; border:1px solid var(--line); border-radius:8px;
+  padding:7px 9px; width:100%; background:#fff }
+textarea { font-family:ui-monospace,monospace; font-size:13px; min-height:140px }
+form .row { display:grid; grid-template-columns:170px 1fr; gap:10px; align-items:start; margin-bottom:10px }
+form .row label { padding-top:8px; color:var(--mut); font-size:13px }
+.mut { color:var(--mut) } .mono { font-family:ui-monospace,monospace; font-size:12px }
+.pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px;
+  background:#eee; } .pill.ok { background:#d9f2df } .pill.warn { background:#fdecd0 }
+dialog { border:1px solid var(--line); border-radius:14px; padding:20px; width:min(680px,92vw) }
+dialog::backdrop { background:#0006 }
+#login { max-width:340px; margin:12vh auto }
+#toasts { position:fixed; bottom:16px; right:16px; display:flex; flex-direction:column; gap:8px }
+.toast { background:var(--ink); color:#fff; padding:10px 14px; border-radius:10px; font-size:14px }
+.toast.err { background:#c0392b }
+img.prev { max-width:200px; border:1px solid var(--line); border-radius:6px; display:block }
+</style>
+</head>
+<body>
+<div id="app" hidden>
+<header>
+  <h1>terminus-rs</h1>
+  <nav id="tabs"></nav>
+  <span class="sp"></span>
+  <span class="mut" id="who"></span>
+  <button class="act" onclick="logout()">Sign out</button>
+</header>
+<main id="view"></main>
+</div>
+<div id="login" class="card" hidden>
+  <h2 style="margin-bottom:12px">Sign in</h2>
+  <form onsubmit="return doLogin(event)">
+    <div class="row"><label>Email</label><input id="li-email" type="email" required></div>
+    <div class="row"><label>Password</label><input id="li-pass" type="password" required></div>
+    <button class="pri">Sign in</button>
+    <p class="mut" style="margin-top:10px">First account registered becomes admin:
+      <a href="#" onclick="showReg();return false">register</a></p>
+  </form>
+</div>
+<div id="reg" class="card" hidden>
+  <h2 style="margin-bottom:12px">Register</h2>
+  <form onsubmit="return doReg(event)">
+    <div class="row"><label>Email</label><input id="rg-email" type="email" required></div>
+    <div class="row"><label>Password</label><input id="rg-pass" type="password" required minlength="9"></div>
+    <button class="pri">Register</button>
+    <p class="mut" style="margin-top:10px">An admin must verify new accounts:
+      <a href="#" onclick="showLogin();return false">sign in</a></p>
+  </form>
+</div>
+<dialog id="dlg"><div id="dlg-body"></div></dialog>
+<div id="toasts"></div>
+<script>
+const $ = s => document.querySelector(s);
+let TOKEN = sessionStorage.getItem('tr-token') || '';
+const VIEWS = { devices: renderDevices, screens: renderScreens, playlists: renderPlaylists,
+                firmware: renderFirmware, models: renderModels, users: renderUsers };
+let TAB = 'devices';
+
+function toast(msg, err) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  $('#toasts').append(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (TOKEN) opts.headers.Authorization = 'Bearer ' + TOKEN;
+  if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(path, opts);
+  if (r.status === 401 && TOKEN) { logout(); throw new Error('signed out'); }
+  if (!r.ok) {
+    let d = r.statusText; try { d = (await r.json()).detail || d } catch {}
+    throw new Error(r.status + ': ' + d);
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+function showLogin() { $('#login').hidden = false; $('#reg').hidden = true; $('#app').hidden = true; }
+function showReg() { $('#login').hidden = true; $('#reg').hidden = false; $('#app').hidden = true; }
+
+async function doLogin(e) {
+  e.preventDefault();
+  try {
+    const r = await api('POST', '/admin/login', { email: $('#li-email').value, password: $('#li-pass').value });
+    TOKEN = r.token; sessionStorage.setItem('tr-token', TOKEN); boot();
+  } catch (err) { toast(err.message, true); }
+  return false;
+}
+async function doReg(e) {
+  e.preventDefault();
+  try {
+    await api('POST', '/admin/register', { email: $('#rg-email').value, password: $('#rg-pass').value });
+    toast('registered — an admin must verify this account'); showLogin();
+  } catch (err) { toast(err.message, true); }
+  return false;
+}
+function logout() { TOKEN = ''; sessionStorage.removeItem('tr-token'); showLogin(); }
+
+function tabs() {
+  $('#tabs').innerHTML = Object.keys(VIEWS).map(k =>
+    `<button class="${k===TAB?'on':''}" onclick="go('${k}')">${k[0].toUpperCase()+k.slice(1)}</button>`).join('');
+}
+function go(k) { TAB = k; tabs(); VIEWS[TAB](); }
+
+function dlg(html) { $('#dlg-body').innerHTML = html; $('#dlg').showModal(); }
+function closeDlg() { $('#dlg').close(); }
+
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function ago(ts) {
+  if (!ts) return '—';
+  const s = (Date.now() - new Date(ts.replace(' ','T')+'Z').getTime()) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 5400) return Math.round(s/60) + 'm ago';
+  if (s < 172800) return Math.round(s/3600) + 'h ago';
+  return Math.round(s/86400) + 'd ago';
+}
+
+// ---------- devices ----------
+async function renderDevices() {
+  const rows = await api('GET', '/admin/devices');
+  $('#view').innerHTML = `<div class="card">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3>Devices</h3><span class="sp" style="flex:1"></span>
+      <button class="pri" onclick="deviceForm()">Add device</button>
+    </div>
+    <table><tr><th>Name</th><th>MAC</th><th>Model / FW</th><th>Playlist</th><th>Battery / RSSI</th><th>Last poll</th><th></th></tr>
+    ${rows.map(d => `<tr>
+      <td>${esc(d.name)}</td>
+      <td class="mono">${esc(d.mac)}</td>
+      <td>${esc(d.model||'—')} <span class="mut">${esc(d.firmware_version||'')}</span></td>
+      <td>${d.playlist_id ?? '<span class="mut">unassigned</span>'}</td>
+      <td>${d.battery_voltage ? d.battery_voltage.toFixed(2)+'V' : '—'} / ${d.rssi ?? '—'} dBm</td>
+      <td>${ago(d.last_poll_at)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="act" onclick="deviceForm(${d.id})">Edit</button>
+        <button class="act danger" onclick="delDevice(${d.id})">Delete</button></td>
+    </tr>`).join('') || '<tr><td colspan=7 class="mut">No devices yet — pair one from a TRMNL by pointing it at this server.</td></tr>'}
+    </table></div>`;
+}
+async function deviceForm(id) {
+  const d = id ? await api('GET', '/admin/devices/' + id) : { name: '', mac: '', playlist_id: '' };
+  dlg(`<h3 style="margin-bottom:12px">${id ? 'Edit device' : 'Add device'}</h3>
+    <form onsubmit="return saveDevice(event, ${id ?? 'null'})">
+      ${id ? '' : `<div class="row"><label>MAC</label><input id="d-mac" placeholder="AA:BB:CC:DD:EE:FF" required></div>`}
+      <div class="row"><label>Name</label><input id="d-name" value="${esc(d.name)}"></div>
+      <div class="row"><label>Playlist id</label><input id="d-pl" type="number" value="${d.playlist_id ?? ''}"></div>
+      <button class="pri">Save</button> <button class="act" onclick="closeDlg()">Cancel</button>
+    </form>`);
+}
+async function saveDevice(e, id) {
+  e.preventDefault();
+  const body = { name: $('#d-name').value, playlist_id: $('#d-pl').value === '' ? null : +$('#d-pl').value };
+  try {
+    if (id) await api('PATCH', '/admin/devices/' + id, body);
+    else await api('POST', '/admin/devices/import', { devices: [{ mac: $('#d-mac').value, ...body }] });
+    closeDlg(); renderDevices(); toast('saved');
+  } catch (err) { toast(err.message, true); }
+  return false;
+}
+async function delDevice(id) {
+  if (!confirm('Delete this device?')) return;
+  try { await api('DELETE', '/admin/devices/' + id); renderDevices(); toast('deleted'); }
+  catch (err) { toast(err.message, true); }
+}
+
+// ---------- screens ----------
+async function renderScreens() {
+  const rows = await api('GET', '/admin/screens');
+  $('#view').innerHTML = `<div class="card">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3>Screens</h3><span class="sp" style="flex:1"></span>
+      <button class="pri" onclick="screenForm()">New screen</button>
+    </div>
+    <table><tr><th></th><th>Name</th><th>Updated</th><th></th></tr>
+    ${rows.map(s => `<tr>
+      <td><img class="prev" data-prev="${s.id}" loading="lazy"></td>
+      <td><b>${esc(s.name)}</b><div class="mut mono">${esc(s.name)}</div></td>
+      <td>${ago(s.updated_at)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="act" onclick="screenForm(${s.id})">Edit</button>
+        <button class="act danger" onclick="delScreen(${s.id})">Delete</button></td>
+    </tr>`).join('') || '<tr><td colspan=4 class="mut">No screens yet.</td></tr>'}
+    </table></div>`;
+  // previews live behind auth, so <img src> can't carry the bearer token —
+  // fetch as blob and point the img at an object URL
+  for (const img of document.querySelectorAll('img[data-prev]')) {
+    try {
+      const r = await fetch('/admin/screens/' + img.dataset.prev + '/preview',
+        { headers: { Authorization: 'Bearer ' + TOKEN } });
+      if (r.ok) img.src = URL.createObjectURL(await r.blob());
+    } catch {}
+  }
+}
+const EXAMPLE = JSON.stringify({ name: "hello", parts: [
+  { type: "text", text: "{{ title }}", style: { font_px: 42, bold: true }, padding: [40, 40, 8, 40] },
+  { type: "keyed_value", key: "Message", value: "{{ body }}", padding: [20, 40], style: { font_px: 26 } }
+]}, null, 2);
+async function screenForm(id) {
+  const s = id ? await api('GET', '/admin/screens/' + id) : { name: '', template: EXAMPLE, vars: '{}' };
+  dlg(`<h3 style="margin-bottom:12px">${id ? 'Edit screen' : 'New screen'}</h3>
+    <form onsubmit="return saveScreen(event, ${id ?? 'null'})">
+      <div class="row"><label>Name</label><input id="s-name" value="${esc(s.name)}" required></div>
+      <div class="row"><label>Template (JSON)</label><textarea id="s-tmpl">${esc(s.template)}</textarea></div>
+      <div class="row"><label>Variables (JSON)</label><textarea id="s-vars" style="min-height:80px">${esc(s.vars)}</textarea></div>
+      <button class="pri">Save</button>
+      <button class="act" type="button" onclick="previewDlg()">Preview</button>
+      <button class="act" onclick="closeDlg()">Cancel</button>
+    </form>
+    <div id="prev-out" style="margin-top:12px"></div>`);
+}
+function previewDlg() { $('#prev-out').innerHTML = '<img class="prev" style="max-width:400px" src="/images/setup-logo-2.bmp">'; }
+async function saveScreen(e, id) {
+  e.preventDefault();
+  const body = { name: $('#s-name').value, template: $('#s-tmpl').value, vars: $('#s-vars').value };
+  try {
+    if (id) { await api('PATCH', '/admin/screens/' + id, body); }
+    else { const r = await api('POST', '/admin/screens', body); id = r.id; }
+    closeDlg(); renderScreens(); toast('saved');
+  } catch (err) { toast(err.message, true); }
+  return false;
+}
+async function delScreen(id) {
+  if (!confirm('Delete this screen (removed from all playlists)?')) return;
+  try { await api('DELETE', '/admin/screens/' + id); renderScreens(); toast('deleted'); }
+  catch (err) { toast(err.message, true); }
+}
+
+// ---------- playlists ----------
+async function renderPlaylists() {
+  const [pls, screens] = await Promise.all([api('GET', '/admin/playlists'), api('GET', '/admin/screens')]);
+  $('#view').innerHTML = `<div class="card">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3>Playlists</h3><span class="sp" style="flex:1"></span>
+      <button class="pri" onclick="playlistForm()">New playlist</button>
+    </div>
+    ${pls.map(p => `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="display:flex;align-items:center">
+        <b>${esc(p.name)}</b> <span class="mut"> #${p.id}</span><span class="sp" style="flex:1"></span>
+        <button class="act" onclick="playlistForm(${p.id})">Rename</button>
+        <button class="act danger" onclick="delPlaylist(${p.id})">Delete</button>
+      </div>
+      <table style="margin-top:8px"><tr><th>#</th><th>Screen</th><th>Visible</th><th></th></tr>
+      ${(p.items||[]).map(i => `<tr><td>${i.position}</td><td>${esc(i.name)} <span class="mut">#${i.screen_id}</span></td>
+        <td><span class="pill ${i.visible?'ok':'warn'}">${i.visible?'on':'off'}</span></td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="act" onclick="toggleItem(${p.id},${i.screen_id},${i.visible?0:1})">${i.visible?'Hide':'Show'}</button>
+          <button class="act danger" onclick="delItem(${p.id},${i.screen_id})">Remove</button></td></tr>`).join('')
+        || '<tr><td colspan=4 class="mut">Empty — add a screen below.</td></tr>'}
+      </table>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <select id="pl-add-${p.id}" style="max-width:260px">${screens.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+        <button class="act" onclick="addItem(${p.id})">Add screen</button>
+      </div>
+    </div>`).join('') || '<p class="mut">No playlists yet.</p>'}</div>`;
+}
+async function playlistForm(id) {
+  const name = id ? (await api('GET', '/admin/playlists/' + id)).name : '';
+  dlg(`<h3 style="margin-bottom:12px">${id ? 'Rename playlist' : 'New playlist'}</h3>
+    <form onsubmit="return savePlaylist(event, ${id ?? 'null'})">
+      <div class="row"><label>Name</label><input id="p-name" value="${esc(name)}" required></div>
+      <button class="pri">Save</button> <button class="act" onclick="closeDlg()">Cancel</button>
+    </form>`);
+}
+async function savePlaylist(e, id) {
+  e.preventDefault();
+  try {
+    if (id) await api('PATCH', '/admin/playlists/' + id, { name: $('#p-name').value });
+    else await api('POST', '/admin/playlists', { name: $('#p-name').value, screen_ids: [] });
+    closeDlg(); renderPlaylists(); toast('saved');
+  } catch (err) { toast(err.message, true); }
+  return false;
+}
+async function delPlaylist(id) {
+  if (!confirm('Delete playlist (devices will be unassigned)?')) return;
+  try { await api('DELETE', '/admin/playlists/' + id); renderPlaylists(); toast('deleted'); }
+  catch (err) { toast(err.message, true); }
+}
+async function addItem(pid) {
+  try { await api('POST', `/admin/playlists/${pid}/items`, { screen_id: +$('#pl-add-' + pid).value });
+    renderPlaylists(); } catch (err) { toast(err.message, true); }
+}
+async function toggleItem(pid, sid, vis) {
+  try { await api('PATCH', `/admin/playlists/${pid}/items/${sid}`, { visible: vis }); renderPlaylists(); }
+  catch (err) { toast(err.message, true); }
+}
+async function delItem(pid, sid) {
+  try { await api('DELETE', `/admin/playlists/${pid}/items/${sid}`); renderPlaylists(); }
+  catch (err) { toast(err.message, true); }
+}
+
+// ---------- firmware ----------
+async function renderFirmware() {
+  const rows = await api('GET', '/admin/firmware');
+  $('#view').innerHTML = `<div class="card">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3>Firmware</h3><span class="sp" style="flex:1"></span>
+      <button class="act danger" onclick="wipeFirmware()">Wipe all</button>
+      <button class="pri" style="margin-left:8px" onclick="fwForm()">Add firmware</button>
+    </div>
+    <table><tr><th>Version</th><th>URL</th><th>Notes</th><th>Added</th><th></th></tr>
+    ${rows.map(f => `<tr><td><b>${esc(f.version)}</b></td><td class="mono">${esc(f.url)}</td>
+      <td>${esc(f.notes)}</td><td>${ago(f.created_at)}</td>
+      <td style="text-align:right"><button class="act danger" onclick="delFw(${f.id})">Delete</button></td></tr>`).join('')
+      || '<tr><td colspan=5 class="mut">No firmware — devices report no update available.</td></tr>'}
+    </table></div>`;
+}
+function fwForm() {
+  dlg(`<h3 style="margin-bottom:12px">Add firmware</h3>
+    <form onsubmit="return saveFw(event)">
+      <div class="row"><label>Version</label><input id="fw-v" required></div>
+      <div class="row"><label>URL</label><input id="fw-u" type="url" required></div>
+      <div class="row"><label>Notes</label><input id="fw-n"></div>
+      <button class="pri">Save</button> <button class="act" onclick="closeDlg()">Cancel</button>
+    </form>`);
+}
+async function saveFw(e) {
+  e.preventDefault();
+  try { await api('POST', '/admin/firmware', { version: $('#fw-v').value, url: $('#fw-u').value, notes: $('#fw-n').value });
+    closeDlg(); renderFirmware(); toast('saved'); } catch (err) { toast(err.message, true); }
+  return false;
+}
+async function delFw(id) {
+  try { await api('DELETE', '/admin/firmware/' + id); renderFirmware(); } catch (err) { toast(err.message, true); }
+}
+async function wipeFirmware() {
+  if (!confirm('Delete ALL firmware rows?')) return;
+  try { await api('DELETE', '/admin/firmware_wipe'); renderFirmware(); toast('wiped'); }
+  catch (err) { toast(err.message, true); }
+}
+
+// ---------- models ----------
+async function renderModels() {
+  const rows = await api('GET', '/admin/models');
+  $('#view').innerHTML = `<div class="card">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <h3>Device models</h3><span class="sp" style="flex:1"></span>
+      <button class="pri" onclick="modelForm()">Add model</button>
+    </div>
+    <table><tr><th>Name</th><th>Label</th><th>Size</th><th>Bit depth</th><th></th></tr>
+    ${rows.map(m => `<tr><td class="mono">${esc(m.name)}</td><td>${esc(m.label)}</td>
+      <td>${m.width}×${m.height}</td><td>${m.bit_depth}</td>
+      <td style="text-align:right"><button class="act danger" onclick="delModel(${m.id})">Delete</button></td></tr>`).join('')}
+    </table></div>`;
+}
+function modelForm() {
+  dlg(`<h3 style="margin-bottom:12px">Add model</h3>
+    <form onsubmit="return saveModel(event)">
+      <div class="row"><label>Name (id)</label><input id="m-name" required></div>
+      <div class="row"><label>Label</label><input id="m-label"></div>
+      <div class="row"><label>Width</label><input id="m-w" type="number" value="800"></div>
+      <div class="row"><label>Height</label><input id="m-h" type="number" value="480"></div>
+      <div class="row"><label>Bit depth</label><input id="m-bd" type="number" value="2" min="1" max="2"></div>
+      <button class="pri">Save</button> <button class="act" onclick="closeDlg()">Cancel</button>
+    </form>`);
+}
+async function saveModel(e) {
+  e.preventDefault();
+  try { await api('POST', '/admin/models', { name: $('#m-name').value, label: $('#m-label').value,
+      width: +$('#m-w').value, height: +$('#m-h').value, bit_depth: +$('#m-bd').value });
+    closeDlg(); renderModels(); toast('saved'); } catch (err) { toast(err.message, true); }
+  return false;
+}
+async function delModel(id) {
+  if (!confirm('Delete model?')) return;
+  try { await api('DELETE', '/admin/models/' + id); renderModels(); } catch (err) { toast(err.message, true); }
+}
+
+// ---------- users ----------
+async function renderUsers() {
+  const rows = await api('GET', '/admin/users');
+  $('#view').innerHTML = `<div class="card"><h3 style="margin-bottom:10px">Users</h3>
+    <table><tr><th>Email</th><th>Role</th><th></th></tr>
+    ${rows.map(u => `<tr><td>${esc(u.email)}</td>
+      <td><span class="pill ${u.role==='unverified'?'warn':'ok'}">${esc(u.role)}</span></td>
+      <td style="text-align:right">${u.role==='unverified'
+        ? `<button class="act" onclick="verifyUser(${u.id})">Verify</button>` : ''}</td></tr>`).join('')}
+    </table></div>`;
+}
+async function verifyUser(id) {
+  try { await api('POST', '/admin/users/verify', { user_id: id }); renderUsers(); toast('verified'); }
+  catch (err) { toast(err.message, true); }
+}
+
+// ---------- boot ----------
+async function boot() {
+  try {
+    const me = await api('GET', '/admin/me');
+    $('#who').textContent = me.email;
+    $('#login').hidden = true; $('#reg').hidden = true; $('#app').hidden = false;
+    tabs(); VIEWS[TAB]();
+  } catch { showLogin(); }
+}
+boot();
+setInterval(() => { if (!$('#app').hidden && TAB === 'devices') renderDevices().catch(()=>{}); }, 30000);
+</script>
+</body>
+</html>
