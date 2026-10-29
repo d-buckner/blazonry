@@ -84,10 +84,12 @@ async fn full_device_and_admin_flow() {
     assert_eq!(u32::from_le_bytes(bmp[18..22].try_into().unwrap()), 800);
     assert_eq!(d["next_refresh_in"].as_i64().unwrap(), 900);
 
-    // wrong device token rejected
-    let (s, _) = req(&addr, "GET", "/api/display", None,
+    // wrong device token: hosted-TRMNL contract = status 500 + reset_firmware
+    let (s, d) = req(&addr, "GET", "/api/display", None,
         &[("idempotency-key", mac.into()), ("access-token", "nope".into())]).await;
-    assert_eq!(s, 401);
+    assert_eq!(d["status"], 500);
+    assert_eq!(d["reset_firmware"], true);
+    let _ = s;
 
     // preview endpoint returns PNG
     let resp = cli.get(format!("http://{addr}/admin/screens/{screen_id}/preview"))

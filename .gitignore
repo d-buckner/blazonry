@@ -1,7 +1,5 @@
 target/
 terminus.db*
+*.bmp
+*.png
 server.log
-out.*
-poll*.bmp
-poll*.png
-preview.png

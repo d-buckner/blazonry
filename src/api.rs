@@ -1,14 +1,18 @@
 //! Device plane: the endpoints TRMNL firmware actually calls.
 //!
-//! Wire contract (from firmware + Terminus compat docs):
-//!   GET /api/display   headers: idempotency-key = device MAC, access-token
-//!        -> { status, image: <base64 2-bit BMP>, filename, refresh_rate,
-//!             next_refresh_in, image_url, ... }
-//!   GET /api/logs      header: idempotency-key -> device log lines
-//!   GET /api/setup     same headers; registration handshake
+//! Wire contract (tests/spec/ — BYOS docs + Terminus source, Oct 2026):
+//!   GET /api/setup     headers: ID or idempotency-key = MAC, FW-Version, Model
+//!        -> { status: 200, api_key, friendly_id, image_url, message }
+//!   GET /api/display   headers: ID/idempotency-key, Access-Token, telemetry
+//!        -> { status: 0, image_url, filename, refresh_rate (SECONDS, number),
+//!             reset_firmware, update_firmware, firmware_url, special_function,
+//!             maximum_compatibility, temperature_profile, image (base64) }
+//!        status 202 = not registered yet; unknown token -> 500 + reset_firmware
+//!   POST /api/log      header: Access-Token; body {logs:[...]} -> 204
+//!   GET /api/display/current  non-advancing mirror (BYOD/Chrome consumers)
 //!
-//! Auth model: MAC auto-pairs on first contact (LAN trust), access-token is
-//! checked once paired. Rotation: poll counter per device, modulo playlist.
+//! Rotation: per-device poll_count, modulo playlist; current_screen_id is
+//! stored so /current can mirror without advancing.
 
 use crate::cache::{self, BmpCache};
 use crate::db;
@@ -19,101 +23,234 @@ use axum::response::IntoResponse;
 use base64::Engine as _;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct AppState {
     pub pool: SqlitePool,
     pub renderer: Arc<Renderer>,
     pub cache: BmpCache,
-    /// monotonic poll counter (rotation driver)
-    pub polls: AtomicU64,
 }
 pub type SharedState = Arc<AppState>;
 
-fn headers_ids(headers: &HeaderMap) -> Option<(String, String)> {
-    let mac = headers.get("idempotency-key")?.to_str().ok()?.to_string();
-    let token = headers.get("access-token").map(|v| v.to_str().unwrap_or("").to_string()).unwrap_or_default();
-    Some((mac, token))
+/// Firmware sends `ID`; some BYOS clients use `idempotency-key`. Accept both.
+fn device_mac(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("id")
+        .or_else(|| headers.get("idempotency-key"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
+
+fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.to_string())
+}
+
+fn header_f32(headers: &HeaderMap, name: &str) -> Option<f64> {
+    header_str(headers, name).and_then(|s| s.parse().ok())
+}
+
+fn header_i64(headers: &HeaderMap, name: &str) -> Option<i64> {
+    header_str(headers, name).and_then(|s| s.parse().ok())
+}
+
+/// Short stable content hash for filenames (FNV-1a 32-bit, hex).
+fn content_hash(bytes: &[u8]) -> String {
+    let mut h: u32 = 2166136261;
+    for b in bytes {
+        h ^= *b as u32;
+        h = h.wrapping_mul(16777619);
+    }
+    format!("{h:08x}")
+}
+
+/// Advance the device's rotation and return (screen_id, poll).
+async fn advance_device(st: &SharedState, device_id: i64, playlist_id: Option<i64>) -> Option<(i64, i64)> {
+    let pl = playlist_id?;
+    let poll: i64 = sqlx::query_scalar(
+        "UPDATE devices SET poll_count = poll_count + 1, last_poll_at = datetime('now') WHERE id = ? RETURNING poll_count",
+    )
+    .bind(device_id)
+    .fetch_one(&st.pool)
+    .await
+    .ok()?;
+    let screen_id = db::next_screen_id(&st.pool, pl, poll as u64).await.ok().flatten()?;
+    let _ = sqlx::query("UPDATE devices SET current_screen_id = ? WHERE id = ?")
+        .bind(screen_id)
+        .bind(device_id)
+        .execute(&st.pool)
+        .await;
+    Some((screen_id, poll))
+}
+
+/// Shared payload builder for display + display/current.
+async fn screen_payload(st: &SharedState, screen_id: i64, refresh_secs: i64) -> Option<serde_json::Value> {
+    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id).await.ok()?;
+    let hash = content_hash(&bmp);
+    let filename = format!("screen-{screen_id}-{hash}");
+    let image_b64 = base64::engine::general_purpose::STANDARD.encode(&*bmp);
+    Some(serde_json::json!({
+        "status": 0,
+        "image_url": format!("/images/{filename}.bmp"),
+        "image": image_b64,
+        "filename": filename,
+        "refresh_rate": refresh_secs,
+        "next_refresh_in": refresh_secs,
+        "refresh_count": 0,
+        "reset_firmware": false,
+        "update_firmware": false,
+        "firmware_url": null,
+        "special_function": "none",
+        "maximum_compatibility": false,
+        "temperature_profile": "default",
+    }))
 }
 
 pub async fn display(
     State(st): State<SharedState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let Some((mac, token)) = headers_ids(&headers) else {
-        return (StatusCode::UNAUTHORIZED, "missing idempotency-key").into_response();
+    let Some(mac) = device_mac(&headers) else {
+        return (StatusCode::UNAUTHORIZED, "missing ID header").into_response();
     };
+    let token = header_str(&headers, "access-token").unwrap_or_default();
     let (id, api_key, playlist_id, refresh_interval) = match db::upsert_device(&st.pool, &mac).await {
         Ok(v) => v,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
+    // Hosted TRMNL answers an unknown token with reset_firmware:true so the
+    // device wipes and re-pairs; mirror that (docs warn to double-check keys).
     if !token.is_empty() && token != api_key {
-        return (StatusCode::UNAUTHORIZED, "bad access-token").into_response();
+        return axum::Json(serde_json::json!({
+            "status": 500, "error": "Device not found", "reset_firmware": true,
+        }))
+        .into_response();
     }
-    let _ = sqlx::query("UPDATE devices SET last_poll_at = datetime('now') WHERE id = ?")
-        .bind(id)
-        .execute(&st.pool)
-        .await;
+    // Telemetry: store whatever the firmware reported.
+    let _ = sqlx::query(
+        "UPDATE devices SET last_poll_at = datetime('now'),
+           firmware_version = COALESCE(?, firmware_version),
+           rssi = COALESCE(?, rssi),
+           battery_voltage = COALESCE(?, battery_voltage),
+           width = COALESCE(?, width),
+           height = COALESCE(?, height)
+         WHERE id = ?",
+    )
+    .bind(header_str(&headers, "fw-version"))
+    .bind(header_i64(&headers, "rssi"))
+    .bind(header_f32(&headers, "battery-voltage"))
+    .bind(header_i64(&headers, "width"))
+    .bind(header_i64(&headers, "height"))
+    .bind(id)
+    .execute(&st.pool)
+    .await;
 
-    let poll = st.polls.fetch_add(1, Ordering::Relaxed);
-    let screen_id = match playlist_id {
-        Some(pl) => db::next_screen_id(&st.pool, pl, poll).await.ok().flatten(),
-        None => None,
-    };
-    let screen_id = match screen_id {
-        Some(s) => s,
+    let (screen_id, _poll) = match advance_device(&st, id, playlist_id).await {
+        Some(v) => v,
         None => {
-            // No playlist/screen yet: send a friendly pairing screen.
+            // Not registered to a playlist yet: firmware re-polls in seconds.
             return axum::Json(serde_json::json!({
-                "status": 200,
+                "status": 202,
                 "message": "terminus-rs: device paired, no screens yet",
-                "refresh_rate": refresh_interval * 1000,
-                "next_refresh_in": refresh_interval,
+                "refresh_rate": refresh_interval,
+                "reset_firmware": false,
+                "update_firmware": false,
             }))
             .into_response();
         }
     };
-
-    let rendered = match render_for_device(&st, screen_id).await {
-        Ok(bmp_b64) => bmp_b64,
-        Err(e) => {
-            tracing::warn!(%e, screen = screen_id, "render failed");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response();
-        }
-    };
-    axum::Json(serde_json::json!({
-        "status": 200,
-        "image": rendered,
-        "filename": format!("terminus-{}.bmp", poll),
-        "refresh_rate": refresh_interval * 1000,
-        "refresh_count": 0,
-        "next_refresh_in": refresh_interval,
-        "image_url": null,
-        "partial": null,
-    }))
-    .into_response()
+    match screen_payload(&st, screen_id, refresh_interval).await {
+        Some(p) => axum::Json(p).into_response(),
+        None => (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response(),
+    }
 }
 
-async fn render_for_device(st: &SharedState, screen_id: i64) -> anyhow::Result<String> {
-    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id).await?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&*bmp))
+/// Non-advancing mirror of the device's current screen (BYOD / extension use).
+pub async fn display_current(
+    State(st): State<SharedState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let Some(mac) = device_mac(&headers) else {
+        return (StatusCode::UNAUTHORIZED, "missing ID header").into_response();
+    };
+    let token = header_str(&headers, "access-token").unwrap_or_default();
+    let row: Option<(String, Option<i64>, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT api_key, current_screen_id, refresh_interval, playlist_id FROM devices WHERE mac = ?",
+    )
+    .bind(&mac)
+    .fetch_optional(&st.pool)
+    .await
+    .unwrap_or(None);
+    let Some((api_key, mut current, refresh, playlist_id)) = row else {
+        return axum::Json(serde_json::json!({ "status": 404, "message": "No screen currently being displayed" })).into_response();
+    };
+    if !token.is_empty() && token != api_key {
+        return axum::Json(serde_json::json!({
+            "status": 500, "error": "Device not found", "reset_firmware": true,
+        }))
+        .into_response();
+    }
+    // If never polled, peek at the playlist head without advancing.
+    if current.is_none() {
+        if let Some(pl) = playlist_id {
+            current = db::next_screen_id(&st.pool, pl, 0).await.ok().flatten();
+        }
+    }
+    match current {
+        Some(sid) => match screen_payload(&st, sid, refresh).await {
+            Some(mut p) => {
+                // current-screen contract answers status 200, no advance
+                p["status"] = serde_json::json!(200);
+                axum::Json(p).into_response()
+            }
+            None => (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response(),
+        },
+        None => axum::Json(serde_json::json!({ "status": 404, "message": "No screen currently being displayed" })).into_response(),
+    }
+}
+
+/// Serve a cached rendered BMP by filename (`screen-{id}-{hash}.bmp`).
+pub async fn serve_image(
+    State(st): State<SharedState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let Some(rest) = name.strip_suffix(".bmp") else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let Some(id_str) = rest.strip_prefix("screen-").and_then(|r| r.split('-').next()) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let Ok(screen_id) = id_str.parse::<i64>() else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    match cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id).await {
+        Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp.to_vec()).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
 }
 
 pub async fn setup(State(st): State<SharedState>, headers: HeaderMap) -> impl IntoResponse {
-    let Some((mac, _)) = headers_ids(&headers) else {
-        return (StatusCode::UNAUTHORIZED, "missing idempotency-key").into_response();
+    let Some(mac) = device_mac(&headers) else {
+        return (StatusCode::UNAUTHORIZED, "missing ID header").into_response();
     };
     let (id, api_key, _, refresh_interval) = match db::upsert_device(&st.pool, &mac).await {
         Ok(v) => v,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
+    let _ = sqlx::query(
+        "UPDATE devices SET firmware_version = COALESCE(?, firmware_version), model = COALESCE(?, model) WHERE id = ?",
+    )
+    .bind(header_str(&headers, "fw-version"))
+    .bind(header_str(&headers, "model"))
+    .bind(id)
+    .execute(&st.pool)
+    .await;
     tracing::info!(id, %mac, "device setup/pair");
     axum::Json(serde_json::json!({
         "status": 200,
-        "message": "terminus-rs: paired",
+        "message": "Welcome to terminus-rs!",
         "api_key": api_key,
         "friendly_id": format!("{:06}", id % 1_000_000),
-        "refresh_rate": refresh_interval * 1000,
+        "image_url": "/images/setup-logo.bmp",
+        "refresh_rate": refresh_interval,
     }))
     .into_response()
 }
@@ -125,9 +262,49 @@ pub struct LogQ {
 }
 
 pub async fn logs(headers: HeaderMap, Query(q): Query<LogQ>) -> impl IntoResponse {
-    let mac = headers.get("idempotency-key").and_then(|v| v.to_str().ok()).unwrap_or("?");
-    tracing::info!(%mac, messages = q.messages.as_deref().unwrap_or(""), "device log");
+    let mac = device_mac(&headers).unwrap_or_else(|| "?".into());
+    tracing::info!(%mac, messages = q.messages.as_deref().unwrap_or(""), "device log (legacy GET)");
     axum::Json(serde_json::json!({ "status": 200 })).into_response()
+}
+
+/// POST /api/log — the real firmware contract: JSON array under `logs`,
+/// device identified by Access-Token, 204 on accept (Terminus parity).
+pub async fn log_create(
+    State(st): State<SharedState>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let token = header_str(&headers, "access-token").unwrap_or_default();
+    let device_id: Option<i64> = sqlx::query_scalar("SELECT id FROM devices WHERE api_key = ?")
+        .bind(&token)
+        .fetch_optional(&st.pool)
+        .await
+        .unwrap_or(None);
+    let Some(device_id) = device_id else {
+        return (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({
+            "type": "/problem_details#device_id", "status": 404,
+            "detail": "invalid device id", "instance": "/api/log",
+        }))).into_response();
+    };
+    let Some(entries) = body.get("logs").and_then(|v| v.as_array()) else {
+        return (StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({
+            "type": "/problem_details#log_payload", "status": 422,
+            "detail": "invalid payload", "instance": "/api/log",
+        }))).into_response();
+    };
+    for e in entries {
+        let Some(message) = e.get("message").and_then(|v| v.as_str()) else { continue };
+        let _ = sqlx::query(
+            "INSERT INTO device_logs (device_id, message, level, source_path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        )
+        .bind(device_id)
+        .bind(message)
+        .bind(e.get("level").and_then(|v| v.as_str()))
+        .bind(e.get("source_path").and_then(|v| v.as_str()))
+        .execute(&st.pool)
+        .await;
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // ---- minimal admin API (auth-gated in the router; see auth::require_admin) ----
@@ -183,19 +360,25 @@ pub fn bmp_to_png(bmp: &[u8]) -> anyhow::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Firmware list for devices: newest row wins.
+/// Firmware list for devices: newest row wins. `update_firmware` is only true
+/// when a device is behind (Terminus: version mismatch gates the OTA flag).
 pub async fn firmware_latest(
     State(st): State<SharedState>,
+    headers: HeaderMap,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
     let row: Option<(String, String, String)> = sqlx::query_as(
         "SELECT version, url, notes FROM firmware ORDER BY id DESC LIMIT 1")
         .fetch_optional(&st.pool).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let device_fw = header_str(&headers, "fw-version");
     Ok(axum::Json(match row {
-        Some((version, url, notes)) => serde_json::json!({
-            "status": 200, "version": version, "firmware_url": url, "notes": notes,
-            "update_firmware": true,
-        }),
+        Some((version, url, notes)) => {
+            let update = device_fw.as_deref().map(|v| v != version).unwrap_or(false);
+            serde_json::json!({
+                "status": 200, "version": version, "firmware_url": url, "notes": notes,
+                "update_firmware": update,
+            })
+        }
         None => serde_json::json!({ "status": 200, "update_firmware": false }),
     }))
 }
@@ -234,12 +417,13 @@ pub async fn assign_device(
 pub async fn list_devices(
     State(st): State<SharedState>,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let rows: Vec<(i64, String, Option<String>, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT id, mac, name, playlist_id, last_poll_at FROM devices ORDER BY id",
+    let rows: Vec<(i64, String, Option<String>, Option<i64>, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
+        "SELECT id, mac, name, playlist_id, last_poll_at, firmware_version, rssi FROM devices ORDER BY id",
     )
     .fetch_all(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let out: Vec<_> = rows.into_iter().map(|(id, mac, name, pl, poll)| serde_json::json!({
-        "id": id, "mac": mac, "name": name, "playlist_id": pl, "last_poll_at": poll
+    let out: Vec<_> = rows.into_iter().map(|(id, mac, name, pl, poll, fw, rssi)| serde_json::json!({
+        "id": id, "mac": mac, "name": name, "playlist_id": pl, "last_poll_at": poll,
+        "firmware_version": fw, "rssi": rssi
     })).collect();
     Ok(axum::Json(serde_json::json!(out)))
 }

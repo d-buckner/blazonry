@@ -1,0 +1,275 @@
+:toc: macro
+:toclevels: 5
+:figure-caption!:
+
+:chrome_link: link:https://www.google.com/chrome[Google Chrome]
+:core_api_link: link:https://trmnl.com/api-docs/index.html[Core API]
+:doc_api_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/api.adoc[API]
+:doc_configuration_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/configuration.adoc[Configuration]
+:doc_development_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/development.adoc[Development]
+:doc_devices_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/devices.adoc[Devices]
+:doc_docker_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/docker.adoc[Docker]
+:doc_extensions_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/extensions.adoc[Extensions]
+:doc_internationalization_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/internationalization.adoc[Internationalization]
+:doc_jobs_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/jobs.adoc[Jobs]
+:doc_raspberry_pi_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/raspberry_pi.adoc[Raspberry PI]
+:doc_render_link: link:[link:https://github.com/usetrmnl/terminus/blob/main/doc/render.adoc[Render]]
+:doc_screens_link: link:https://github.com/usetrmnl/terminus/blob/main/doc/screens.adoc[Screens]
+:docker_link: link:https://www.docker.com[Docker]
+:dragonfly_link: link:https://www.dragonflydb.io[Dragonfly]
+:esbuild_link: link:https://esbuild.github.io[esbuild]
+:firmware_link: link:https://github.com/usetrmnl/trmnl-firmware[Firmware]
+:git_link: link:https://git-scm.com[Git]
+:hadolint_link: link:https://github.com/hadolint/hadolint[Haskell Dockerfile Linter]
+:hanami_link: link:https://hanakai.org/hanami[Hanami]
+:htmx_link: link:https://htmx.org[htmx]
+:imagemagick_link: link:https://imagemagick.org[ImageMagick]
+:milestoner_link: link:https://alchemists.io/projects/milestoner[Milestoner]
+:node_link: link:https://nodejs.org[Node]
+:overmind_link: link:https://github.com/DarthSim/overmind[Overmind]
+:postgres_link: link:https://www.postgresql.org[PostgreSQL]
+:puma_link: link:https://puma.io[Puma]
+:redis_link: link:https://redis.io[Redis]
+:render_link: link:https://render.com[Render]
+:rodauth_link: link:https://rodauth.jeremyevans.net[Rodauth]
+:ruby_link: link:https://www.ruby-lang.org[Ruby]
+:sidekiq_link: link:https://github.com/sidekiq/sidekiq[Sidekiq]
+:trmnl_framework_link: link:https://trmnl.com/framework[Framework]
+:trmnl_link: link:https://trmnl.com[TRMNL]
+:unbrickable_pledge_link: link:https://trmnl.com/blog/the-unbrickable-pledge[Unbrickable Pledge]
+:valkey_link: link:https://valkey.io[Valkey]
+:yjit_link: link:https://docs.ruby-lang.org/en/master/jit/yjit_md.html[YJIT]
+:youtube_link: link:https://www.youtube.com/@useTRMNL[YouTube]
+
+= Terminus
+
+Terminus is a {ruby_link}/{hanami_link} web server that allows you to manage {trmnl_link} devices running on your own local network or hosted cloud. This is our flagship BYOS implementation that aims to be compatible with our {trmnl_link} Core server but _also different_ since this open source solution provides features not possible in our Core application.
+
+image:https://render.com/images/deploy-to-render-button.svg[Deploy to Render,link=https://render.com/deploy]
+
+⚠️ This is a Beta software as we haven't reached 1.0.0 status as of yet. This means -- while we strive to reduce the number of changes that require effort on your part to a minimum -- there will be times when changes can't be avoided.
+
+toc::[]
+
+== Features
+
+* Provides privacy first functionality by empowering you to run your own private server, network, and devices. You own the stack and the data. 🎉
+* Built atop {ruby_link} and {hanami_link}.
+* Uses {esbuild_link} for asset management.
+* Uses {htmx_link} for Hypermedia-Driven user interfaces.
+* Uses {imagemagick_link} for image processing.
+* Uses {overmind_link} for running multiple processes.
+* Uses {postgres_link} for the database.
+* Uses {puma_link} for the server.
+* Uses {rodauth_link} for authentication.
+* Uses {sidekiq_link} for worker jobs.
+* Uses {valkey_link} for the key/value cache.
+* Supports {yjit_link}.
+* Supports {docker_link}.
+* Supports {trmnl_link} devices.
+
+The following is a high level overview you can use to compare/contrast when deciding between using this Build Your Own Server (BYOS) implementation or our link:https://trmnl.com[hosted] solution.
+
+*Legend*
+
+* ⚪️ Planned.
+* 🟢 Supported.
+* 🟡 Partially supported.
+* 🔴 Not supported, not implemented, or isn't applicable.
+
+*Matrix*
+
+The following documents the features supported in this implementation which are similar to our {trmnl_link} Core server. While we aim to be compatible with Core, the experience will be slightly different in look, feel, and behavior.
+
+[options="header"]
+|===
+|             | Terminus | Hosted
+| Dashboard   | 🟢       | 🟢
+| Devices     | 🟢       | 🟢
+| Sensors     | 🟢       | 🟢
+| API         | 🟢       | 🟢
+| Screens     | 🟢       | 🟢
+| Playlists   | 🟢       | 🟢
+| Extensions  | 🟢       | 🟢
+| Models      | 🟢       | 🟢
+| Palettes    | 🟢       | 🟢
+| Firmware    | 🟢       | 🟢
+| Accounts    | 🟢       | 🔴
+| Users       | 🟢       | 🟢
+| Docker      | 🟢       | 🔴
+|===
+
+== Requirements
+
+* {git_link}.
+* {ruby_link}.
+* {hanami_link}.
+* {node_link}.
+* {postgres_link}.
+* {valkey_link}: Can be swapped out for {redis_link} or {dragonfly_link} if desired.
+* {hadolint_link} (optional, for development): For `Dockerfile` linting.
+* {chrome_link} (optional, for development): For screen generation via the headless browser.
+* {overmind_link} (optional, for development): Uses your `Procfile` to launch processes.
+* {docker_link} (optional when only using Ruby).
+* {trmnl_link} device (optional, you can use virtual devices).
+
+== Quick Start
+
+To immediately spin up Terminus on your local machine using {docker_link}, run:
+
+[source,bash]
+----
+curl https://raw.githubusercontent.com/usetrmnl/terminus/refs/heads/main/scripts/docker/quick.sh | bash
+----
+
+Once launched, open `http://localhost:2300` in your browser then click the _Register_ link to register and log into the system.
+
+⚠️ This script is not idempotent which means you can't run it more than once since your database credentials will be different each time. This is only meant for getting up and running quickly to explore the feature set, not permanent use. For permanent use, see the link:https://github.com/usetrmnl/terminus/blob/main/doc/docker.adoc[Docker] documentation.
+
+== Setup
+
+To set up this project for local development, run:
+
+[source,bash]
+----
+git clone https://github.com/usetrmnl/terminus
+cd terminus
+bin/setup
+----
+
+💡 The setup script is idempotent so you can run it multiple times without harm. To rebuild a file managed by the setup script, delete the desired file and rerun setup to recreate.
+
+== Upgrade
+
+To upgrade this project for local development, run:
+
+[source,bash]
+----
+cd terminus
+bin/upgrade
+----
+
+Watch for any changes that need to be addressed in the output. Otherwise, if no changes are detected, you are set.
+
+== Usage
+
+To launch the server, run:
+
+[source,bash]
+----
+# Development
+overmind start --port-step 10 --procfile Procfile.dev --can-die assets,migrate
+
+# Production
+overmind start --port-step 10 --can-die assets,migrate
+----
+
+To view the app, use either of the following:
+
+* *Secure*: https://localhost:2443
+* *Insecure*: http://localhost:2300
+
+From your browser, you can then click on the _Register_ link to register and log into the system.
+
+=== Configuration
+
+See {doc_configuration_link} documentation for details.
+
+=== Users
+
+When launching this application for the first time, there will be no users. The first user to register will automatically be given _Verified_ status along with full access to the system. All subsequent users will marked as _Unverified_ and must be manually _Verified_ in order to have access to the system. In the future, more fine grained control will be provided for individual users, roles, and permissions.
+
+Also, once logged in, you can manage your settings as follows:
+
+* Visit `/me/login` to update your email address.
+* Visit `/me/password` to update your password.
+* Visit `/me/remember` to enable, disable, or forget if you should be remembered.
+
+=== Devices
+
+See {doc_devices_link} documentation for details.
+
+=== Firmware
+
+In accordance with the {unbrickable_pledge_link}, the latest version of Terminus always supports the latest version of our {firmware_link}. If you are running on older firmware, you'll need to use an older version of Terminus. Here's a rough breakdown of the Firmware version history where changes were applied that might cause issues if you haven't upgraded your devices in a while:
+
+* *Firmware 1.6.9* (and lower): Supported by Terminus link:https://github.com/usetrmnl/terminus/releases/tag/0.41.0[0.41.0] and lower.
+* *Firmware 1.6.10* (and higher): Supported by Terminus link:https://github.com/usetrmnl/terminus/releases/tag/0.42.0[0.42.0] and higher.
+
+In case it's of interest, unofficial firmware specific Waveshare (device and display) can be found here:
+
+* link:https://github.com/la-lo-go/trmnl-waveshare-esp32-s3-rlcd-4.2/tree/master[Waveshare ESP32 S3 RLCD 4.2]
+
+=== Extensions
+
+See {doc_extensions_link} documentation for details.
+
+=== Screens
+
+See {doc_screens_link} documentation for details.
+
+=== Jobs
+
+See {doc_jobs_link} documentation for details on {sidekiq_link} worker jobs.
+
+=== API
+
+See {doc_api_link} documentation for details.
+
+=== Docker
+
+See {doc_docker_link} documentation for details.
+
+=== Raspberry Pi
+
+See {doc_raspberry_pi_link} documentation for details.
+
+=== Kubernetes
+
+For Kubernetes support, check out the link:https://github.com/pradeepbbl/terminus-kubernetes[Terminus Kubernetes] project, as managed by Pradeep Mishra, for documentation and full automation.
+
+=== Render
+
+See {doc_render_link} documentation for details.
+
+=== Internationalization
+
+See {doc_internationalization_link} documentation for details.
+
+== Development
+
+See {doc_development_link} documentation for details.
+
+== Tests
+
+To test, run:
+
+[source,bash]
+----
+bin/rake
+----
+
+== License
+
+While this project is distributed under the permissive link:/LICENSE.adoc[MIT License], we strongly believe that technology should serve humanity's best interests. We created this software with the intent that it be used to benefit people and communities, not to cause harm. We encourage individuals and organizations to consider the ethical implications and to use this project in ways that respect human rights, promote equity, and contribute positively to society. Though we cannot legally restrict usage under the MIT License, we ask that you join us in fostering a responsible technology ecosystem by avoiding applications that could cause harm, perpetuate discrimination, or undermine human dignity. Technology is best used to enrich lives, let's ensure we build a better world together!
+
+== link:https://alchemists.io/policies/security[Security]
+
+== link:https://alchemists.io/policies/code_of_conduct[Code of Conduct]
+
+== link:https://alchemists.io/policies/contributions[Contributions]
+
+== link:https://alchemists.io/policies/developer_certificate_of_origin[Developer Certificate of Origin]
+
+== link:https://alchemists.io/projects/terminus/versions[Versions]
+
+== link:https://alchemists.io/community[Community]
+
+== Survey
+
+link:https://docs.google.com/forms/d/1FLVa9I1u6wk6ExMYj-l9P9a_Kw7XGXCPPyC0SSvv3hs/viewform[Take our survey] to help us learn more about how you use Terminus along with any feedback you might have.
+
+== Credits
+
+* Built with link:https://alchemists.io/projects/hanamismith[Hanamismith].
+* Engineered by link:https://alchemists.io/team/brooke_kuhlmann[Brooke Kuhlmann]

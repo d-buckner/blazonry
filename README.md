@@ -34,20 +34,41 @@ needs (if any) would come from their vendored gpui, not the published crate.
 - `src/dither.rs` — greyscale → 4-level FS dither.
 - `src/bmp.rs` — 2-bit bottom-up BMP writer (device wire format).
 
+## Spec conformance (tests/spec_conformance.rs)
+
+Ground truth vendored in `tests/spec/` (fetched 2026-10-29): TRMNL BYOS docs,
+private Display API docs, and Terminus `config/routes.rb` + the actual
+`app/actions/api/{display,setup,log}` sources. 13 tests, one per contract
+line. Findings this pass fixed:
+
+- **`ID` header**: firmware sends `ID: <mac>`, not `idempotency-key`. We
+  only read the latter — a real device would have 401'd at setup. Now both.
+- **`refresh_rate` must be a NUMBER of seconds.** Firmware reads a string as
+  0 and wakes immediately (battery killer). We were sending ms; now seconds.
+- **status codes**: `0` = draw image, `202` = not registered yet (was 200);
+  unknown access-token = `{status:500, error:"Device not found",
+  reset_firmware:true}` (device wipes + re-pairs), not 401.
+- **filename stability**: device skips download when filename matches;
+  filename is now `screen-{id}-{fnv1a-of-bmp}`, stable until content changes.
+- **`image_url` now real**: `/images/{filename}.bmp` serves the cached BMP;
+  payload also carries inline base64 `image`.
+- **`POST /api/log`** (Terminus parity): device by Access-Token, full
+  firmware log schema, 204/404/422 problem-details responses; rows stored
+  in `device_logs`.
+- **`GET /api/display/current`** + legacy `/api/current_screen`: non-
+  advancing mirror via per-device `poll_count` + `current_screen_id`.
+- **Telemetry ingest**: FW-Version, Model, RSSI, Battery-Voltage, Width/
+  Height stored on the device row (Terminus header schema parity).
+- **`update_firmware`** only true when the device's FW-Version differs from
+  the newest firmware row (was always true — would OTA-loop devices).
+
 ## Next
 
-1. ~~axum device plane~~ done: `/api/display` (pair-by-MAC, access-token,
-   playlist rotation, `next_refresh_in`), `/api/setup`, `/api/logs`,
-   `/api/latest_firmware`.
-2. ~~SQLite schema~~ devices/screens/playlists/users/sessions/firmware.
-3. ~~Job loop~~ `cache::spawn_job_loop` re-renders all screens every
-   `--job-secs` (default 300) and swaps the BMP cache atomically; cold-miss
-   renders on demand. This is where live-data fetchers will hang.
-4. ~~Admin auth~~ argon2id + DB-backed bearer sessions; first user = admin,
-   later users unverified until `/admin/users/verify`.
-5. TRMNL wire compat pass against a real device (partial updates, custom
+1. TRMNL wire compat pass against a real device (partial updates, custom
    templates via `markup` pass-through later if ever needed).
-6. Web UI (the admin API is complete enough to drive one).
+2. Admin API parity checklist at the bottom of `tests/spec_conformance.rs`
+   (device/screens/playlists/firmware CRUD, models registry).
+3. Web UI (the admin API is complete enough to drive one).
 
 ## Verification
 
@@ -55,8 +76,9 @@ needs (if any) would come from their vendored gpui, not the published crate.
 that spawns the real binary on an ephemeral port and drives the whole flow:
 admin gate 401 → register (first=admin, second=unverified) → verify → login
 (bad pw 401, unverified 403) → create screen/playlist → device pair/assign/
-poll (valid 800×480 2-bit BMP, rotation, wrong token 401) → PNG preview.
-Preview output visually verified legible.
+poll (valid 800×480 2-bit BMP, rotation, wrong token reset_firmware) → PNG
+preview; + 13 spec conformance tests (see above). Preview output visually
+verified legible.
 
 Note: port 2300 on the Hermes box is already taken (something serves a 404
 page there); dev default is 2301.

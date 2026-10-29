@@ -25,7 +25,6 @@ async fn main() -> anyhow::Result<()> {
         pool: pool.clone(),
         renderer: renderer.clone(),
         cache: cache.clone(),
-        polls: std::sync::atomic::AtomicU64::new(0),
     });
 
     // background refresh loop (replaces Sidekiq + poller procs)
@@ -44,9 +43,13 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         // device plane (TRMNL firmware wire contract)
         .route("/api/display", get(terminus_rs::api::display))
+        .route("/api/display/current", get(terminus_rs::api::display_current))
+        .route("/api/current_screen", get(terminus_rs::api::display_current))
         .route("/api/setup", get(terminus_rs::api::setup))
+        .route("/api/log", post(terminus_rs::api::log_create))
         .route("/api/logs", get(terminus_rs::api::logs))
         .route("/api/latest_firmware", get(terminus_rs::api::firmware_latest))
+        .route("/images/{name}", get(terminus_rs::api::serve_image))
         // auth (open by design)
         .route("/admin/register", post(terminus_rs::auth::register))
         .route("/admin/login", post(terminus_rs::auth::login))

@@ -48,7 +48,28 @@ CREATE TABLE IF NOT EXISTS firmware (
   url TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS device_logs (
+  id INTEGER PRIMARY KEY,
+  device_id INTEGER NOT NULL,
+  message TEXT NOT NULL,
+  level TEXT,
+  source_path TEXT,
+  created_at TEXT
+);
 "#;
+
+/// Column additions applied idempotently (SQLite has no ADD COLUMN IF NOT EXISTS;
+/// a duplicate-column error is expected and ignored).
+pub const COLUMN_MIGRATIONS: &[&str] = &[
+    "ALTER TABLE devices ADD COLUMN firmware_version TEXT",
+    "ALTER TABLE devices ADD COLUMN model TEXT",
+    "ALTER TABLE devices ADD COLUMN battery_voltage REAL",
+    "ALTER TABLE devices ADD COLUMN rssi INTEGER",
+    "ALTER TABLE devices ADD COLUMN width INTEGER",
+    "ALTER TABLE devices ADD COLUMN height INTEGER",
+    "ALTER TABLE devices ADD COLUMN poll_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE devices ADD COLUMN current_screen_id INTEGER",
+];
 
 pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
     let opts = SqliteConnectOptions::from_str(path)?
@@ -57,6 +78,10 @@ pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
         .busy_timeout(std::time::Duration::from_secs(5));
     let pool = SqlitePoolOptions::new().max_connections(5).connect_with(opts).await?;
     sqlx::query(MIGRATE).execute(&pool).await?;
+    for stmt in COLUMN_MIGRATIONS {
+        // idempotent: ignore "duplicate column name" on re-run
+        let _ = sqlx::query(*stmt).execute(&pool).await;
+    }
     Ok(pool)
 }
 
