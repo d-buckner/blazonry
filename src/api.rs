@@ -449,17 +449,3 @@ pub async fn assign_device(
     if n == 0 { return Err((StatusCode::NOT_FOUND, "unknown mac".into())); }
     Ok(axum::Json(serde_json::json!({ "ok": true })))
 }
-
-pub async fn list_devices(
-    State(st): State<SharedState>,
-) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let rows: Vec<(i64, String, Option<String>, Option<i64>, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
-        "SELECT id, mac, name, playlist_id, last_poll_at, firmware_version, rssi FROM devices ORDER BY id",
-    )
-    .fetch_all(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let out: Vec<_> = rows.into_iter().map(|(id, mac, name, pl, poll, fw, rssi)| serde_json::json!({
-        "id": id, "mac": mac, "name": name, "playlist_id": pl, "last_poll_at": poll,
-        "firmware_version": fw, "rssi": rssi
-    })).collect();
-    Ok(axum::Json(serde_json::json!(out)))
-}

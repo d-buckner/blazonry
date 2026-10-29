@@ -310,19 +310,153 @@ async fn firmware_update_flag_tracks_device_version() {
     // no firmware rows yet
     let (_, d) = req(&addr, "GET", "/api/latest_firmware", None, &[("fw-version", "1.0.0".into())]).await;
     assert_eq!(d["update_firmware"], false);
-    // insert one via sqlite side-channel is not exposed; skip insert case —
-    // covered by unit test below when admin firmware CRUD lands (checklist).
-    let _ = auth;
+    // with a firmware row created via admin CRUD, a behind device gets the flag
+    let (s, _) = req(&addr, "POST", "/admin/firmware",
+        Some(serde_json::json!({"version": "1.9.0", "url": "http://x/fw.bin", "notes": "n"})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, d) = req(&addr, "GET", "/api/latest_firmware", None, &[("fw-version", "1.0.0".into())]).await;
+    assert_eq!(d["update_firmware"], true);
+    let (_, d) = req(&addr, "GET", "/api/latest_firmware", None, &[("fw-version", "1.9.0".into())]).await;
+    assert_eq!(d["update_firmware"], false);
+    child.kill().await.ok();
+}
+
+
+// ---------- admin CRUD plane (Terminus /api/* parity) ----------
+
+#[tokio::test]
+async fn admin_device_crud() {
+    let (mut child, addr) = spawn_server().await;
+    let (auth, _) = provision(&addr, "AA:00:00:00:00:31").await;
+    let (_, list) = req(&addr, "GET", "/admin/devices", None, &auth).await;
+    let dev = list.as_array().unwrap().first().unwrap().clone();
+    let id = dev["id"].as_i64().unwrap();
+    // show
+    let (s, one) = req(&addr, "GET", &format!("/admin/devices/{id}"), None, &auth).await;
+    assert_eq!(s, 200);
+    assert_eq!(one["mac"], "AA:00:00:00:00:31");
+    // patch name + unassign playlist
+    let (s, _) = req(&addr, "PATCH", &format!("/admin/devices/{id}"),
+        Some(serde_json::json!({"name": "kitchen", "playlist_id": null})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, one) = req(&addr, "GET", &format!("/admin/devices/{id}"), None, &auth).await;
+    assert_eq!(one["name"], "kitchen");
+    assert!(one["playlist_id"].is_null());
+    // bulk import upserts by mac
+    let (s, r) = req(&addr, "POST", "/admin/devices/import", Some(serde_json::json!({
+        "devices": [{"mac": "AA:00:00:00:00:31", "name": "hall"}, {"mac": "BB:00:00:00:00:99"}]
+    })), &auth).await;
+    assert_eq!(s, 200);
+    assert_eq!(r["imported"], 2);
+    let (_, list) = req(&addr, "GET", "/admin/devices", None, &auth).await;
+    assert_eq!(list.as_array().unwrap().len(), 2);
+    // delete
+    let (s, _) = req(&addr, "DELETE", &format!("/admin/devices/{id}"), None, &auth).await;
+    assert_eq!(s, 200);
+    let (s, _) = req(&addr, "GET", &format!("/admin/devices/{id}"), None, &auth).await;
+    assert_eq!(s, 404);
+    child.kill().await.ok();
+}
+
+#[tokio::test]
+async fn admin_screen_and_playlist_crud() {
+    let (mut child, addr) = spawn_server().await;
+    let (auth, _) = provision(&addr, "AA:00:00:00:00:32").await;
+    // provision made screen 1 + playlist 1. Add a second screen.
+    let template = "{\"name\":\"t2\",\"parts\":[{\"type\":\"text\",\"text\":\"two\",\"padding\":[10]}]}";
+    let (_, r) = req(&addr, "POST", "/admin/screens",
+        Some(serde_json::json!({"name": "s2", "template": template})), &auth).await;
+    let s2 = r["id"].as_i64().unwrap();
+    // screens list + show + patch
+    let (_, list) = req(&addr, "GET", "/admin/screens", None, &auth).await;
+    assert_eq!(list.as_array().unwrap().len(), 2);
+    let (s, _) = req(&addr, "PATCH", &format!("/admin/screens/{s2}"),
+        Some(serde_json::json!({"name": "s2b"})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, one) = req(&addr, "GET", &format!("/admin/screens/{s2}"), None, &auth).await;
+    assert_eq!(one["name"], "s2b");
+    // playlist items: add s2, hide it, delete it
+    let (s, _) = req(&addr, "POST", "/admin/playlists/1/items",
+        Some(serde_json::json!({"screen_id": s2})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, pl) = req(&addr, "GET", "/admin/playlists/1", None, &auth).await;
+    assert_eq!(pl["items"].as_array().unwrap().len(), 2);
+    let (s, _) = req(&addr, "PATCH", &format!("/admin/playlists/1/items/{s2}"),
+        Some(serde_json::json!({"visible": 0})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, pl) = req(&addr, "GET", "/admin/playlists/1", None, &auth).await;
+    let visible: Vec<_> = pl["items"].as_array().unwrap().iter()
+        .filter(|i| i["visible"] == serde_json::json!(1)).collect();
+    assert_eq!(visible.len(), 1);
+    let (s, _) = req(&addr, "DELETE", &format!("/admin/playlists/1/items/{s2}"), None, &auth).await;
+    assert_eq!(s, 200);
+    // playlist patch replaces the whole item list
+    let (s, _) = req(&addr, "PATCH", "/admin/playlists/1",
+        Some(serde_json::json!({"screen_ids": [s2]})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, pl) = req(&addr, "GET", "/admin/playlists/1", None, &auth).await;
+    assert_eq!(pl["items"].as_array().unwrap().len(), 1);
+    // delete screen cascades out of playlists
+    let (s, _) = req(&addr, "DELETE", &format!("/admin/screens/{s2}"), None, &auth).await;
+    assert_eq!(s, 200);
+    let (_, pl) = req(&addr, "GET", "/admin/playlists/1", None, &auth).await;
+    assert_eq!(pl["items"].as_array().unwrap().len(), 0);
+    // delete playlist unassigns devices
+    let (s, _) = req(&addr, "DELETE", "/admin/playlists/1", None, &auth).await;
+    assert_eq!(s, 200);
+    let (_, devs) = req(&addr, "GET", "/admin/devices", None, &auth).await;
+    assert!(devs.as_array().unwrap()[0]["playlist_id"].is_null());
+    child.kill().await.ok();
+}
+
+#[tokio::test]
+async fn admin_firmware_and_models_crud() {
+    let (mut child, addr) = spawn_server().await;
+    let (auth, _) = provision(&addr, "AA:00:00:00:00:33").await;
+    // models registry is seeded
+    let (_, models) = req(&addr, "GET", "/admin/models", None, &auth).await;
+    assert!(models.as_array().unwrap().len() >= 2);
+    let (s, r) = req(&addr, "POST", "/admin/models",
+        Some(serde_json::json!({"name": "byo", "label": "BYO panel", "width": 296, "height": 128, "bit_depth": 1})), &auth).await;
+    assert_eq!(s, 200);
+    let mid = r["id"].as_i64().unwrap();
+    let (s, _) = req(&addr, "PATCH", &format!("/admin/models/{mid}"),
+        Some(serde_json::json!({"label": "custom"})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, m) = req(&addr, "GET", &format!("/admin/models/{mid}"), None, &auth).await;
+    assert_eq!(m["label"], "custom");
+    let (s, _) = req(&addr, "DELETE", &format!("/admin/models/{mid}"), None, &auth).await;
+    assert_eq!(s, 200);
+    // firmware CRUD + bulk wipe
+    let (_, r) = req(&addr, "POST", "/admin/firmware",
+        Some(serde_json::json!({"version": "2.0.0", "url": "http://x/fw.bin"})), &auth).await;
+    let fid = r["id"].as_i64().unwrap();
+    let (s, _) = req(&addr, "PATCH", &format!("/admin/firmware/{fid}"),
+        Some(serde_json::json!({"notes": "ship it"})), &auth).await;
+    assert_eq!(s, 200);
+    let (_, f) = req(&addr, "GET", &format!("/admin/firmware/{fid}"), None, &auth).await;
+    assert_eq!(f["notes"], "ship it");
+    let (s, r) = req(&addr, "DELETE", "/admin/firmware_wipe", None, &auth).await;
+    assert_eq!(s, 200);
+    assert_eq!(r["deleted"], 1);
+    let (_, d) = req(&addr, "GET", "/api/latest_firmware", None, &[("fw-version", "1.0.0".into())]).await;
+    assert_eq!(d["update_firmware"], false);
+    child.kill().await.ok();
+}
+
+#[tokio::test]
+async fn admin_requires_auth() {
+    let (mut child, addr) = spawn_server().await;
+    for path in ["/admin/devices", "/admin/screens", "/admin/models", "/admin/firmware"] {
+        let (s, _) = req(&addr, "GET", path, None, &[]).await;
+        assert_eq!(s, 401, "{path} must require admin bearer");
+    }
     child.kill().await.ok();
 }
 
 // ---------- admin plane checklist (Terminus routes.rb parity) ----------
-// Device plane: DONE (this file).
-// Remaining Terminus API surface, in priority order for the admin API:
-//   [ ] GET/PATCH/DELETE /api/devices/:id   (we have list + assign)
-//   [ ] full CRUD /api/screens (we have create + preview)
-//   [ ] full CRUD /api/playlists + items visibility toggle
-//   [ ] CRUD /api/firmware (then extend firmware_update_flag test above)
-//   [ ] /api/models (device model registry: og, x, …)
+// Device plane: DONE. Admin CRUD plane (devices/screens/playlists/firmware/
+// models + bulk import/log wipe/firmware wipe): DONE (tests above).
+// Remaining:
 //   [ ] /api/extensions + exchanges (plugin parity — big, defer)
-//   [ ] bulk: device import, log wipe, firmware wipe
+//   [ ] Web UI on top of the admin API

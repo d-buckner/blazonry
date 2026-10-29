@@ -62,13 +62,23 @@ line. Findings this pass fixed:
 - **`update_firmware`** only true when the device's FW-Version differs from
   the newest firmware row (was always true — would OTA-loop devices).
 
+## Admin API (auth: Bearer from /admin/login)
+
+Full CRUD, Terminus `/api/*` parity (INTEGER ids instead of UUIDs):
+devices (list/show/patch/delete, bulk import, log wipe), screens
+(list/show/patch/delete + PNG preview), playlists (list/show/patch/
+delete, items add/hide/remove), firmware (CRUD + wipe — feeds
+/api/latest_firmware OTA gating), models (seeded og/x registry).
+Patch semantics: only present keys are updated; `playlist_id: null`
+unassigns. Deleting a screen cascades out of playlists; deleting a
+playlist unassigns its devices.
+
 ## Next
 
 1. TRMNL wire compat pass against a real device (partial updates, custom
    templates via `markup` pass-through later if ever needed).
-2. Admin API parity checklist at the bottom of `tests/spec_conformance.rs`
-   (device/screens/playlists/firmware CRUD, models registry).
-3. Web UI (the admin API is complete enough to drive one).
+2. Web UI on top of the admin API (CRUD is complete: devices, screens,
+   playlists + item visibility, firmware, models, bulk import/wipe).
 
 ## Verification
 

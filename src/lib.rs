@@ -7,6 +7,7 @@
 //! (flex containers, request_layout/paint) so a later swap to a patched
 //! GPUI-with-software-backend is a drop-in, not a rewrite.
 
+pub mod admin;
 pub mod api;
 pub mod auth;
 pub mod bmp;

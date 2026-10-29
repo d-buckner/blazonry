@@ -69,7 +69,26 @@ pub const COLUMN_MIGRATIONS: &[&str] = &[
     "ALTER TABLE devices ADD COLUMN height INTEGER",
     "ALTER TABLE devices ADD COLUMN poll_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE devices ADD COLUMN current_screen_id INTEGER",
+    "ALTER TABLE screens ADD COLUMN updated_at TEXT",
+    "ALTER TABLE firmware ADD COLUMN created_at TEXT",
+    "ALTER TABLE playlists ADD COLUMN mirror INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE playlist_screens ADD COLUMN visible INTEGER NOT NULL DEFAULT 1",
 ];
+
+/// Seed the device-model registry once (Terminus /api/models parity: og + x).
+pub const SEED_MODELS: &str = r#"
+CREATE TABLE IF NOT EXISTS models (
+  id INTEGER PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  label TEXT NOT NULL,
+  width INTEGER NOT NULL DEFAULT 800,
+  height INTEGER NOT NULL DEFAULT 480,
+  bit_depth INTEGER NOT NULL DEFAULT 2
+);
+INSERT OR IGNORE INTO models (name, label, width, height, bit_depth) VALUES
+  ('trmnl_gen_1', 'TRMNL OG', 800, 480, 1),
+  ('trmnl_gen_2', 'TRMNL X', 800, 480, 2);
+"#;
 
 pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
     let opts = SqliteConnectOptions::from_str(path)?
@@ -78,6 +97,7 @@ pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
         .busy_timeout(std::time::Duration::from_secs(5));
     let pool = SqlitePoolOptions::new().max_connections(5).connect_with(opts).await?;
     sqlx::query(MIGRATE).execute(&pool).await?;
+    sqlx::query(SEED_MODELS).execute(&pool).await?;
     for stmt in COLUMN_MIGRATIONS {
         // idempotent: ignore "duplicate column name" on re-run
         let _ = sqlx::query(*stmt).execute(&pool).await;

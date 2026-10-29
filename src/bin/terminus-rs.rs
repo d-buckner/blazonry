@@ -2,7 +2,7 @@
 //! `terminus-rs serve [--db path] [--addr 0.0.0.0:2301] [--job-secs 300]`
 
 use axum::middleware;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 use std::sync::Arc;
 
@@ -32,11 +32,34 @@ async fn main() -> anyhow::Result<()> {
         std::time::Duration::from_secs(job_secs));
 
     let admin = Router::new()
-        .route("/screens", post(terminus_rs::api::create_screen))
+        .route("/screens", get(terminus_rs::admin::list_screens).post(terminus_rs::api::create_screen))
+        .route("/screens/{id}", get(terminus_rs::admin::get_screen)
+            .patch(terminus_rs::admin::patch_screen)
+            .delete(terminus_rs::admin::delete_screen))
         .route("/screens/{id}/preview", get(terminus_rs::api::preview_screen))
-        .route("/playlists", post(terminus_rs::api::create_playlist))
+        .route("/playlists", get(terminus_rs::admin::list_playlists).post(terminus_rs::api::create_playlist))
+        .route("/playlists/{id}", get(terminus_rs::admin::get_playlist)
+            .patch(terminus_rs::admin::patch_playlist)
+            .delete(terminus_rs::admin::delete_playlist))
+        .route("/playlists/{id}/items", post(terminus_rs::admin::add_playlist_item))
+        .route("/playlists/{id}/items/{item_id}", patch(terminus_rs::admin::patch_playlist_item)
+            .delete(terminus_rs::admin::delete_playlist_item))
+        .route("/devices", get(terminus_rs::admin::list_devices))
+        .route("/devices/{id}", get(terminus_rs::admin::get_device)
+            .patch(terminus_rs::admin::patch_device)
+            .delete(terminus_rs::admin::delete_device))
+        .route("/devices/{id}/logs", delete(terminus_rs::admin::wipe_device_logs))
+        .route("/devices/import", post(terminus_rs::admin::import_devices))
         .route("/devices/assign", post(terminus_rs::api::assign_device))
-        .route("/devices", get(terminus_rs::api::list_devices))
+        .route("/firmware", get(terminus_rs::admin::list_firmware).post(terminus_rs::admin::create_firmware))
+        .route("/firmware/{id}", get(terminus_rs::admin::get_firmware)
+            .patch(terminus_rs::admin::patch_firmware)
+            .delete(terminus_rs::admin::delete_firmware))
+        .route("/firmware_wipe", delete(terminus_rs::admin::wipe_firmware))
+        .route("/models", get(terminus_rs::admin::list_models).post(terminus_rs::admin::create_model))
+        .route("/models/{id}", get(terminus_rs::admin::get_model)
+            .patch(terminus_rs::admin::patch_model)
+            .delete(terminus_rs::admin::delete_model))
         .route("/users/verify", post(terminus_rs::auth::verify_user))
         .route_layer(middleware::from_fn_with_state(state.clone(), terminus_rs::auth::require_admin));
 
