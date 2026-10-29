@@ -1,0 +1,7 @@
+target/
+terminus.db*
+server.log
+out.*
+poll*.bmp
+poll*.png
+preview.png
