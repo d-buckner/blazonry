@@ -16,45 +16,49 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub type BmpCache = Arc<RwLock<HashMap<i64, Arc<Vec<u8>>>>>;
+/// Cache key: (screen_id, bpp). OG panel wants 1bpp, X wants 2bpp.
+pub type BmpCache = Arc<RwLock<HashMap<(i64, u16), Arc<Vec<u8>>>>>;
 
 pub fn new_cache() -> BmpCache {
     Arc::new(RwLock::new(HashMap::new()))
 }
 
-/// Render one screen template+vars to BMP bytes.
-pub fn render_bmp(renderer: &Renderer, template: &str, vars_json: &str) -> anyhow::Result<Vec<u8>> {
+/// Render one screen template+vars to BMP bytes at the given depth (1 or 2 bpp).
+pub fn render_bmp(renderer: &Renderer, template: &str, vars_json: &str, bpp: u16) -> anyhow::Result<Vec<u8>> {
     let vars: serde_json::Value = serde_json::from_str(vars_json).unwrap_or(serde_json::json!({}));
     let screen = render_screen(template, &vars)?;
     let indices = renderer.render(&screen);
-    Ok(encode_2bit_bmp(WIDTH, HEIGHT, &indices))
+    Ok(match bpp {
+        1 => crate::bmp::encode_1bit_bmp(WIDTH, HEIGHT, &indices),
+        _ => encode_2bit_bmp(WIDTH, HEIGHT, &indices),
+    })
 }
 
 /// Load + render a screen from the DB, inserting into the cache.
-pub async fn render_and_cache(pool: &SqlitePool, renderer: &Renderer, cache: &BmpCache, screen_id: i64) -> anyhow::Result<Arc<Vec<u8>>> {
+pub async fn render_and_cache(pool: &SqlitePool, renderer: &Renderer, cache: &BmpCache, screen_id: i64, bpp: u16) -> anyhow::Result<Arc<Vec<u8>>> {
     let row = sqlx::query("SELECT template, vars FROM screens WHERE id = ?")
         .bind(screen_id)
         .fetch_one(pool)
         .await?;
     let template: String = row.get(0);
     let vars: String = row.get(1);
-    let bmp = render_bmp(renderer, &template, &vars)?;
+    let bmp = render_bmp(renderer, &template, &vars, bpp)?;
     let bmp = Arc::new(bmp);
-    cache.write().await.insert(screen_id, bmp.clone());
+    cache.write().await.insert((screen_id, bpp), bmp.clone());
     Ok(bmp)
 }
 
 /// Get BMP for a screen: cache hit or render-on-miss.
-pub async fn cached_bmp(pool: &SqlitePool, renderer: &Renderer, cache: &BmpCache, screen_id: i64) -> anyhow::Result<Arc<Vec<u8>>> {
-    if let Some(bmp) = cache.read().await.get(&screen_id) {
+pub async fn cached_bmp(pool: &SqlitePool, renderer: &Renderer, cache: &BmpCache, screen_id: i64, bpp: u16) -> anyhow::Result<Arc<Vec<u8>>> {
+    if let Some(bmp) = cache.read().await.get(&(screen_id, bpp)) {
         return Ok(bmp.clone());
     }
-    render_and_cache(pool, renderer, cache, screen_id).await
+    render_and_cache(pool, renderer, cache, screen_id, bpp).await
 }
 
 /// Invalidate one screen (call after screen update/delete).
 pub async fn invalidate(cache: &BmpCache, screen_id: i64) {
-    cache.write().await.remove(&screen_id);
+    cache.write().await.retain(|(id, _), _| *id != screen_id);
 }
 
 /// Background job loop: periodically re-render every screen so the cache is
@@ -80,9 +84,11 @@ pub fn spawn_job_loop(pool: SqlitePool, renderer: Arc<Renderer>, cache: BmpCache
                     Ok(row) => {
                         let template: String = row.get(0);
                         let vars: String = row.get(1);
-                        match render_bmp(&renderer, &template, &vars) {
-                            Ok(bmp) => { fresh.insert(id, Arc::new(bmp)); }
-                            Err(e) => tracing::warn!(%e, screen = id, "job loop: render failed"),
+                        for bpp in [1u16, 2u16] {
+                            match render_bmp(&renderer, &template, &vars, bpp) {
+                                Ok(bmp) => { fresh.insert((id, bpp), Arc::new(bmp)); }
+                                Err(e) => tracing::warn!(%e, screen = id, "job loop: render failed"),
+                            }
                         }
                     }
                     Err(e) => tracing::warn!(%e, screen = id, "job loop: load failed"),

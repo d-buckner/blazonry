@@ -3,3 +3,4 @@ terminus.db*
 *.bmp
 *.png
 server.log
+sim_screen.png

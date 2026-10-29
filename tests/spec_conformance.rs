@@ -85,7 +85,8 @@ async fn setup_returns_all_firmware_fields() {
     assert_eq!(r["status"], 200);
     assert!(r["api_key"].as_str().unwrap().len() >= 16, "api_key present");
     assert!(r["friendly_id"].is_string());
-    assert!(r["image_url"].is_string(), "setup image_url");
+    let iu = r["image_url"].as_str().unwrap();
+    assert!(iu.starts_with("http://"), "setup image_url must be absolute (firmware: HTTPClient.begin), got {iu}");
     assert!(r["message"].is_string());
     child.kill().await.ok();
 }
@@ -184,22 +185,44 @@ async fn image_url_serves_the_rendered_bmp() {
     let (mut child, addr) = spawn_server().await;
     let (_, key) = provision(&addr, "AA:00:00:00:00:15").await;
     let (_, d) = req(&addr, "GET", "/api/display", None,
-        &[("id", "AA:00:00:00:00:15".into()), ("access-token", key)]).await;
+        &[("id", "AA:00:00:00:00:15".into()), ("access-token", key), ("model", "x".into())]).await;
     let url = d["image_url"].as_str().unwrap().to_string();
-    let resp = reqwest::Client::new().get(format!("http://{addr}{url}")).send().await.unwrap();
+    // spec: image_url is absolute (firmware passes it straight to HTTPClient)
+    assert!(url.starts_with(&format!("http://{addr}")), "image_url must be absolute, got {url}");
+    let resp = reqwest::Client::new().get(&url).send().await.unwrap();
     assert_eq!(resp.status(), 200);
     let bytes = resp.bytes().await.unwrap();
     assert_eq!(&bytes[0..2], b"BM");
     assert_eq!(u32::from_le_bytes(bytes[18..22].try_into().unwrap()), 800);
     assert_eq!(u32::from_le_bytes(bytes[22..26].try_into().unwrap()), 480);
     assert_eq!(u16::from_le_bytes(bytes[28..30].try_into().unwrap()), 2, "2-bit depth");
-    // and it matches the inline base64 image
-    let inline = base64::engine::general_purpose::STANDARD.decode(d["image"].as_str().unwrap()).unwrap();
-    assert_eq!(inline, *bytes, "image_url and inline image identical");
     child.kill().await.ok();
 }
 
 // ---------- /api/display/current ----------
+
+// OG panel (no/`og` Model header): firmware hard-checks 1-bpp, 48062 bytes,
+// dataOffset 62, 2 palette entries (lib/trmnl/src/bmp.cpp parseBMPHeader).
+#[tokio::test]
+async fn og_device_gets_1bpp_bmp() {
+    let (mut child, addr) = spawn_server().await;
+    let (_, key) = provision(&addr, "AA:00:00:00:00:16").await;
+    let (_, d) = req(&addr, "GET", "/api/display", None,
+        &[("id", "AA:00:00:00:00:16".into()), ("access-token", key)]).await;
+    let url = d["image_url"].as_str().unwrap().to_string();
+    let resp = reqwest::Client::new().get(&url).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let b = resp.bytes().await.unwrap();
+    assert_eq!(b.len(), 48062, "OG BMP must be exactly 48062 bytes");
+    assert_eq!(u16::from_le_bytes(b[28..30].try_into().unwrap()), 1, "1 bpp");
+    assert_eq!(u32::from_le_bytes(b[10..14].try_into().unwrap()), 62, "data offset");
+    assert_eq!(u32::from_le_bytes(b[34..38].try_into().unwrap()), 48000, "image data size");
+    assert_eq!(u32::from_le_bytes(b[46..50].try_into().unwrap()), 2, "palette entries");
+    // firmware's parseResponse_apiDisplay reads no inline image field;
+    // a huge base64 string OOMs the OG device — payload must stay lean.
+    assert!(d.get("image").is_none(), "no inline image in display payload");
+    child.kill().await.ok();
+}
 
 // Spec: non-advancing mirror; {status:200, refresh_rate, image_url, filename};
 // 404 message when nothing displayed yet.

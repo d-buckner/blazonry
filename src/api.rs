@@ -6,7 +6,7 @@
 //!   GET /api/display   headers: ID/idempotency-key, Access-Token, telemetry
 //!        -> { status: 0, image_url, filename, refresh_rate (SECONDS, number),
 //!             reset_firmware, update_firmware, firmware_url, special_function,
-//!             maximum_compatibility, temperature_profile, image (base64) }
+//!             maximum_compatibility, temperature_profile  (no inline image) }
 //!        status 202 = not registered yet; unknown token -> 500 + reset_firmware
 //!   POST /api/log      header: Access-Token; body {logs:[...]} -> 204
 //!   GET /api/display/current  non-advancing mirror (BYOD/Chrome consumers)
@@ -20,7 +20,6 @@ use crate::render::Renderer;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use base64::Engine as _;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -81,16 +80,39 @@ async fn advance_device(st: &SharedState, device_id: i64, playlist_id: Option<i6
     Some((screen_id, poll))
 }
 
+/// Bits-per-pixel the device's panel wants: OG (TRMNL 1) is 1bpp (firmware
+/// hard-checks 48062-byte BMPs); X and newer accept 2bpp greyscale.
+fn device_bpp(headers: &HeaderMap) -> u16 {
+    match header_str(headers, "model").unwrap_or_default().to_ascii_lowercase().as_str() {
+        m if m.contains("x") => 2,
+        _ => 1,
+    }
+}
+
+/// Absolute origin for image URLs, from the request's Host header.
+/// The firmware feeds image_url straight into HTTPClient::begin(), which
+/// rejects relative URLs — BYOS spec examples are absolute too.
+fn base_url(headers: &HeaderMap) -> String {
+    headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(|h| format!("http://{h}"))
+        .unwrap_or_default()
+}
+
 /// Shared payload builder for display + display/current.
-async fn screen_payload(st: &SharedState, screen_id: i64, refresh_secs: i64) -> Option<serde_json::Value> {
-    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id).await.ok()?;
+async fn screen_payload(st: &SharedState, screen_id: i64, refresh_secs: i64, base: &str, bpp: u16) -> Option<serde_json::Value> {
+    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id, bpp).await.ok()?;
     let hash = content_hash(&bmp);
-    let filename = format!("screen-{screen_id}-{hash}");
-    let image_b64 = base64::engine::general_purpose::STANDARD.encode(&*bmp);
+    // bpp lives in the filename: the firmware's image GET sends no headers
+    let filename = format!("screen-{screen_id}-{hash}-{bpp}");
+    // No inline base64 `image`: a 48-96KB string overflows the OG firmware's
+    // heap (max_alloc ~63KB) and ArduinoJson fails to parse the response.
+    // Official trmnl.app sends image_url only; the device downloads the BMP.
+    let _ = &bmp;
     Some(serde_json::json!({
         "status": 0,
-        "image_url": format!("/images/{filename}.bmp"),
-        "image": image_b64,
+        "image_url": format!("{base}/images/{filename}.bmp"),
         "filename": filename,
         "refresh_rate": refresh_secs,
         "next_refresh_in": refresh_secs,
@@ -157,7 +179,7 @@ pub async fn display(
             .into_response();
         }
     };
-    match screen_payload(&st, screen_id, refresh_interval).await {
+    match screen_payload(&st, screen_id, refresh_interval, &base_url(&headers), device_bpp(&headers)).await {
         Some(p) => axum::Json(p).into_response(),
         None => (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response(),
     }
@@ -195,7 +217,7 @@ pub async fn display_current(
         }
     }
     match current {
-        Some(sid) => match screen_payload(&st, sid, refresh).await {
+        Some(sid) => match screen_payload(&st, sid, refresh, &base_url(&headers), device_bpp(&headers)).await {
             Some(mut p) => {
                 // current-screen contract answers status 200, no advance
                 p["status"] = serde_json::json!(200);
@@ -215,13 +237,27 @@ pub async fn serve_image(
     let Some(rest) = name.strip_suffix(".bmp") else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
-    let Some(id_str) = rest.strip_prefix("screen-").and_then(|r| r.split('-').next()) else {
+    // trailing "-{bpp}" segment selects the encoding (no headers on image GETs)
+    let Some((stem, bpp_str)) = rest.rsplit_once('-') else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let Ok(bpp) = bpp_str.parse::<u16>() else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    if stem == "setup-logo" {
+        let tmpl = "{\"name\":\"setup\",\"parts\":[{\"type\":\"text\",\"text\":\"terminus-rs\",\"style\":{\"font_px\":64,\"bold\":true},\"align\":\"center\",\"padding\":[180,200]}]}";
+        return match cache::render_bmp(&st.renderer, tmpl, "{}", bpp) {
+            Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp).into_response(),
+            Err(_) => (StatusCode::NOT_FOUND, "render failed").into_response(),
+        };
+    }
+    let Some(id_str) = stem.strip_prefix("screen-").and_then(|r| r.split('-').next()) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let Ok(screen_id) = id_str.parse::<i64>() else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
-    match cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id).await {
+    match cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id, bpp).await {
         Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp.to_vec()).into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
@@ -249,7 +285,7 @@ pub async fn setup(State(st): State<SharedState>, headers: HeaderMap) -> impl In
         "message": "Welcome to terminus-rs!",
         "api_key": api_key,
         "friendly_id": format!("{:06}", id % 1_000_000),
-        "image_url": "/images/setup-logo.bmp",
+        "image_url": format!("{}/images/setup-logo-{}.bmp", base_url(&headers), device_bpp(&headers)),
         "refresh_rate": refresh_interval,
     }))
     .into_response()
@@ -329,7 +365,7 @@ pub async fn preview_screen(
     State(st): State<SharedState>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
-    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, id).await
+    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, id, 2).await
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
     let png = bmp_to_png(&bmp).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], png).into_response())

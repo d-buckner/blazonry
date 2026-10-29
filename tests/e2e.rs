@@ -79,7 +79,9 @@ async fn full_device_and_admin_flow() {
     let (s, d) = req(&addr, "GET", "/api/display", None,
         &[("idempotency-key", mac.into()), ("access-token", dev_tok.clone())]).await;
     assert_eq!(s, 200);
-    let bmp = base64::engine::general_purpose::STANDARD.decode(d["image"].as_str().unwrap()).unwrap();
+    // payload is lean (no inline image); the BMP is fetched from image_url
+    let url = d["image_url"].as_str().unwrap().to_string();
+    let bmp = cli.get(&url).send().await.unwrap().bytes().await.unwrap().to_vec();
     assert_eq!(&bmp[0..2], b"BM");
     assert_eq!(u32::from_le_bytes(bmp[18..22].try_into().unwrap()), 800);
     assert_eq!(d["next_refresh_in"].as_i64().unwrap(), 900);

@@ -55,6 +55,57 @@ pub fn encode_2bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Encode the same 2-bit index buffer as a 1-bpp BMP (original TRMNL panel).
+/// Firmware `parseBMPHeader` demands exactly: 800x480, 1bpp, imageDataSize
+/// 48000, 2 palette entries, dataOffset 62, palette [black, white].
+/// Indices 0,1 (black/dark grey) -> black bit; 2,3 -> white bit.
+pub fn encode_1bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
+    assert_eq!(pixels.len(), width * height);
+    let row_bytes = (width + 7) / 8;
+    let image_size = row_bytes * height;
+    let file_size = 14 + 40 + 8 + image_size;
+
+    let mut out = Vec::with_capacity(file_size);
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&((14 + 40 + 8) as u32).to_le_bytes()); // data offset 62
+
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&1u16.to_le_bytes()); // bpp
+    out.extend_from_slice(&0u32.to_le_bytes()); // compression
+    out.extend_from_slice(&(image_size as u32).to_le_bytes()); // image data size
+    out.extend_from_slice(&[0; 8]); // resolution
+    out.extend_from_slice(&2u32.to_le_bytes()); // color table entries
+    out.extend_from_slice(&0u32.to_le_bytes()); // important colors
+
+    // Palette: entry 0 = black, entry 1 = white (BGRA)
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&[255, 255, 255, 0]);
+
+    // Pixel data, bottom-up, 8 px/byte, high bit first.
+    for y in (0..height).rev() {
+        let row = &pixels[y * width..(y + 1) * width];
+        for chunk in row.chunks(8) {
+            let mut byte = 0u8;
+            for (i, &p) in chunk.iter().enumerate() {
+                if p >= 2 {
+                    byte |= 1 << (7 - i);
+                }
+            }
+            out.push(byte);
+        }
+        let written = (width + 7) / 8;
+        for _ in written..row_bytes {
+            out.push(0);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
