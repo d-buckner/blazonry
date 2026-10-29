@@ -37,15 +37,26 @@ needs (if any) would come from their vendored gpui, not the published crate.
 ## Next
 
 1. ~~axum device plane~~ done: `/api/display` (pair-by-MAC, access-token,
-   playlist rotation, `next_refresh_in`), `/api/setup`, `/api/logs`.
-   Verified end-to-end against a scripted fake device: pair → assign →
-   poll rotation (screen 1 → screen 2, distinct BMPs) → 401 on bad token.
-2. ~~SQLite schema~~ devices/screens/playlists + rotation.
-3. Job loop: tokio interval fetchers → vars → render → cache BMP per device.
-4. Admin API + minimal web UI; auth (argon2 + sessions). Admin plane is
-   unauthenticated LAN-only for now.
+   playlist rotation, `next_refresh_in`), `/api/setup`, `/api/logs`,
+   `/api/latest_firmware`.
+2. ~~SQLite schema~~ devices/screens/playlists/users/sessions/firmware.
+3. ~~Job loop~~ `cache::spawn_job_loop` re-renders all screens every
+   `--job-secs` (default 300) and swaps the BMP cache atomically; cold-miss
+   renders on demand. This is where live-data fetchers will hang.
+4. ~~Admin auth~~ argon2id + DB-backed bearer sessions; first user = admin,
+   later users unverified until `/admin/users/verify`.
 5. TRMNL wire compat pass against a real device (partial updates, custom
    templates via `markup` pass-through later if ever needed).
+6. Web UI (the admin API is complete enough to drive one).
+
+## Verification
+
+`cargo test` = 4 unit tests (BMP header/bit-packing, dither) + 1 e2e test
+that spawns the real binary on an ephemeral port and drives the whole flow:
+admin gate 401 → register (first=admin, second=unverified) → verify → login
+(bad pw 401, unverified 403) → create screen/playlist → device pair/assign/
+poll (valid 800×480 2-bit BMP, rotation, wrong token 401) → PNG preview.
+Preview output visually verified legible.
 
 Note: port 2300 on the Hermes box is already taken (something serves a 404
-page there); dev server uses 2301.
+page there); dev default is 2301.
