@@ -4,3 +4,8 @@ terminus.db*
 *.png
 server.log
 sim_screen.png
+.fw_render/
+fw*.png
+fw*.jpg
+fixtures/
+fwassets
