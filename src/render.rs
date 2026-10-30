@@ -13,6 +13,84 @@ use tiny_skia::{Color, ColorU8, Paint, PathBuilder, Pixmap, Rect, Stroke, Transf
 
 const GREYS: [f32; 4] = [0.0, 0.333, 0.667, 1.0];
 
+/// Fonts are embedded so the binary stays self-contained (no fontconfig, no
+/// system package). Order of resolution: `MNTR_FONT[_BOLD]` override →
+/// embedded bytes → system DejaVu paths (for builds that strip assets).
+const EMBEDDED: [(&str, &[u8]); 2] = [
+    ("regular", include_bytes!("../assets/fonts/DejaVuSans.ttf")),
+    ("bold", include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf")),
+];
+
+const SYSTEM: [(&str, &[&str]); 2] = [
+    (
+        "regular",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/local/share/fonts/DejaVuSans.ttf",
+        ],
+    ),
+    (
+        "bold",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            "/usr/local/share/fonts/DejaVuSans-Bold.ttf",
+        ],
+    ),
+];
+
+fn load_font(idx: usize, env_var: &str) -> anyhow::Result<fontdue::Font> {
+    let opts = fontdue::FontSettings::default();
+    let parse = |bytes: &[u8], src: String| -> (Option<fontdue::Font>, String) {
+        match fontdue::Font::from_bytes(bytes, opts) {
+            Ok(f) => (Some(f), src),
+            Err(e) => (None, format!("{src}: {e}")),
+        }
+    };
+    let mut errors = Vec::new();
+
+    // 1. explicit override
+    if let Ok(path) = std::env::var(env_var) {
+        match std::fs::read(&path) {
+            Ok(b) => {
+                let (f, src) = parse(&b, format!("{env_var}={path}"));
+                if let Some(f) = f {
+                    return Ok(f);
+                }
+                errors.push(src);
+            }
+            Err(e) => errors.push(format!("{env_var}={path}: {e}")),
+        }
+    }
+
+    // 2. embedded bytes
+    let (name, embedded) = EMBEDDED[idx];
+    let (f, src) = parse(embedded, format!("embedded {name}"));
+    if let Some(f) = f {
+        return Ok(f);
+    }
+    errors.push(src);
+
+    // 3. system paths
+    for p in SYSTEM[idx].1 {
+        match std::fs::read(p) {
+            Ok(b) => {
+                let (f, src) = parse(&b, p.to_string());
+                if let Some(f) = f {
+                    tracing::warn!("using system font {p}");
+                    return Ok(f);
+                }
+                errors.push(src);
+            }
+            Err(e) => errors.push(format!("{p}: {e}")),
+        }
+    }
+    Err(anyhow::anyhow!("no usable font: {}", errors.join("; ")))
+}
+
 pub struct Renderer {
     font: fontdue::Font,
     bold: fontdue::Font,
@@ -20,15 +98,9 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new() -> anyhow::Result<Self> {
-        // Bundled in a real build; system fonts are fine for the spike.
-        let regular = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-            .map_err(|e| anyhow::anyhow!("font: {e}"))?;
-        let bold = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-            .map_err(|e| anyhow::anyhow!("font: {e}"))?;
-        let opts = fontdue::FontSettings::default();
         Ok(Renderer {
-            font: fontdue::Font::from_bytes(&regular[..], opts).map_err(|e| anyhow::anyhow!("font: {e}"))?,
-            bold: fontdue::Font::from_bytes(&bold[..], opts).map_err(|e| anyhow::anyhow!("font: {e}"))?,
+            font: load_font(0, "MNTR_FONT")?,
+            bold: load_font(1, "MNTR_FONT_BOLD")?,
         })
     }
 
