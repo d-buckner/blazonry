@@ -9,3 +9,4 @@ fw*.png
 fw*.jpg
 fixtures/
 fwassets
+web-app/node_modules/

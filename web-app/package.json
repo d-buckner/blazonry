@@ -1,0 +1,17 @@
+{
+  "name": "@terminus/web-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "svelte": "5.57.3"
+  }
+}
