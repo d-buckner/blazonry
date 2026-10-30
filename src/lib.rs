@@ -11,6 +11,8 @@ pub mod admin;
 pub mod admin_provider;
 pub mod api;
 pub mod auth;
+#[cfg(feature = "browser")]
+pub mod browser;
 pub mod bmp;
 pub mod cache;
 pub mod db;
