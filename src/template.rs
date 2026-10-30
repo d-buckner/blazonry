@@ -1,15 +1,20 @@
 //! Liquid -> Screen: a Liquid template renders a JSON screen tree, which
 //! deserializes into the screen vocabulary. Liquid stays the authoring surface
 //! (TRMNL community muscle memory); JSON is the compile target the renderer eats.
+//! Parsing goes through `crate::liquid_compat` (TRMNL compatibility layer).
 
+use crate::liquid_compat;
 use crate::screen::Screen;
 
-pub fn render_screen(template_src: &str, vars: &serde_json::Value) -> anyhow::Result<Screen> {
-    let parser = liquid::ParserBuilder::with_stdlib().build()?;
-    let template = parser.parse(template_src)?;
+/// Render a Liquid template to text through the full TRMNL compat pipeline
+/// (partials, `{% liquid %}`, filter pack, `trmnl.*` context injection).
+pub fn render_str(tmpl: &str, vars: &serde_json::Value) -> anyhow::Result<String> {
+    let globals = liquid::to_object(&liquid_compat::with_trmnl_context(vars))?;
+    Ok(liquid_compat::render_str(tmpl, &globals)?)
+}
 
-    let globals = liquid::to_object(vars)?;
-    let output = template.render(&globals)?;
+pub fn render_screen(template_src: &str, vars: &serde_json::Value) -> anyhow::Result<Screen> {
+    let output = render_str(template_src, vars)?;
 
     let screen: Screen = serde_json::from_str(&output)?;
     Ok(screen)

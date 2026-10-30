@@ -17,6 +17,7 @@ pub mod db;
 pub mod dither;
 pub mod extensions;
 pub mod firmware;
+pub mod liquid_compat;
 pub mod models;
 pub mod playlists;
 pub mod providers;

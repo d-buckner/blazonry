@@ -15,7 +15,11 @@ http-body-util = "0.1.5"
 icalendar = { version = "0.17.17", features = ["chrono-tz", "recurrence"] }
 image = "0.25.10"
 liquid = "0.26.11"
+liquid-core = { version = "0.26.11", features = ["derive"] }
+liquid-lib = { version = "0.26.11", features = ["stdlib"] }
 password-hash = { version = "0.6.1", features = ["rand_core"] }
+qrcode = "0.14.1"
+regex-lite = "0.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
