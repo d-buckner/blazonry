@@ -100,6 +100,32 @@ mntr serve                    # → http://0.0.0.0:2301
 No Docker, no database server, no reverse proxy required. The whole state
 is one SQLite file (`--db path`), so backups are `cp`.
 
+### Docker
+
+```bash
+docker run -d --name mntr -p 2301:2301 -v mntr-data:/data \
+  internal-forgejo:latest
+```
+
+The image is a `FROM scratch` container around the static musl binary —
+6.3 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
+The SQLite DB lives in the `/data` volume. To build locally:
+`docker buildx build -t mntr .` (multi-arch: `--platform linux/amd64,linux/arm64`).
+
+Measured against the official Terminus Docker stack (its compose file runs
+three containers — `ghcr.io/usetrmnl/terminus`, `postgres:18.3-alpine`,
+`valkey:9-alpine`; Ruby gems, the node asset pipeline, ImageMagick and
+headless Chromium are all baked into the terminus image):
+
+| Stack | `docker pull` | On disk |
+|---|---|---|
+| Terminus (3 containers) | ~746 MB | ~1.84 GB |
+| mntr (1 container) | 6.3 MB | 15.7 MB |
+
+~118× smaller to pull. Memory tells the same story: Terminus's own compose
+file budgets up to 4.5 GB across its four services, while mntr idles in the
+tens of megabytes.
+
 ## What you get
 
 - **Device plane** — full TRMNL wire contract: `/api/display`, `/api/setup`,
