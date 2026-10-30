@@ -8,12 +8,15 @@
 //! GPUI-with-software-backend is a drop-in, not a rewrite.
 
 pub mod admin;
+pub mod admin_provider;
 pub mod api;
 pub mod auth;
 pub mod bmp;
 pub mod cache;
 pub mod db;
 pub mod dither;
+pub mod extensions;
+pub mod providers;
 pub mod render;
 pub mod screen;
 pub mod template;

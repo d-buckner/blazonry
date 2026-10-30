@@ -30,6 +30,10 @@ async fn main() -> anyhow::Result<()> {
     // background refresh loop (replaces Sidekiq + poller procs)
     mntr::cache::spawn_job_loop(pool.clone(), renderer.clone(), cache.clone(),
         std::time::Duration::from_secs(job_secs));
+    // provider refresh loop: per-provider cadence (default 1h) -> snapshots
+    // -> extension screen rebuilds
+    mntr::providers::spawn_provider_loop(pool.clone(), cache.clone(),
+        std::time::Duration::from_secs(60));
 
     let admin = Router::new()
         .route("/screens", get(mntr::admin::list_screens).post(mntr::api::create_screen))
@@ -63,6 +67,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/users/verify", post(mntr::auth::verify_user))
         .route("/users", get(mntr::auth::list_users))
         .route("/me", get(mntr::auth::me))
+        .route("/providers", get(mntr::admin_provider::list_providers).post(mntr::admin_provider::create_provider))
+        .route("/providers/{id}", get(mntr::admin_provider::get_provider)
+            .patch(mntr::admin_provider::patch_provider)
+            .delete(mntr::admin_provider::delete_provider))
+        .route("/providers/{id}/refresh", post(mntr::admin_provider::refresh_provider_now))
+        .route("/extensions", get(mntr::admin_provider::list_extensions).post(mntr::admin_provider::create_extension))
+        .route("/extensions/{id}", patch(mntr::admin_provider::patch_extension)
+            .delete(mntr::admin_provider::delete_extension))
         .route_layer(middleware::from_fn_with_state(state.clone(), mntr::auth::require_admin));
 
     let app = Router::new()
