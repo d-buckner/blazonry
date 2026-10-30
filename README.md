@@ -34,29 +34,54 @@ If you came here from "why can't I point my TRMNL at my own calendar":
 that's the whole reason. The antidote to a 790 MB container stack that
 still can't reach your LAN is a 13 MB binary that can.
 
-### Before you buy a TRMNL
+### The hardware is Seeed's. The software is the product — and you can self-host a better one.
 
-Be honest about the hardware math, because the server bloat has a hardware
-twin:
+Once you see what you're actually buying, the math is not close:
 
-- A TRMNL OG is **$139** for a 7.5" 800×480 4-level grayscale panel with
-  an ESP32-C3 inside.
-- Seeed Studio's [TRMNL OG DIY Kit](https://www.seeedstudio.com/blog/2025/09/19/build-your-own-custom-e-ink-display-with-the-trmnl-diy-kit/)
-  is the same 7.5" 800×480 panel + an ESP32-**S3** driver for a fraction of
-  that, fully documented, ESPHome-native — and it runs TRMNL firmware, so
-  it works with mntr today.
-- The [reTerminal E1001/E1002](https://www.seeedstudio.com/reTerminal-E1002-p-6533.html)
-  (~$99–109) are assembled, ESP32-S3, ESPHome/Home-Assistant-native, and
-  the E1002 is **full-color** E Ink Spectra 6 at the same price.
-- [XIAO ePaper kits](https://www.hackster.io/news/seeed-studio-s-epaper-offerings-shrink-in-size-not-in-quantity-meet-the-new-xiao-epaper-diy-kits-df9a3a29b638)
-  start around **$16** for 2.13" panels.
+- **TRMNL's value prop is software, not hardware.** The OG is $139 for a
+  7.5" 800×480 4-level grayscale panel with an ESP32-C3; what the
+  subscription and brand actually sell is the cloud: 1,400+ plugins,
+  playlists, mobile apps, polish.
+- **Seeed Studio builds the hardware.** The
+  [TRMNL 7.5" (OG) DIY Kit](https://www.seeedstudio.com/TRMNL-7-5-Inch-OG-DIY-Kit-p-6481.html)
+  is a literal Seeed × TRMNL co-development — the *same* 7.5" 800×480
+  panel, a *better* MCU (ESP32-**S3** vs the OG's C3), a 2000 mAh battery,
+  TRMNL firmware preinstalled, open-source enclosure designs — for
+  **$47.99**. You are paying the OG's ~$90 premium for the logo, the
+  injection-molded case, and the cloud you're about to stop using.
+- **mntr is the software half of the deal, and it's the better half for a
+  self-hoster.** No cloud round-trip, no plugin marketplace to live inside,
+  no 790 MB container stack (see above): one 13 MB binary serving your
+  screens from your LAN. The wire contract is identical, so the Seeed kit
+  can't tell the difference.
 
-If you want the TRMNL *platform* (plugins, cloud, polish), the OG is fine
-hardware and the firmware is open. If you're buying purely to have an
-e-ink dashboard on your own server, the Seeed kits give you equal-or-better
-panels, better MCUs (S3 vs C3), color options, first-party ESPHome support,
-and no locked-in ecosystem for half the price. Buy the panel, run mntr,
-own the rest.
+**Seeed DIY kit + mntr ≈ $48 all-in. TRMNL OG + cloud ≈ $139 plus a
+subscription.** Same panel, faster MCU, no vendor in the middle, and
+software that fits in one binary instead of three containers. That is the
+same value for a third of the money — and, on the self-hosting axis,
+better software.
+
+And the "plugin marketplace" objection is smaller than it looks: TRMNL
+plugins are HTML/CSS/Liquid against HTTP data sources — a content format,
+not a runtime. mntr speaks that format out of the box (Liquid templates +
+your own endpoints), so any non-JS extension works here the day you write
+it, with no marketplace, review process, or vendor in between — and a
+paste-a-TRMNL-recipe-link importer (fetch the recipe, transpile its Liquid
+to mntr's screen vocabulary) is a small, planned step.
+
+What the OG + cloud still genuinely buys: mobile apps, someone else's
+uptime, and a curated catalog if you want to browse instead of build. If
+that's the product you want, the OG is fine hardware and the firmware is
+open. But if you're a self-hoster who bought an e-ink display to put
+*your* dashboards on *your* server, buy the panel from Seeed and run
+mntr. Own the whole stack for less.
+
+Other good Seeed options that speak mntr's protocol:
+[reTerminal E1001/E1002](https://www.seeedstudio.com/reTerminal-E1002-p-6533.html)
+(~$99–109, assembled, ESP32-S3, ESPHome/Home-Assistant-native — the E1002
+is **full-color** E Ink Spectra 6 at that price) and
+[XIAO ePaper kits](https://www.hackster.io/news/seeed-studio-s-epaper-offerings-shrink-in-size-not-in-quantity-meet-the-new-xiao-epaper-diy-kits-df9a3a29b638)
+from **$16** for 2.13" panels.
 
 ## Quick start
 
