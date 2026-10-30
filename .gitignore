@@ -1,5 +1,7 @@
 target/
 terminus.db*
+mntr.db*
+/mntr
 *.bmp
 *.png
 server.log

@@ -13,6 +13,84 @@ use tiny_skia::{Color, ColorU8, Paint, PathBuilder, Pixmap, Rect, Stroke, Transf
 
 const GREYS: [f32; 4] = [0.0, 0.333, 0.667, 1.0];
 
+/// Fonts are embedded so the binary stays self-contained (no fontconfig, no
+/// system package). Order of resolution: `MNTR_FONT[_BOLD]` override →
+/// embedded bytes → system DejaVu paths (for builds that strip assets).
+const EMBEDDED: [(&str, &[u8]); 2] = [
+    ("regular", include_bytes!("../assets/fonts/DejaVuSans.ttf")),
+    ("bold", include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf")),
+];
+
+const SYSTEM: [(&str, &[&str]); 2] = [
+    (
+        "regular",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/local/share/fonts/DejaVuSans.ttf",
+        ],
+    ),
+    (
+        "bold",
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            "/usr/local/share/fonts/DejaVuSans-Bold.ttf",
+        ],
+    ),
+];
+
+fn load_font(idx: usize, env_var: &str) -> anyhow::Result<fontdue::Font> {
+    let opts = fontdue::FontSettings::default();
+    let parse = |bytes: &[u8], src: String| -> (Option<fontdue::Font>, String) {
+        match fontdue::Font::from_bytes(bytes, opts) {
+            Ok(f) => (Some(f), src),
+            Err(e) => (None, format!("{src}: {e}")),
+        }
+    };
+    let mut errors = Vec::new();
+
+    // 1. explicit override
+    if let Ok(path) = std::env::var(env_var) {
+        match std::fs::read(&path) {
+            Ok(b) => {
+                let (f, src) = parse(&b, format!("{env_var}={path}"));
+                if let Some(f) = f {
+                    return Ok(f);
+                }
+                errors.push(src);
+            }
+            Err(e) => errors.push(format!("{env_var}={path}: {e}")),
+        }
+    }
+
+    // 2. embedded bytes
+    let (name, embedded) = EMBEDDED[idx];
+    let (f, src) = parse(embedded, format!("embedded {name}"));
+    if let Some(f) = f {
+        return Ok(f);
+    }
+    errors.push(src);
+
+    // 3. system paths
+    for p in SYSTEM[idx].1 {
+        match std::fs::read(p) {
+            Ok(b) => {
+                let (f, src) = parse(&b, p.to_string());
+                if let Some(f) = f {
+                    tracing::warn!("using system font {p}");
+                    return Ok(f);
+                }
+                errors.push(src);
+            }
+            Err(e) => errors.push(format!("{p}: {e}")),
+        }
+    }
+    Err(anyhow::anyhow!("no usable font: {}", errors.join("; ")))
+}
+
 pub struct Renderer {
     font: fontdue::Font,
     bold: fontdue::Font,
@@ -20,15 +98,9 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new() -> anyhow::Result<Self> {
-        // Bundled in a real build; system fonts are fine for the spike.
-        let regular = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-            .map_err(|e| anyhow::anyhow!("font: {e}"))?;
-        let bold = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-            .map_err(|e| anyhow::anyhow!("font: {e}"))?;
-        let opts = fontdue::FontSettings::default();
         Ok(Renderer {
-            font: fontdue::Font::from_bytes(&regular[..], opts).map_err(|e| anyhow::anyhow!("font: {e}"))?,
-            bold: fontdue::Font::from_bytes(&bold[..], opts).map_err(|e| anyhow::anyhow!("font: {e}"))?,
+            font: load_font(0, "MNTR_FONT")?,
+            bold: load_font(1, "MNTR_FONT_BOLD")?,
         })
     }
 
@@ -39,7 +111,11 @@ impl Renderer {
         let mut y = 0.0f32;
         for part in &screen.parts {
             let m = self.measure(part, WIDTH as f32);
-            self.paint(part, &mut pm, 0.0, y, m.0.max(WIDTH as f32));
+            // A top-level part gets a box as wide as the panel unless it asks
+            // for a narrower one; align needs that slack to have anywhere to
+            // go, so the measured (content) width must not be used here.
+            let w = part.width.unwrap_or(WIDTH as f32);
+            self.paint(part, &mut pm, 0.0, y, w);
             y += m.1;
         }
         // greyscale from premultiplied RGBA (opaque paint, so r == grey)
@@ -75,9 +151,9 @@ impl Renderer {
                 let (vw, vh) = self.measure_text(value, node);
                 (kw + vw + 24.0, kh.max(vh))
             }
-            NodeKind::Divider => (max_w, 2.0),
-            NodeKind::Progress { .. } => (max_w, 28.0),
-            NodeKind::Bars { .. } => (max_w, 140.0),
+            NodeKind::Divider => (inner_w, 2.0),
+            NodeKind::Progress { .. } => (inner_w, 28.0),
+            NodeKind::Bars { .. } => (inner_w, 140.0),
             NodeKind::Flex { direction, children } => match direction {
                 Direction::Column => {
                     let mut h = 0.0f32;
@@ -101,13 +177,28 @@ impl Renderer {
                     }
                     w += node.gap * children.len().saturating_sub(1) as f32;
                     if grows {
-                        w = max_w;
+                        w = inner_w;
                     }
                     (w, h)
                 }
             },
         };
-    (size.0 + pad[1] + pad[3], size.1 + pad[0] + pad[2])
+    // width/height are border-box: they size the whole node, padding included.
+    let w = node.width.unwrap_or(size.0 + pad[1] + pad[3]);
+    let h = node.height.unwrap_or(size.1 + pad[0] + pad[2]);
+    (w, h)
+    }
+
+    /// Horizontal offset that `align` produces for content of width
+    /// `content_w` inside a box of `box_w`. Clamped, so content wider than its
+    /// box stays at the origin instead of sliding off-screen.
+    fn align_dx(&self, node: &Node, box_w: f32, content_w: f32) -> f32 {
+        let slack = (box_w - content_w).max(0.0);
+        match node.align {
+            Align::Start => 0.0,
+            Align::Center => slack / 2.0,
+            Align::End => slack,
+        }
     }
 
     /// Paint node at (x, y) into a box of width `w`.
@@ -133,11 +224,17 @@ impl Renderer {
         }
         let (ix, iy, iw) = (x + pad[3], y + pad[0], (w - pad[1] - pad[3]).max(0.0));
         match &node.kind {
-            NodeKind::Text { text } => self.draw_text(pm, text, ix, iy, node),
+            NodeKind::Text { text } => {
+                let (tw, _) = self.measure_text(text, node);
+                let dx = self.align_dx(node, iw, tw);
+                self.draw_text(pm, text, ix + dx, iy, node);
+            }
             NodeKind::KeyedValue { key, value } => {
                 let (kw, _) = self.measure_text(key, node);
-                self.draw_text(pm, key, ix, iy, node);
-                self.draw_text(pm, value, ix + kw + 24.0, iy, node);
+                let (vw, _) = self.measure_text(value, node);
+                let dx = self.align_dx(node, iw, kw + 24.0 + vw);
+                self.draw_text(pm, key, ix + dx, iy, node);
+                self.draw_text(pm, value, ix + dx + kw + 24.0, iy, node);
             }
             NodeKind::Divider => fill_rect(pm, ix, iy + 1.0, iw, 1.0, fg),
             NodeKind::Progress { value } => {
@@ -180,12 +277,8 @@ impl Renderer {
                     let mut cy = iy;
                     for c in children {
                         let m = self.measure(c, iw);
-                        let cx = match node.align {
-                            Align::Start => ix,
-                            Align::Center => ix + (iw - m.0) / 2.0,
-                            Align::End => ix + iw - m.0,
-                        };
-                        self.paint(c, pm, cx, cy, m.0);
+                        let cx = ix + self.align_dx(node, iw, m.0);
+                        self.paint(c, pm, cx, cy, m.0.max(1.0));
                         cy += m.1 + node.gap;
                     }
                 }
@@ -198,7 +291,10 @@ impl Renderer {
                         + node.gap * children.len().saturating_sub(1) as f32;
                     let grow_sum: f32 = children.iter().map(|c| c.grow.max(0.0)).sum();
                     let grow_w = (iw - fixed).max(0.0);
-                    let mut cx = ix;
+                    // a row with growing children fills its box, so align has
+                    // no slack to work with; otherwise shift the whole row.
+                    let natural = if grow_sum > 0.0 { iw } else { fixed };
+                    let mut cx = ix + self.align_dx(node, iw, natural);
                     for c in children {
                         let cw = if c.grow > 0.0 && grow_sum > 0.0 {
                             grow_w * c.grow / grow_sum
