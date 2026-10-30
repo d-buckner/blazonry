@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""End-to-end validation: real TRMNL firmware in trmnl-sim against terminus-rs.
+"""End-to-end validation: real TRMNL firmware in trmnl-sim against mntr.
 
 Flow:
-  1. boot terminus-rs on host :2301 (fresh DB in a temp dir)
+  1. boot mntr on host :2301 (fresh DB in a temp dir)
   2. seed admin user, one screen, one playlist via the admin API
   3. boot trmnl-sim headless with --control and port-forward 2301 so the
      device reaches the host at 10.0.2.2:2301
   4. drive the captive portal: connect WiFi + server http://10.0.2.2:2301
-  5. wait for the device to poll; assert terminus-rs saw setup + display
+  5. wait for the device to poll; assert mntr saw setup + display
   6. POST /wake, fetch /screenshot PNG -> visual artifact of what the
      firmware drew from our rendered BMP
 
 Requires: ../trmnl-sim/target/release/trmnl-sim, a firmware build
-(.pio/build/TRMNL_X/FW*-TRMNL_X.bin or -trmnl), terminus-rs cargo build.
+(.pio/build/TRMNL_X/FW*-TRMNL_X.bin or -trmnl), mntr cargo build.
 """
 import argparse, json, os, re, subprocess, sys, tempfile, time, urllib.request
 
@@ -60,14 +60,14 @@ def main():
     sim = "/workspace/trmnl-sim/target/release/trmnl-sim"
     print(f"[harness] firmware: {fw}")
 
-    tmp = tempfile.mkdtemp(prefix="terminus-e2e-")
+    tmp = tempfile.mkdtemp(prefix="mntr-e2e-")
     procs = []
     def cleanup():
         for p in procs:
             p.terminate()
     import atexit; atexit.register(cleanup)
     server = subprocess.Popen(
-        [os.path.join(ROOT, "target/debug/terminus-rs"), "serve",
+        [os.path.join(ROOT, "target/debug/mntr"), "serve",
          "--db", os.path.join(tmp, "e2e.db"), "--addr", f"127.0.0.1:{args.server_port}"],
         stdout=open(os.path.join(tmp, "server.log"), "w"), stderr=subprocess.STDOUT)
     procs.append(server)
@@ -81,7 +81,7 @@ def main():
         {"type": "text", "text": "{{ title }}", "style": {"font_px": 48, "bold": True}, "padding": [30]},
         {"type": "text", "text": "{{ body }}", "style": {"font_px": 24}, "padding": [30]},
         {"type": "divider", "padding": [30]},
-        {"type": "text", "text": "terminus-rs + trmnl-sim", "style": {"font_px": 18}, "padding": [30]}]})
+        {"type": "text", "text": "mntr + trmnl-sim", "style": {"font_px": 18}, "padding": [30]}]})
     _, r = http(base + "/admin/screens", {"name": "e2e", "template": template,
         "vars": {"title": "TERMINUS-RS", "body": "real firmware, no real hardware"}}, auth)
     sid = r["id"]
@@ -142,7 +142,7 @@ def main():
     _, devs = http(base + "/admin/devices", headers=auth)
     print("[harness] devices:", json.dumps(devs, indent=2))
     if not polls:
-        sys.exit("device never polled terminus-rs")
+        sys.exit("device never polled mntr")
 
     # force a wake + refresh, then screenshot what the firmware drew
     try:

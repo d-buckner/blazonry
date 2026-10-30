@@ -171,7 +171,7 @@ pub async fn display(
             // Not registered to a playlist yet: firmware re-polls in seconds.
             return axum::Json(serde_json::json!({
                 "status": 202,
-                "message": "terminus-rs: device paired, no screens yet",
+                "message": "mntr: device paired, no screens yet",
                 "refresh_rate": refresh_interval,
                 "reset_firmware": false,
                 "update_firmware": false,
@@ -245,7 +245,7 @@ pub async fn serve_image(
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     if stem == "setup-logo" {
-        let tmpl = "{\"name\":\"setup\",\"parts\":[{\"type\":\"text\",\"text\":\"terminus-rs\",\"style\":{\"font_px\":64,\"bold\":true},\"align\":\"center\",\"padding\":[180,200]}]}";
+        let tmpl = "{\"name\":\"setup\",\"parts\":[{\"type\":\"text\",\"text\":\"mntr\",\"style\":{\"font_px\":64,\"bold\":true},\"align\":\"center\",\"padding\":[180,200]}]}";
         return match cache::render_bmp(&st.renderer, tmpl, "{}", bpp) {
             Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp).into_response(),
             Err(_) => (StatusCode::NOT_FOUND, "render failed").into_response(),
@@ -282,7 +282,7 @@ pub async fn setup(State(st): State<SharedState>, headers: HeaderMap) -> impl In
     tracing::info!(id, %mac, "device setup/pair");
     axum::Json(serde_json::json!({
         "status": 200,
-        "message": "Welcome to terminus-rs!",
+        "message": "Welcome to mntr!",
         "api_key": api_key,
         "friendly_id": format!("{:06}", id % 1_000_000),
         "image_url": format!("{}/images/setup-logo-{}.bmp", base_url(&headers), device_bpp(&headers)),

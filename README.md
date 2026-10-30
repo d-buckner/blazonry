@@ -1,4 +1,4 @@
-# terminus-rs
+# mntr
 
 TRMNL BYOS server in Rust. No Chrome, no Postgres/Valkey/Sidekiq, no premium
 tiers — one binary, SQLite, Liquid templates, native renderer.

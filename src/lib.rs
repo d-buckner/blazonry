@@ -1,4 +1,4 @@
-//! terminus-rs: TRMNL-compatible BYOS server, no premium tiers, no Chrome.
+//! mntr: TRMNL-compatible BYOS server, no premium tiers, no Chrome.
 //!
 //! Render pipeline: Liquid template -> Screen tree (serde JSON) -> tiny-skia
 //! pixmap -> 4-level dither -> 2-bit BMP (the wire format TRMNL devices want).

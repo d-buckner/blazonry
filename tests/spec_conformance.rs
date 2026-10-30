@@ -14,10 +14,10 @@ static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 async fn spawn_server() -> (tokio::process::Child, String) {
     // one DB per test: first registration is admin, and tests run in parallel
     let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!("terminus-spec-{}-{}", std::process::id(), n));
+    let dir = std::env::temp_dir().join(format!("mntr-spec-{}-{}", std::process::id(), n));
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("s.db").to_str().unwrap().to_string();
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_terminus-rs"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_mntr"))
         .args(["serve", "--db", &db, "--addr", "127.0.0.1:0"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
