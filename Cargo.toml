@@ -9,11 +9,14 @@ argon2 = "0.6.0"
 axum = { version = "0.8.9", features = ["tokio"] }
 base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10.4"
 fontdue = "0.9.5"
 http-body-util = "0.1.5"
+icalendar = { version = "0.17.17", features = ["chrono-tz", "recurrence"] }
 image = "0.25.10"
 liquid = "0.26.11"
 password-hash = { version = "0.6.1", features = ["rand_core"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"

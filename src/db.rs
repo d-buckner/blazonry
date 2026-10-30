@@ -97,6 +97,7 @@ pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
         .busy_timeout(std::time::Duration::from_secs(5));
     let pool = SqlitePoolOptions::new().max_connections(5).connect_with(opts).await?;
     sqlx::query(MIGRATE).execute(&pool).await?;
+    sqlx::query(crate::extension::MIGRATE).execute(&pool).await?;
     sqlx::query(SEED_MODELS).execute(&pool).await?;
     for stmt in COLUMN_MIGRATIONS {
         // idempotent: ignore "duplicate column name" on re-run
