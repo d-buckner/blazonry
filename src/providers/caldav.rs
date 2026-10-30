@@ -230,25 +230,30 @@ pub fn parse_ics_events(ics: &str, window_days: i64) -> anyhow::Result<Vec<Calen
 mod tests {
     use super::*;
 
-    const ICS: &str = r#"BEGIN:VCALENDAR
+    /// Fixture dates are relative to LA "today": the window starts at today,
+    /// so hardcoded dates would silently age out (they did, on 2026-10-30).
+    fn fixture_ics() -> (String, String) {
+        let today = chrono::Utc::now().with_timezone(&super::super::la()).date_naive();
+        let day = |d: chrono::NaiveDate| d.format("%Y%m%d").to_string();
+        let ics = format!(r#"BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//test//EN
 BEGIN:VEVENT
 UID:plain-1
-DTSTART:20261029T170000Z
-DTEND:20261029T180000Z
+DTSTART;TZID=America/Los_Angeles:{t}T100000
+DTEND;TZID=America/Los_Angeles:{t}T110000
 SUMMARY:Timed event
 LOCATION:Office
 END:VEVENT
 BEGIN:VEVENT
 UID:allday-1
-DTSTART;VALUE=DATE:20261029
-DTEND;VALUE=DATE:20261030
+DTSTART;VALUE=DATE:{t}
+DTEND;VALUE=DATE:{n}
 SUMMARY:All day thing
 END:VEVENT
 BEGIN:VEVENT
 UID:recur-1
-DTSTART;TZID=America/Los_Angeles:20261026T100000
+DTSTART;TZID=America/Los_Angeles:20260105T100000
 RRULE:FREQ=WEEKLY;BYDAY=MO
 SUMMARY:Monday standup
 END:VEVENT
@@ -258,14 +263,16 @@ DTSTART:20200101T170000Z
 SUMMARY:Ancient event
 END:VEVENT
 END:VCALENDAR
-"#;
+"#, t = day(today), n = day(today + chrono::Duration::days(1)));
+        (ics, today.format("%Y-%m-%d").to_string())
+    }
 
     #[test]
     fn parses_and_windows_events() {
-        // Window anchored on "today" must include the recurring Mondays from
-        // late Oct 2026 forward but drop the 2020 event. Use a fixed parser
-        // call: window large enough to cover the fixture regardless of run date.
-        let evs = parse_ics_events(ICS, 365 * 6).unwrap();
+        // Window anchored on "today": in-window fixtures must survive, the
+        // 2020 event must not. Window large enough to cover recurrences.
+        let (ics, today) = fixture_ics();
+        let evs = parse_ics_events(&ics, 365 * 6).unwrap();
         let uids: Vec<&str> = evs.iter().map(|e| e.uid.as_str()).collect();
         assert!(uids.contains(&"plain-1"), "timed event missing: {uids:?}");
         assert!(uids.contains(&"allday-1"), "all-day event missing");
@@ -273,7 +280,7 @@ END:VCALENDAR
         assert!(!uids.contains(&"old-1"), "out-of-window event leaked");
         let all_day = evs.iter().find(|e| e.uid == "allday-1").unwrap();
         assert!(all_day.all_day);
-        assert_eq!(all_day.start, "2026-10-29");
+        assert_eq!(all_day.start, today);
         let timed = evs.iter().find(|e| e.uid == "plain-1").unwrap();
         assert!(!timed.all_day);
         assert_eq!(timed.title, "Timed event");
@@ -287,7 +294,8 @@ END:VCALENDAR
 
     #[test]
     fn recurring_expands_multiple_occurrences() {
-        let evs = parse_ics_events(ICS, 365 * 6).unwrap();
+        let (ics, _) = fixture_ics();
+        let evs = parse_ics_events(&ics, 365 * 6).unwrap();
         let recur: Vec<_> = evs.iter().filter(|e| e.uid == "recur-1").collect();
         assert!(recur.len() >= 4, "expected several Monday occurrences, got {}", recur.len());
         // Each occurrence is 10:00 LA = 17:00Z (PDT) or 18:00Z (PST).

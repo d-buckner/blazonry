@@ -8,7 +8,6 @@
 //! and [`create`].
 
 use serde_json::Value;
-use sqlx::AssertSqlSafe;
 use sqlx::SqlitePool;
 
 pub mod family_calendar;
@@ -24,30 +23,13 @@ pub async fn resolved_provider_ids(pool: &SqlitePool, settings: &Value) -> anyho
             return Ok(ids);
         }
     }
-    Ok(sqlx::query_scalar("SELECT id FROM providers WHERE kind = 'caldav' ORDER BY id")
-        .fetch_all(pool).await?)
+    Ok(crate::providers::calendar_provider_ids(pool).await?)
 }
 
 /// Merged calendar snapshot rows for a resolved provider set, sorted by start.
 /// Rows: (start, all_day, title, location, description, source_name).
 pub async fn merged_calendar_rows(pool: &SqlitePool, ids: &[i64]) -> anyhow::Result<Vec<(String, bool, String, String, String, String)>> {
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let placeholders = vec!["?"; ids.len()].join(",");
-    let mut q = sqlx::query(AssertSqlSafe(format!(
-        "SELECT pe.start, pe.all_day, pe.title, pe.location, pe.description, p.name \
-         FROM provider_events pe JOIN providers p ON p.id = pe.provider_id \
-         WHERE pe.provider_id IN ({placeholders}) ORDER BY pe.start"
-    )));
-    for id in ids {
-        q = q.bind(id);
-    }
-    let rows = q.fetch_all(pool).await?;
-    use sqlx::Row;
-    Ok(rows.iter().map(|r| {
-        (r.get(0), r.get::<i64, _>(1) != 0, r.get(2), r.get(3), r.get(4), r.get(5))
-    }).collect())
+    crate::providers::merged_calendar_rows(pool, ids).await
 }
 
 /// Re-render one extension screen into the BMP cache (both panel depths).
@@ -67,15 +49,10 @@ async fn repaint(pool: &SqlitePool, cache: &crate::cache::BmpCache, screen_id: i
 /// Rebuild every extension's bound screen from current snapshots.
 /// Returns the number of extensions rebuilt.
 pub async fn rebuild_extensions(pool: &SqlitePool, cache: &crate::cache::BmpCache) -> anyhow::Result<usize> {
-    let exts = sqlx::query("SELECT kind, name, settings, screen_id FROM extensions").fetch_all(pool).await?;
+    let exts = all_rows(pool).await?;
     let mut n = 0;
     for ext in exts {
-        use sqlx::Row;
-        let kind: String = ext.get(0);
-        let name: String = ext.get(1);
-        let settings: String = ext.get(2);
-        let screen_id: Option<i64> = ext.get(3);
-        let settings: Value = serde_json::from_str(&settings).unwrap_or(serde_json::json!({}));
+        let ExtRow { kind, name, settings, screen_id } = ext;
         let Some(sid) = screen_id else { continue };
         match kind.as_str() {
             "family_calendar" => {
@@ -87,8 +64,7 @@ pub async fn rebuild_extensions(pool: &SqlitePool, cache: &crate::cache::BmpCach
                 let merged = merged_calendar_rows(pool, &ids).await?;
                 let vars = family_calendar::agenda_vars(&merged, &settings);
                 let vars_json = serde_json::to_string(&vars)?;
-                sqlx::query("UPDATE screens SET vars = ?, updated_at = datetime('now') WHERE id = ?")
-                    .bind(&vars_json).bind(sid).execute(pool).await?;
+                crate::screens::set_vars(pool, sid, &vars_json).await?;
                 repaint(pool, cache, sid).await;
                 n += 1;
             }
@@ -96,6 +72,78 @@ pub async fn rebuild_extensions(pool: &SqlitePool, cache: &crate::cache::BmpCach
         }
     }
     Ok(n)
+}
+
+// ---------------------------------------------------------------------------
+// `extensions` table owner: CRUD for the admin API.
+// ---------------------------------------------------------------------------
+
+pub struct ExtRow {
+    pub kind: String,
+    pub name: String,
+    pub settings: Value,
+    pub screen_id: Option<i64>,
+}
+
+async fn all_rows(pool: &SqlitePool) -> anyhow::Result<Vec<ExtRow>> {
+    use sqlx::Row;
+    let rows = sqlx::query("SELECT kind, name, settings, screen_id FROM extensions").fetch_all(pool).await?;
+    Ok(rows.into_iter().map(|r| ExtRow {
+        kind: r.get(0),
+        name: r.get(1),
+        settings: serde_json::from_str(r.get(2)).unwrap_or(serde_json::json!({})),
+        screen_id: r.get(3),
+    }).collect())
+}
+
+pub async fn list(pool: &SqlitePool) -> anyhow::Result<Vec<Value>> {
+    let rows = sqlx::query("SELECT id, kind, name, settings, screen_id FROM extensions ORDER BY id")
+        .fetch_all(pool).await?;
+    use sqlx::Row;
+    Ok(rows.into_iter().map(|r| serde_json::json!({
+        "id": r.get::<i64, _>(0),
+        "kind": r.get::<String, _>(1),
+        "name": r.get::<String, _>(2),
+        "settings": serde_json::from_str::<Value>(&r.get::<String, _>(3)).unwrap_or(Value::Null),
+        "screen_id": r.get::<Option<i64>, _>(4),
+    })).collect())
+}
+
+pub async fn insert(pool: &SqlitePool, kind: &str, name: &str, settings: &Value, screen_id: i64) -> anyhow::Result<i64> {
+    Ok(sqlx::query("INSERT INTO extensions (kind, name, settings, screen_id) VALUES (?, ?, ?, ?)")
+        .bind(kind).bind(name).bind(settings.to_string()).bind(screen_id)
+        .execute(pool).await?
+        .last_insert_rowid())
+}
+
+pub async fn exists(pool: &SqlitePool, id: i64) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM extensions WHERE id = ?")
+        .bind(id).fetch_one(pool).await? > 0)
+}
+
+pub async fn set_name(pool: &SqlitePool, id: i64, name: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE extensions SET name = ? WHERE id = ?").bind(name).bind(id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+pub async fn set_settings(pool: &SqlitePool, id: i64, settings: &Value) -> anyhow::Result<()> {
+    sqlx::query("UPDATE extensions SET settings = ? WHERE id = ?")
+        .bind(settings.to_string()).bind(id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+/// Delete an extension and its bound screen (screen teardown via its owner).
+pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<Option<i64>> {
+    let sid: Option<i64> = sqlx::query_scalar("SELECT screen_id FROM extensions WHERE id = ?")
+        .bind(id).fetch_optional(pool).await?.flatten();
+    sqlx::query("DELETE FROM extensions WHERE id = ?").bind(id)
+        .execute(pool).await?;
+    if let Some(sid) = sid {
+        crate::screens::delete(pool, sid).await?;
+    }
+    Ok(sid)
 }
 
 /// Create an extension by kind: validate cardinality, create its screen row,

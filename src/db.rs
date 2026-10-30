@@ -1,8 +1,28 @@
 //! SQLite schema + bootstrap. sqlx runtime API (no compile-time macros —
 //! keeps builds DB-free).
+//!
+//! ## SQL ownership map (issue #9)
+//!
+//! All raw SQL for a table lives in its owner module; other modules call the
+//! owner's typed functions. Read-only cross-table joins are allowed in the
+//! *driving* table's owner (e.g. playlists joins screens for names).
+//!
+//! | table(s)                       | owner                    |
+//! |--------------------------------|--------------------------|
+//! | devices, device_logs           | `db` (this module)       |
+//! | screens                        | `screens`                |
+//! | playlists, playlist_screens    | `playlists`              |
+//! | users, sessions                | `auth`                   |
+//! | firmware                       | `firmware`               |
+//! | models                         | `models` (seed DDL here) |
+//! | providers, provider_events     | `providers`              |
+//! | extensions                     | `extensions`             |
+//!
+//! DDL for all tables stays here (MIGRATE / COLUMN_MIGRATIONS / SEED_MODELS);
+//! providers/extensions contribute their own DDL constants, executed by `connect`.
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 use std::str::FromStr;
 
 pub const MIGRATE: &str = r#"
@@ -106,6 +126,41 @@ pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
     Ok(pool)
 }
 
+/// Shared PATCH helper: build `SET a=?, b=?` from present keys only.
+/// Table/column names come from `allowed` constants, never user input.
+pub async fn patch_table(pool: &SqlitePool, table: &'static str, id: i64, body: &serde_json::Value, allowed: &[&'static str]) -> Result<u64, sqlx::Error> {
+    use sqlx::AssertSqlSafe;
+    let mut sets: Vec<&str> = Vec::new();
+    for k in allowed {
+        if body.get(*k).is_some() {
+            sets.push(k);
+        }
+    }
+    if sets.is_empty() {
+        return Ok(0);
+    }
+    let mut q = sqlx::query(AssertSqlSafe(format!(
+        "UPDATE {table} SET {} WHERE id = ?",
+        sets.iter().map(|s| format!("{s} = ?")).collect::<Vec<_>>().join(", ")
+    )));
+    for k in &sets {
+        let v = body.get(*k).unwrap();
+        q = if v.is_i64() || v.is_u64() {
+            q.bind(v.as_i64())
+        } else if v.is_f64() {
+            q.bind(v.as_f64())
+        } else if v.is_boolean() {
+            q.bind(v.as_bool().map(|b| b as i64))
+        } else if v.is_null() {
+            q.bind(None::<String>)
+        } else {
+            q.bind(v.as_str().map(|s| s.to_string()))
+        };
+    }
+    let n = q.bind(id).execute(pool).await?.rows_affected();
+    Ok(n)
+}
+
 /// Register-or-fetch a device by MAC. Unknown MACs are auto-paired on first
 /// contact (LAN trust model, same default as Terminus BYOS) and get a key.
 pub async fn upsert_device(pool: &SqlitePool, mac: &str) -> anyhow::Result<(i64, String, Option<i64>, i64)> {
@@ -134,24 +189,146 @@ pub async fn upsert_device(pool: &SqlitePool, mac: &str) -> anyhow::Result<(i64,
     Ok((id, key, None, 900))
 }
 
-/// Next screen id for a device: playlist rotation by poll counter.
-pub async fn next_screen_id(pool: &SqlitePool, playlist_id: i64, poll_index: u64) -> anyhow::Result<Option<i64>> {
-    let rows: Vec<i64> = sqlx::query_scalar(
-        "SELECT screen_id FROM playlist_screens WHERE playlist_id = ? ORDER BY position",
+// ---------------------------------------------------------------------------
+// `devices` + `device_logs` table owner helpers (issue #9).
+// Schema DDL stays in MIGRATE/COLUMN_MIGRATIONS above; these are the only
+// functions allowed to write raw SQL against devices/device_logs.
+// ---------------------------------------------------------------------------
+
+/// Telemetry from a /api/display poll: COALESCE so absent headers keep old values.
+#[allow(clippy::too_many_arguments)]
+pub async fn record_telemetry(
+    pool: &SqlitePool,
+    id: i64,
+    fw_version: Option<&str>,
+    rssi: Option<i64>,
+    battery_voltage: Option<f64>,
+    width: Option<i64>,
+    height: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE devices SET last_poll_at = datetime('now'),
+           firmware_version = COALESCE(?, firmware_version),
+           rssi = COALESCE(?, rssi),
+           battery_voltage = COALESCE(?, battery_voltage),
+           width = COALESCE(?, width),
+           height = COALESCE(?, height)
+         WHERE id = ?",
     )
-    .bind(playlist_id)
-    .fetch_all(pool)
-    .await?;
-    if rows.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(rows[(poll_index as usize) % rows.len()]))
+    .bind(fw_version).bind(rssi).bind(battery_voltage).bind(width).bind(height)
+    .bind(id)
+    .execute(pool).await?;
+    Ok(())
 }
 
-pub async fn load_screen(pool: &SqlitePool, id: i64) -> anyhow::Result<(String, String, String)> {
-    let row = sqlx::query("SELECT name, template, vars FROM screens WHERE id = ?")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
-    Ok((row.get(0), row.get(1), row.get(2)))
+/// Record setup headers (fw version + model) without touching poll state.
+pub async fn record_setup(pool: &SqlitePool, id: i64, fw_version: Option<&str>, model: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE devices SET firmware_version = COALESCE(?, firmware_version), model = COALESCE(?, model) WHERE id = ?",
+    )
+    .bind(fw_version).bind(model).bind(id)
+    .execute(pool).await?;
+    Ok(())
 }
+
+/// Advance the rotation counter; returns the new poll_count.
+pub async fn advance_poll(pool: &SqlitePool, id: i64) -> Result<i64, sqlx::Error> {
+    Ok(sqlx::query_scalar(
+        "UPDATE devices SET poll_count = poll_count + 1, last_poll_at = datetime('now') WHERE id = ? RETURNING poll_count",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn set_current_screen(pool: &SqlitePool, id: i64, screen_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE devices SET current_screen_id = ? WHERE id = ?")
+        .bind(screen_id).bind(id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+/// (api_key, current_screen_id, refresh_interval, playlist_id) for /display/current.
+pub async fn device_state_by_mac(pool: &SqlitePool, mac: &str) -> Result<Option<(String, Option<i64>, i64, Option<i64>)>, sqlx::Error> {
+    Ok(sqlx::query_as(
+        "SELECT api_key, current_screen_id, refresh_interval, playlist_id FROM devices WHERE mac = ?",
+    )
+    .bind(mac)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn device_id_by_token(pool: &SqlitePool, token: &str) -> Result<Option<i64>, sqlx::Error> {
+    Ok(sqlx::query_scalar("SELECT id FROM devices WHERE api_key = ?").bind(token)
+        .fetch_optional(pool).await?)
+}
+
+pub async fn insert_device_log(pool: &SqlitePool, device_id: i64, message: &str, level: Option<&str>, source_path: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO device_logs (device_id, message, level, source_path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+    )
+    .bind(device_id).bind(message).bind(level).bind(source_path)
+    .execute(pool).await?;
+    Ok(())
+}
+
+pub async fn set_device_playlist_by_mac(pool: &SqlitePool, mac: &str, playlist_id: i64) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query("UPDATE devices SET playlist_id = ? WHERE mac = ?")
+        .bind(playlist_id).bind(mac)
+        .execute(pool).await?.rows_affected())
+}
+
+pub async fn set_device_name_by_mac(pool: &SqlitePool, mac: &str, name: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE devices SET name = ? WHERE mac = ?").bind(name).bind(mac)
+        .execute(pool).await?;
+    Ok(())
+}
+
+pub async fn delete_device(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query("DELETE FROM devices WHERE id = ?").bind(id)
+        .execute(pool).await?.rows_affected())
+}
+
+pub async fn wipe_device_logs(pool: &SqlitePool, device_id: i64) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query("DELETE FROM device_logs WHERE device_id = ?").bind(device_id)
+        .execute(pool).await?.rows_affected())
+}
+
+/// Unassign devices when their playlist is deleted.
+pub async fn clear_playlist_devices(pool: &SqlitePool, playlist_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE devices SET playlist_id = NULL WHERE playlist_id = ?")
+        .bind(playlist_id).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn device_list_json(pool: &SqlitePool) -> Result<Vec<serde_json::Value>, sqlx::Error> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT json_object(
+            'id', id, 'mac', mac, 'name', name, 'api_key', api_key,
+            'playlist_id', playlist_id, 'last_poll_at', last_poll_at,
+            'firmware_version', firmware_version, 'model', model,
+            'battery_voltage', battery_voltage, 'rssi', rssi,
+            'width', width, 'height', height, 'poll_count', poll_count
+         ) FROM devices ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(s,)| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)).collect())
+}
+
+pub async fn device_json(pool: &SqlitePool, id: i64) -> Result<Option<serde_json::Value>, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT json_object(
+            'id', id, 'mac', mac, 'name', name, 'api_key', api_key,
+            'playlist_id', playlist_id, 'last_poll_at', last_poll_at,
+            'firmware_version', firmware_version, 'model', model,
+            'battery_voltage', battery_voltage, 'rssi', rssi,
+            'width', width, 'height', height, 'poll_count', poll_count
+         ) FROM devices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(s,)| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)))
+}
+

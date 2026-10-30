@@ -10,7 +10,6 @@ use crate::bmp::encode_2bit_bmp;
 use crate::render::Renderer;
 use crate::template::render_screen;
 use crate::{HEIGHT, WIDTH};
-use sqlx::Row;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,12 +35,7 @@ pub fn render_bmp(renderer: &Renderer, template: &str, vars_json: &str, bpp: u16
 
 /// Load + render a screen from the DB, inserting into the cache.
 pub async fn render_and_cache(pool: &SqlitePool, renderer: &Renderer, cache: &BmpCache, screen_id: i64, bpp: u16) -> anyhow::Result<Arc<Vec<u8>>> {
-    let row = sqlx::query("SELECT template, vars FROM screens WHERE id = ?")
-        .bind(screen_id)
-        .fetch_one(pool)
-        .await?;
-    let template: String = row.get(0);
-    let vars: String = row.get(1);
+    let (template, vars) = crate::screens::template_vars(pool, screen_id).await?;
     let bmp = render_bmp(renderer, &template, &vars, bpp)?;
     let bmp = Arc::new(bmp);
     cache.write().await.insert((screen_id, bpp), bmp.clone());
@@ -69,21 +63,14 @@ pub fn spawn_job_loop(pool: SqlitePool, renderer: Arc<Renderer>, cache: BmpCache
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tick.tick().await;
-            let ids: Vec<i64> = match sqlx::query_scalar("SELECT id FROM screens ORDER BY id")
-                .fetch_all(&pool)
-                .await
-            {
+            let ids = match crate::screens::all_ids(&pool).await {
                 Ok(v) => v,
                 Err(e) => { tracing::warn!(%e, "job loop: screen list failed"); continue; }
             };
             let mut fresh = HashMap::new();
             for id in ids {
-                match sqlx::query("SELECT template, vars FROM screens WHERE id = ?")
-                    .bind(id).fetch_one(&pool).await
-                {
-                    Ok(row) => {
-                        let template: String = row.get(0);
-                        let vars: String = row.get(1);
+                match crate::screens::template_vars(&pool, id).await {
+                    Ok((template, vars)) => {
                         for bpp in [1u16, 2u16] {
                             match render_bmp(&renderer, &template, &vars, bpp) {
                                 Ok(bmp) => { fresh.insert((id, bpp), Arc::new(bmp)); }

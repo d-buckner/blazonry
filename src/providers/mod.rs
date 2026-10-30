@@ -11,8 +11,8 @@
 //! validation, and a fetch that returns normalized shape rows. Adding a
 //! provider = new module + one line in the registry.
 
-use chrono::{TimeZone, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
+use serde::Serialize;
 use sqlx::Row;
 use sqlx::SqlitePool;
 use std::future::Future;
@@ -99,6 +99,129 @@ pub fn validate_config(kind: &str, config: &serde_json::Value) -> anyhow::Result
     lookup(kind)
         .ok_or_else(|| anyhow::anyhow!("unknown provider kind '{kind}' (known: {})", registry().keys().cloned().collect::<Vec<_>>().join(", ")))?
         .validate(config)
+}
+
+// ---------------------------------------------------------------------------
+// `providers` + `provider_events` table owner: CRUD for the admin API.
+// ---------------------------------------------------------------------------
+
+use serde_json::{json, Value};
+use sqlx::AssertSqlSafe;
+
+const PROVIDER_COLS: &str = "id, kind, name, config, refresh_secs, last_ok_at, last_error";
+
+fn provider_json(row: &sqlx::sqlite::SqliteRow) -> Value {
+    json!({
+        "id": row.get::<i64, _>(0),
+        "kind": row.get::<String, _>(1),
+        "name": row.get::<String, _>(2),
+        "config": serde_json::from_str::<Value>(&row.get::<String, _>(3)).unwrap_or(Value::Null),
+        "refresh_secs": row.get::<i64, _>(4),
+        "last_ok_at": row.get::<Option<String>, _>(5),
+        "last_error": row.get::<Option<String>, _>(6),
+    })
+}
+
+pub async fn list(pool: &SqlitePool) -> anyhow::Result<Vec<Value>> {
+    let rows = sqlx::query(AssertSqlSafe(format!("SELECT {PROVIDER_COLS} FROM providers ORDER BY id")))
+        .fetch_all(pool).await?;
+    Ok(rows.iter().map(provider_json).collect())
+}
+
+pub async fn create(pool: &SqlitePool, kind: &str, name: &str, config: &Value, refresh_secs: i64) -> anyhow::Result<i64> {
+    let id = sqlx::query("INSERT INTO providers (kind, name, config, refresh_secs) VALUES (?, ?, ?, ?)")
+        .bind(kind).bind(name).bind(config.to_string()).bind(refresh_secs)
+        .execute(pool).await?
+        .last_insert_rowid();
+    Ok(id)
+}
+
+pub async fn get(pool: &SqlitePool, id: i64) -> anyhow::Result<Option<Value>> {
+    let row = sqlx::query(AssertSqlSafe(format!("SELECT {PROVIDER_COLS} FROM providers WHERE id = ?")))
+        .bind(id).fetch_optional(pool).await?;
+    Ok(row.map(|r| provider_json(&r)))
+}
+
+pub async fn event_count(pool: &SqlitePool, id: i64) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM provider_events WHERE provider_id = ?")
+        .bind(id).fetch_one(pool).await?)
+}
+
+pub async fn exists(pool: &SqlitePool, id: i64) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM providers WHERE id = ?")
+        .bind(id).fetch_one(pool).await? > 0)
+}
+
+pub async fn kind_of(pool: &SqlitePool, id: i64) -> anyhow::Result<String> {
+    Ok(sqlx::query_scalar("SELECT kind FROM providers WHERE id = ?").bind(id).fetch_one(pool).await?)
+}
+
+/// PATCH helper: update present fields only (name / refresh_secs / config).
+pub async fn patch(pool: &SqlitePool, id: i64, name: Option<&str>, refresh_secs: Option<i64>, config: Option<&Value>) -> anyhow::Result<()> {
+    if let Some(name) = name {
+        sqlx::query("UPDATE providers SET name = ? WHERE id = ?").bind(name).bind(id)
+            .execute(pool).await?;
+    }
+    if let Some(secs) = refresh_secs {
+        sqlx::query("UPDATE providers SET refresh_secs = ? WHERE id = ?")
+            .bind(secs).bind(id).execute(pool).await?;
+    }
+    if let Some(config) = config {
+        sqlx::query("UPDATE providers SET config = ? WHERE id = ?")
+            .bind(config.to_string()).bind(id).execute(pool).await?;
+    }
+    Ok(())
+}
+
+/// All calendar-provider ids in creation order (selector default: `all`).
+pub async fn calendar_provider_ids(pool: &SqlitePool) -> anyhow::Result<Vec<i64>> {
+    Ok(sqlx::query_scalar("SELECT id FROM providers WHERE kind = 'caldav' ORDER BY id")
+        .fetch_all(pool).await?)
+}
+
+/// Merged snapshot rows across providers (cross-table read join lives with
+/// the provider_events owner): (start, all_day, title, location, description, source_name).
+pub async fn merged_calendar_rows(pool: &SqlitePool, ids: &[i64]) -> anyhow::Result<Vec<(String, bool, String, String, String, String)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let mut q = sqlx::query(AssertSqlSafe(format!(
+        "SELECT pe.start, pe.all_day, pe.title, pe.location, pe.description, p.name \
+         FROM provider_events pe JOIN providers p ON p.id = pe.provider_id \
+         WHERE pe.provider_id IN ({placeholders}) ORDER BY pe.start"
+    )));
+    for id in ids {
+        q = q.bind(id);
+    }
+    let rows = q.fetch_all(pool).await?;
+    Ok(rows.iter().map(|r| {
+        (r.get(0), r.get::<i64, _>(1) != 0, r.get(2), r.get(3), r.get(4), r.get(5))
+    }).collect())
+}
+
+pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM provider_events WHERE provider_id = ?").bind(id)
+        .execute(pool).await?;
+    sqlx::query("DELETE FROM providers WHERE id = ?").bind(id)
+        .execute(pool).await?;
+    Ok(())
+}
+
+/// Validate that every id in `ids` exists as a caldav provider (cardinality
+/// check for extension settings).
+pub async fn all_caldav_ids_exist(pool: &SqlitePool, ids: &[i64]) -> anyhow::Result<bool> {
+    if ids.is_empty() {
+        return Ok(true);
+    }
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let mut q = sqlx::query(AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM providers WHERE kind = 'caldav' AND id IN ({placeholders})")));
+    for id in ids {
+        q = q.bind(*id);
+    }
+    let n: i64 = q.fetch_one(pool).await?.get(0);
+    Ok(n == ids.len() as i64)
 }
 
 // ---------------------------------------------------------------------------

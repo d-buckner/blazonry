@@ -17,6 +17,7 @@
 use crate::cache::{self, BmpCache};
 use crate::db;
 use crate::render::Renderer;
+use crate::{firmware, playlists};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
@@ -64,19 +65,9 @@ fn content_hash(bytes: &[u8]) -> String {
 /// Advance the device's rotation and return (screen_id, poll).
 async fn advance_device(st: &SharedState, device_id: i64, playlist_id: Option<i64>) -> Option<(i64, i64)> {
     let pl = playlist_id?;
-    let poll: i64 = sqlx::query_scalar(
-        "UPDATE devices SET poll_count = poll_count + 1, last_poll_at = datetime('now') WHERE id = ? RETURNING poll_count",
-    )
-    .bind(device_id)
-    .fetch_one(&st.pool)
-    .await
-    .ok()?;
-    let screen_id = db::next_screen_id(&st.pool, pl, poll as u64).await.ok().flatten()?;
-    let _ = sqlx::query("UPDATE devices SET current_screen_id = ? WHERE id = ?")
-        .bind(screen_id)
-        .bind(device_id)
-        .execute(&st.pool)
-        .await;
+    let poll = db::advance_poll(&st.pool, device_id).await.ok()?;
+    let screen_id = playlists::next_screen_id(&st.pool, pl, poll as u64).await.ok().flatten()?;
+    let _ = db::set_current_screen(&st.pool, device_id, screen_id).await;
     Some((screen_id, poll))
 }
 
@@ -147,23 +138,14 @@ pub async fn display(
         .into_response();
     }
     // Telemetry: store whatever the firmware reported.
-    let _ = sqlx::query(
-        "UPDATE devices SET last_poll_at = datetime('now'),
-           firmware_version = COALESCE(?, firmware_version),
-           rssi = COALESCE(?, rssi),
-           battery_voltage = COALESCE(?, battery_voltage),
-           width = COALESCE(?, width),
-           height = COALESCE(?, height)
-         WHERE id = ?",
-    )
-    .bind(header_str(&headers, "fw-version"))
-    .bind(header_i64(&headers, "rssi"))
-    .bind(header_f32(&headers, "battery-voltage"))
-    .bind(header_i64(&headers, "width"))
-    .bind(header_i64(&headers, "height"))
-    .bind(id)
-    .execute(&st.pool)
-    .await;
+    let _ = db::record_telemetry(
+        &st.pool, id,
+        header_str(&headers, "fw-version").as_deref(),
+        header_i64(&headers, "rssi"),
+        header_f32(&headers, "battery-voltage"),
+        header_i64(&headers, "width"),
+        header_i64(&headers, "height"),
+    ).await;
 
     let (screen_id, _poll) = match advance_device(&st, id, playlist_id).await {
         Some(v) => v,
@@ -194,13 +176,7 @@ pub async fn display_current(
         return (StatusCode::UNAUTHORIZED, "missing ID header").into_response();
     };
     let token = header_str(&headers, "access-token").unwrap_or_default();
-    let row: Option<(String, Option<i64>, i64, Option<i64>)> = sqlx::query_as(
-        "SELECT api_key, current_screen_id, refresh_interval, playlist_id FROM devices WHERE mac = ?",
-    )
-    .bind(&mac)
-    .fetch_optional(&st.pool)
-    .await
-    .unwrap_or(None);
+    let row = db::device_state_by_mac(&st.pool, &mac).await.unwrap_or(None);
     let Some((api_key, mut current, refresh, playlist_id)) = row else {
         return axum::Json(serde_json::json!({ "status": 404, "message": "No screen currently being displayed" })).into_response();
     };
@@ -213,7 +189,7 @@ pub async fn display_current(
     // If never polled, peek at the playlist head without advancing.
     if current.is_none() {
         if let Some(pl) = playlist_id {
-            current = db::next_screen_id(&st.pool, pl, 0).await.ok().flatten();
+            current = playlists::next_screen_id(&st.pool, pl, 0).await.ok().flatten();
         }
     }
     match current {
@@ -271,14 +247,7 @@ pub async fn setup(State(st): State<SharedState>, headers: HeaderMap) -> impl In
         Ok(v) => v,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
-    let _ = sqlx::query(
-        "UPDATE devices SET firmware_version = COALESCE(?, firmware_version), model = COALESCE(?, model) WHERE id = ?",
-    )
-    .bind(header_str(&headers, "fw-version"))
-    .bind(header_str(&headers, "model"))
-    .bind(id)
-    .execute(&st.pool)
-    .await;
+    let _ = db::record_setup(&st.pool, id, header_str(&headers, "fw-version").as_deref(), header_str(&headers, "model").as_deref()).await;
     tracing::info!(id, %mac, "device setup/pair");
     axum::Json(serde_json::json!({
         "status": 200,
@@ -311,11 +280,7 @@ pub async fn log_create(
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let token = header_str(&headers, "access-token").unwrap_or_default();
-    let device_id: Option<i64> = sqlx::query_scalar("SELECT id FROM devices WHERE api_key = ?")
-        .bind(&token)
-        .fetch_optional(&st.pool)
-        .await
-        .unwrap_or(None);
+    let device_id = db::device_id_by_token(&st.pool, &token).await.unwrap_or(None);
     let Some(device_id) = device_id else {
         return (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({
             "type": "/problem_details#device_id", "status": 404,
@@ -330,15 +295,7 @@ pub async fn log_create(
     };
     for e in entries {
         let Some(message) = e.get("message").and_then(|v| v.as_str()) else { continue };
-        let _ = sqlx::query(
-            "INSERT INTO device_logs (device_id, message, level, source_path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
-        )
-        .bind(device_id)
-        .bind(message)
-        .bind(e.get("level").and_then(|v| v.as_str()))
-        .bind(e.get("source_path").and_then(|v| v.as_str()))
-        .execute(&st.pool)
-        .await;
+        let _ = db::insert_device_log(&st.pool, device_id, message, e.get("level").and_then(|v| v.as_str()), e.get("source_path").and_then(|v| v.as_str())).await;
     }
     StatusCode::NO_CONTENT.into_response()
 }
@@ -360,10 +317,8 @@ pub async fn create_screen(
     };
     serde_json::from_str::<serde_json::Value>(&vars)
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("vars must be valid JSON: {e}")))?;
-    let id = sqlx::query("INSERT INTO screens (name, template, vars, updated_at) VALUES (?, ?, ?, datetime('now'))")
-        .bind(name).bind(template).bind(&vars)
-        .execute(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .last_insert_rowid();
+    let id = crate::screens::create(&st.pool, name, template, &vars).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     cache::invalidate(&st.cache, id).await;
     Ok(axum::Json(serde_json::json!({ "id": id })))
 }
@@ -410,9 +365,7 @@ pub async fn firmware_latest(
     State(st): State<SharedState>,
     headers: HeaderMap,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let row: Option<(String, String, String)> = sqlx::query_as(
-        "SELECT version, url, notes FROM firmware ORDER BY id DESC LIMIT 1")
-        .fetch_optional(&st.pool).await
+    let row = firmware::latest(&st.pool).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let device_fw = header_str(&headers, "fw-version");
     Ok(axum::Json(match row {
@@ -433,14 +386,8 @@ pub async fn create_playlist(
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
     let name = body.get("name").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "name required".into()))?;
     let ids: Vec<i64> = body.get("screen_ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_i64()).collect()).unwrap_or_default();
-    let pid = sqlx::query("INSERT INTO playlists (name) VALUES (?)")
-        .bind(name).execute(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .last_insert_rowid();
-    for (pos, sid) in ids.iter().enumerate() {
-        sqlx::query("INSERT INTO playlist_screens (playlist_id, screen_id, position) VALUES (?, ?, ?)")
-            .bind(pid).bind(*sid).bind(pos as i64)
-            .execute(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    }
+    let pid = playlists::create(&st.pool, name, &ids).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(axum::Json(serde_json::json!({ "id": pid })))
 }
 
@@ -450,10 +397,8 @@ pub async fn assign_device(
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
     let mac = body.get("mac").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "mac required".into()))?;
     let playlist_id = body.get("playlist_id").and_then(|v| v.as_i64()).ok_or((StatusCode::BAD_REQUEST, "playlist_id required".into()))?;
-    let n = sqlx::query("UPDATE devices SET playlist_id = ? WHERE mac = ?")
-        .bind(playlist_id).bind(mac)
-        .execute(&st.pool).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .rows_affected();
+    let n = db::set_device_playlist_by_mac(&st.pool, mac, playlist_id).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if n == 0 { return Err((StatusCode::NOT_FOUND, "unknown mac".into())); }
     Ok(axum::Json(serde_json::json!({ "ok": true })))
 }
