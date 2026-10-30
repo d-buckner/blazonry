@@ -127,14 +127,8 @@ pub async fn create(pool: &SqlitePool, cache: &crate::cache::BmpCache, name: &st
         anyhow::bail!("family_calendar requires 1..n calendar providers; none configured or picked");
     }
     let vars = json!({ "title": "Family Calendar", "days": [], "empty": true, "footer": "" });
-    let row = sqlx::query("INSERT INTO screens (name, template, vars, updated_at) VALUES (?, ?, ?, datetime('now'))")
-        .bind(name).bind(AGENDA_TEMPLATE).bind(vars.to_string())
-        .execute(pool).await?;
-    let sid = row.last_insert_rowid();
-    let id = sqlx::query("INSERT INTO extensions (kind, name, settings, screen_id) VALUES ('family_calendar', ?, ?, ?)")
-        .bind(name).bind(settings.to_string()).bind(sid)
-        .execute(pool).await?
-        .last_insert_rowid();
+    let sid = crate::screens::create(pool, name, AGENDA_TEMPLATE, &vars.to_string()).await?;
+    let id = super::insert(pool, "family_calendar", name, &settings, sid).await?;
     // Immediate first paint from existing snapshots.
     super::rebuild_extensions(pool, cache).await?;
     Ok((id, sid))
