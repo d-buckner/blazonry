@@ -26,6 +26,17 @@ onMount(async () => {
   app.booted = true;
 });
 
+// PWA signals from the shell registration (see build.js inline script).
+function onNet(e) { app.online = e.detail === 'online'; }
+function onUpdate() { app.updateReady = true; }
+function applyUpdate() {
+  navigator.serviceWorker.getRegistration().then((r) => r && r.waiting && r.waiting.postMessage('skip-waiting'));
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('mntr-net', onNet);
+  window.addEventListener('mntr-update', onUpdate);
+}
+
 async function login(e) {
   e.preventDefault();
   try { await doLogin(li.email, li.pass); } catch (err) { toast(err.message, true); }
@@ -39,6 +50,12 @@ async function register(e) {
 }
 </script>
 
+{#if !app.online}
+  <div id="offline-banner">Offline — mntr server unreachable. Data shown may be stale.</div>
+{/if}
+{#if app.updateReady}
+  <div id="update-banner">An update is available. <button class="act" onclick={applyUpdate}>Reload</button></div>
+{/if}
 {#if app.token}
   <header>
     <h1>mntr</h1>

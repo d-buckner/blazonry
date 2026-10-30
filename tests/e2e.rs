@@ -3,8 +3,8 @@
 
 use std::process::Stdio;
 
-async fn spawn_server() -> (tokio::process::Child, String) {
-    let dir = std::env::temp_dir().join(format!("mntr-test-{}", std::process::id()));
+async fn spawn_server(tag: &str) -> (tokio::process::Child, String) {
+    let dir = std::env::temp_dir().join(format!("mntr-test-{}-{}", std::process::id(), tag));
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("t.db").to_str().unwrap().to_string();
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_mntr"))
@@ -41,7 +41,7 @@ async fn req(addr: &str, method: &str, path: &str, body: Option<serde_json::Valu
 
 #[tokio::test]
 async fn full_device_and_admin_flow() {
-    let (mut child, addr) = spawn_server().await;
+    let (mut child, addr) = spawn_server("flow").await;
     let cli = reqwest::Client::new();
 
     // admin gate closed
@@ -98,6 +98,38 @@ async fn full_device_and_admin_flow() {
         .header("authorization", format!("Bearer {tok}")).send().await.unwrap();
     assert_eq!(resp.status(), 200);
     assert_eq!(resp.headers()["content-type"], "image/png");
+
+    child.kill().await.ok();
+}
+
+#[tokio::test]
+async fn pwa_assets_serve_with_correct_types() {
+    let (mut child, addr) = spawn_server("pwa").await;
+    let cli = reqwest::Client::new();
+
+    let cases: [(&str, &str); 5] = [
+        ("/sw.js", "text/javascript"),
+        ("/manifest.webmanifest", "application/manifest+json"),
+        ("/icons/icon.svg", "image/svg+xml"),
+        ("/icons/icon-192.png", "image/png"),
+        ("/icons/icon-512.png", "image/png"),
+    ];
+    for (path, want_ct) in cases {
+        let resp = cli.get(format!("http://{addr}{path}")).send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{path}");
+        let ct = resp.headers()["content-type"].to_str().unwrap().to_string();
+        assert!(ct.starts_with(want_ct), "{path}: {ct} !~ {want_ct}");
+    }
+
+    // sw itself must never be browser-cached (its scope must always be fresh)
+    let resp = cli.get(format!("http://{addr}/sw.js")).send().await.unwrap();
+    let cc = resp.headers()["cache-control"].to_str().unwrap().to_string();
+    assert!(cc.contains("no-store"), "sw.js cache-control: {cc}");
+
+    // the page must reference the manifest and register the SW
+    let html = cli.get(format!("http://{addr}/")).send().await.unwrap().text().await.unwrap();
+    assert!(html.contains("/manifest.webmanifest"));
+    assert!(html.contains("/sw.js"));
 
     child.kill().await.ok();
 }

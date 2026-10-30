@@ -71,6 +71,30 @@ async fn main() -> anyhow::Result<()> {
             ([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
              include_str!("../../web/index.html"))
         }))
+        // PWA assets (embedded; same single-binary rule). The SW must be a
+        // top-level file and must never itself be cached by the browser.
+        .route("/sw.js", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+              (axum::http::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")],
+             include_str!("../../web/sw.js"))
+        }))
+        .route("/manifest.webmanifest", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "application/manifest+json"),
+              (axum::http::header::CACHE_CONTROL, "no-cache")],
+             include_str!("../../web/manifest.webmanifest"))
+        }))
+        .route("/icons/icon.svg", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+             &include_bytes!("../../web/icons/icon.svg")[..])
+        }))
+        .route("/icons/icon-192.png", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/png")],
+             &include_bytes!("../../web/icons/icon-192.png")[..])
+        }))
+        .route("/icons/icon-512.png", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/png")],
+             &include_bytes!("../../web/icons/icon-512.png")[..])
+        }))
         // device plane (TRMNL firmware wire contract)
         .route("/api/display", get(mntr::api::display))
         .route("/api/display/current", get(mntr::api::display_current))
