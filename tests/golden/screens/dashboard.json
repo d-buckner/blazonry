@@ -1,0 +1,136 @@
+{
+ "name": "dashboard",
+ "parts": [
+  {
+   "type": "text",
+   "text": "mntr",
+   "style": {
+    "font_px": 34,
+    "bold": true
+   },
+   "padding": [
+    16,
+    20,
+    4,
+    20
+   ]
+  },
+  {
+   "type": "text",
+   "text": "one binary, no containers",
+   "style": {
+    "font_px": 18,
+    "fg": 1
+   },
+   "padding": [
+    0,
+    20,
+    10,
+    20
+   ]
+  },
+  {
+   "type": "divider",
+   "padding": [
+    0,
+    20,
+    10,
+    20
+   ]
+  },
+  {
+   "type": "keyed_value",
+   "key": "Outside",
+   "value": "61\u00b0F and clear",
+   "padding": [
+    6,
+    20,
+    6,
+    20
+   ],
+   "style": {
+    "font_px": 26
+   }
+  },
+  {
+   "type": "keyed_value",
+   "key": "Today",
+   "value": "3 meetings, 7 tasks",
+   "padding": [
+    6,
+    20,
+    6,
+    20
+   ],
+   "style": {
+    "font_px": 26
+   }
+  },
+  {
+   "type": "keyed_value",
+   "key": "Battery",
+   "value": "82%",
+   "padding": [
+    6,
+    20,
+    10,
+    20
+   ],
+   "style": {
+    "font_px": 26
+   }
+  },
+  {
+   "type": "progress",
+   "value": 0.82,
+   "padding": [
+    0,
+    20,
+    20,
+    20
+   ]
+  },
+  {
+   "type": "text",
+   "text": "SCREEN TIME",
+   "style": {
+    "font_px": 16,
+    "bold": true,
+    "fg": 1
+   },
+   "padding": [
+    0,
+    20,
+    4,
+    20
+   ]
+  },
+  {
+   "type": "bars",
+   "padding": [
+    0,
+    20,
+    0,
+    20
+   ],
+   "values": [
+    3.2,
+    5.1,
+    2.4,
+    6.8,
+    4.0,
+    1.2,
+    2.9
+   ],
+   "labels": [
+    "M",
+    "T",
+    "W",
+    "T",
+    "F",
+    "S",
+    "S"
+   ]
+  }
+ ]
+}

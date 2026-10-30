@@ -1,0 +1,42 @@
+{
+ "name": "row_grow",
+ "parts": [
+  {
+   "type": "flex",
+   "direction": "row",
+   "gap": 24,
+   "padding": [
+    10,
+    20,
+    10,
+    20
+   ],
+   "children": [
+    {
+     "type": "text",
+     "text": "left",
+     "style": {
+      "font_px": 24
+     }
+    },
+    {
+     "type": "text",
+     "text": "grows",
+     "grow": 1,
+     "style": {
+      "font_px": 24,
+      "fg": 1
+     }
+    },
+    {
+     "type": "text",
+     "text": "right",
+     "style": {
+      "font_px": 24,
+      "bold": true
+     }
+    }
+   ]
+  }
+ ]
+}

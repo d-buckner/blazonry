@@ -1,0 +1,35 @@
+{
+ "name": "centered",
+ "parts": [
+  {
+   "type": "text",
+   "text": "mntr works",
+   "align": "center",
+   "style": {
+    "font_px": 72,
+    "bold": true
+   },
+   "padding": [
+    120,
+    20,
+    0,
+    20
+   ]
+  },
+  {
+   "type": "text",
+   "text": "align: center, no padding hacks",
+   "align": "center",
+   "style": {
+    "font_px": 24,
+    "fg": 1
+   },
+   "padding": [
+    16,
+    20,
+    0,
+    20
+   ]
+  }
+ ]
+}
