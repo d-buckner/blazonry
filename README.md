@@ -100,6 +100,18 @@ mntr serve                    # → http://0.0.0.0:2301
 No Docker, no database server, no reverse proxy required. The whole state
 is one SQLite file (`--db path`), so backups are `cp`.
 
+### Docker
+
+```bash
+docker run -d --name mntr -p 2301:2301 -v mntr-data:/data \
+  internal-forgejo:latest
+```
+
+The image is a `FROM scratch` container around the static musl binary —
+~7 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
+The SQLite DB lives in the `/data` volume. To build locally:
+`docker buildx build -t mntr .` (multi-arch: `--platform linux/amd64,linux/arm64`).
+
 ## What you get
 
 - **Device plane** — full TRMNL wire contract: `/api/display`, `/api/setup`,

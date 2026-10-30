@@ -1,0 +1,20 @@
+# Keep the build context minimal — the builder only needs src/, assets/, web/,
+# Cargo.toml, Cargo.lock. Everything here would only bust the layer cache.
+target/
+web-app/
+tests/
+docs/
+scripts/
+fixtures/
+fwassets/
+*.db
+*.db-shm
+*.db-wal
+*.png
+*.jpg
+*.bmp
+server.log
+.git/
+Dockerfile
+.dockerignore
+README.md
