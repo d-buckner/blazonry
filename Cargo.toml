@@ -50,6 +50,10 @@ optional = true
 name = "browser_demo"
 required-features = ["browser"]
 
+[[bin]]
+name = "recipe_shot"
+required-features = ["browser"]
+
 [dev-dependencies]
 reqwest = { version = "0.13.5", features = ["json"] }
 

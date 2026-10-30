@@ -17,10 +17,18 @@ async fn main() -> Result<()> {
         .or_else(|_| std::env::var("CHROME_PATH"))
         .context("set MNTR_BROWSER_PATH to a headless-capable chrome/chromium binary")?;
 
-    let html = std::fs::read_to_string(&html_path)?;
+    let html = if html_path.starts_with("http") {
+        String::new()
+    } else {
+        std::fs::read_to_string(&html_path)?
+    };
     let t0 = std::time::Instant::now();
     let renderer = CdpRenderer::launch(&chrome).await?;
-    let grey = renderer.render_grey(&html, 1500).await?;
+    let grey = if html_path.starts_with("http") {
+        renderer.render_url(&html_path, 1500).await?
+    } else {
+        renderer.render_grey(&html, 1500).await?
+    };
     let render_ms = t0.elapsed().as_millis();
 
     let indices = floyd_steinberg_4(&grey, WIDTH, HEIGHT);

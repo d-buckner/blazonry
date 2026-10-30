@@ -45,9 +45,15 @@ impl CdpRenderer {
             "data:text/html;base64,{}",
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, html)
         );
+        self.render_url(&url, settle_ms).await
+    }
+
+    /// Render any URL (http/file/data) to the greyscale buffer. Real recipes
+    /// need a real origin so @font-face and relative asset URLs resolve.
+    pub async fn render_url(&self, url: &str, settle_ms: u64) -> Result<Vec<u8>> {
         let page = self
             .browser
-            .new_page(&url)
+            .new_page(url)
             .await
             .context("new page")?;
         page.wait_for_navigation().await.context("navigation")?;
