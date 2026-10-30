@@ -1,94 +1,202 @@
 # mntr
 
-TRMNL BYOS server in Rust. No Chrome, no Postgres/Valkey/Sidekiq, no premium
-tiers — one binary, SQLite, Liquid templates, native renderer.
+**A TRMNL BYOS server in Rust. One 13 MB binary, zero containers, no Chrome.**
 
-## Spike result (verified 2026-10-29)
+Point your [TRMNL](https://trmnl.com) (or any TRMNL-compatible ESP32 e-ink
+display) at `http://your-server:2301` and you own the whole stack: screens,
+playlists, device pairing, firmware OTA, users, previews — served from a
+single static binary with an embedded web UI.
 
-`cargo run --bin demo` → Liquid template + vars → Screen tree → tiny-skia
-greyscale → Floyd–Steinberg 4-level dither → 2-bit BMP (96,070 B, base64
-128,096 B) in ~62ms on a 48-core box. Output visually verified: header,
-key/value rows, progress bar, 7-bar chart all legible at 800×480.
+## Why this exists
 
-## The GPUI finding (important)
+I bought a TRMNL because I wanted a dashboard fed by *my* data. The first
+thing I tried was the obvious one: my own calendar server on my own LAN.
+It didn't work — not on the hosted cloud, and not on Terminus, the official
+BYOS server. So I read the stack, and the "self-hosted lightweight display"
+story fell apart:
 
-GPUI 0.2.2 on crates.io cannot be used headless as a screen rasterizer:
+| Terminus (official BYOS) | mntr |
+|---|---|
+| 3 containers: app (649 MB), Postgres (120 MB), Valkey (19 MB) — **~790 MB pulled** | **one 13 MB binary** |
+| Ruby + Hanami + Node + esbuild + Puma + Sidekiq + Overmind + Rodauth | Rust, no runtime deps |
+| Postgres + Valkey/Redis to babysit, migrate, back up | SQLite file. Copy it, you're backed up |
+| Full **Chromium** install in the image to rasterize screens | native renderer (tiny-skia + fontdue), ~60 ms per 800×480 screen |
+| Docker Compose, multiple processes, `overmind start` | `mntr serve` |
 
-- `Scene`, `Quad`, sprites, `Window::scene` are all `pub(crate)` — the paint
-  output is unreadable from outside the crate.
-- The `test-support` platform's `WindowOperations::draw()` is a no-op sink.
-- The Linux `headless` platform bails on `open_window` entirely.
+Chromium. For a **4-level grayscale, 800×480, 1-bit-class image**. That is
+most of the image weight, and it's the most absurd part of the stack: a
+~500 MB browser doing what a few thousand lines of software rasterizer do
+in milliseconds. mntr renders natively: Liquid template → JSON screen tree
+→ tiny-skia → Floyd–Steinberg dither → 2-bit BMP, verified against the
+real firmware's parser (see [Testing](#testing)).
 
-So the renderer is hand-rolled (tiny-skia + fontdue) but keeps GPUI's
-vocabulary — measure/paint two-pass, flex grow/align — so a future GPUI with
-a software backend (or a fork) drops in without redesign. Zed's own headless
-needs (if any) would come from their vendored gpui, not the published crate.
+If you came here from "why can't I point my TRMNL at my own calendar":
+that's the whole reason. The antidote to a 790 MB container stack that
+still can't reach your LAN is a 13 MB binary that can.
+
+### Before you buy a TRMNL
+
+Be honest about the hardware math, because the server bloat has a hardware
+twin:
+
+- A TRMNL OG is **$139** for a 7.5" 800×480 4-level grayscale panel with
+  an ESP32-C3 inside.
+- Seeed Studio's [TRMNL OG DIY Kit](https://www.seeedstudio.com/blog/2025/09/19/build-your-own-custom-e-ink-display-with-the-trmnl-diy-kit/)
+  is the same 7.5" 800×480 panel + an ESP32-**S3** driver for a fraction of
+  that, fully documented, ESPHome-native — and it runs TRMNL firmware, so
+  it works with mntr today.
+- The [reTerminal E1001/E1002](https://www.seeedstudio.com/reTerminal-E1002-p-6533.html)
+  (~$99–109) are assembled, ESP32-S3, ESPHome/Home-Assistant-native, and
+  the E1002 is **full-color** E Ink Spectra 6 at the same price.
+- [XIAO ePaper kits](https://www.hackster.io/news/seeed-studio-s-epaper-offerings-shrink-in-size-not-in-quantity-meet-the-new-xiao-epaper-diy-kits-df9a3a29b638)
+  start around **$16** for 2.13" panels.
+
+If you want the TRMNL *platform* (plugins, cloud, polish), the OG is fine
+hardware and the firmware is open. If you're buying purely to have an
+e-ink dashboard on your own server, the Seeed kits give you equal-or-better
+panels, better MCUs (S3 vs C3), color options, first-party ESPHome support,
+and no locked-in ecosystem for half the price. Buy the panel, run mntr,
+own the rest.
+
+## Quick start
+
+```bash
+cargo install --path .        # or: download the release binary
+mntr serve                    # → http://0.0.0.0:2301
+```
+
+1. Open `http://your-server:2301`, register. **The first account becomes
+   admin** (subsequent ones wait for verification — same model as Terminus).
+2. On your TRMNL: Settings → Server URL → `http://your-server:2301`.
+   The device pairs automatically and shows up on the Devices tab.
+3. Create a screen (Liquid template + JSON vars), a playlist, assign it.
+   Done — the device polls and renders.
+
+No Docker, no database server, no reverse proxy required. The whole state
+is one SQLite file (`--db path`), so backups are `cp`.
+
+## What you get
+
+- **Device plane** — full TRMNL wire contract: `/api/display`, `/api/setup`,
+  `/api/log`, `/api/latest_firmware`, image serving. Verified against the
+  real firmware in QEMU, not just the docs (see Testing).
+- **Admin web UI** — Svelte 5, SSR-prerendered and inlined into the binary.
+  Devices, screens (with live previews), playlists, firmware, models, users.
+- **Admin API** — bearer-auth CRUD mirroring Terminus `/api/*`: bulk device
+  import, playlist item visibility, firmware wipe, log wipe.
+- **Native renderer** — ~15 screen primitives (text, keyed_value, flex,
+  progress, bars, divider) cover the TRMNL screen families; Liquid is the
+  authoring surface, a JSON screen tree is the compile target.
+- **OTA gating** — `update_firmware` only when the device's reported version
+  differs from the newest firmware row (no OTA loops).
+- **Battery-friendly** — stable filenames so devices skip unchanged
+  downloads; `refresh_rate` in seconds as the firmware actually expects.
 
 ## Layout
 
-- `src/screen.rs` — the screen vocabulary (text, flex, keyed_value, divider,
-  progress, bars). ~15 primitives cover the TRMNL screen families.
-- `src/template.rs` — Liquid (rust `liquid` crate) renders a JSON screen
-  tree; JSON is the compile target, Liquid the authoring surface.
-- `src/render.rs` — measure/paint software renderer.
-- `src/dither.rs` — greyscale → 4-level FS dither.
-- `src/bmp.rs` — 2-bit bottom-up BMP writer (device wire format).
+```
+src/screen.rs    screen vocabulary (~15 primitives)
+src/template.rs  Liquid → JSON screen tree
+src/render.rs    measure/paint software renderer (tiny-skia + fontdue)
+src/dither.rs    greyscale → 4-level Floyd–Steinberg dither
+src/bmp.rs       2-bit bottom-up BMP writer (device wire format)
+src/api.rs       device plane (TRMNL wire contract)
+src/admin.rs     admin API (Terminus parity)
+src/auth.rs      argon2 accounts, bearer sessions
+web-app/         Svelte 5 source → node build.js → web/index.html
+```
 
-## Spec conformance (tests/spec_conformance.rs)
+## Testing
 
-Ground truth vendored in `tests/spec/` (fetched 2026-10-29): TRMNL BYOS docs,
-private Display API docs, and Terminus `config/routes.rb` + the actual
-`app/actions/api/{display,setup,log}` sources. 13 tests, one per contract
-line. Findings this pass fixed:
+Everything below is reproducible from a clean checkout with `cargo test`
+plus two Python scripts; no physical hardware required.
 
-- **`ID` header**: firmware sends `ID: <mac>`, not `idempotency-key`. We
-  only read the latter — a real device would have 401'd at setup. Now both.
-- **`refresh_rate` must be a NUMBER of seconds.** Firmware reads a string as
-  0 and wakes immediately (battery killer). We were sending ms; now seconds.
-- **status codes**: `0` = draw image, `202` = not registered yet (was 200);
-  unknown access-token = `{status:500, error:"Device not found",
-  reset_firmware:true}` (device wipes + re-pairs), not 401.
-- **filename stability**: device skips download when filename matches;
-  filename is now `screen-{id}-{fnv1a-of-bmp}`, stable until content changes.
-- **`image_url` now real**: `/images/{filename}.bmp` serves the cached BMP;
-  payload also carries inline base64 `image`.
-- **`POST /api/log`** (Terminus parity): device by Access-Token, full
-  firmware log schema, 204/404/422 problem-details responses; rows stored
-  in `device_logs`.
-- **`GET /api/display/current`** + legacy `/api/current_screen`: non-
-  advancing mirror via per-device `poll_count` + `current_screen_id`.
-- **Telemetry ingest**: FW-Version, Model, RSSI, Battery-Voltage, Width/
-  Height stored on the device row (Terminus header schema parity).
-- **`update_firmware`** only true when the device's FW-Version differs from
-  the newest firmware row (was always true — would OTA-loop devices).
+### 1. Unit + end-to-end (`cargo test`, 23 tests)
 
-## Admin API (auth: Bearer from /admin/login)
+- **Unit** — BMP header/bit-packing, dither output.
+- **e2e** — spawns the real binary on an ephemeral port with a temp DB and
+  drives the whole flow: admin gate 401 → register (first=admin,
+  second=unverified) → verify → login (bad pw 401, unverified 403) →
+  create screen/playlist → device pair/assign/poll → decodes the returned
+  BMP and asserts a valid 800×480 2-bit image, playlist rotation, and the
+  wrong-token `reset_firmware` path → PNG preview.
+- **spec_conformance (13 tests)** — one test per contract line against
+  ground truth vendored in `tests/spec/`: TRMNL BYOS docs, the private
+  Display API docs, and Terminus `config/routes.rb` + the actual
+  `app/actions/api/{display,setup,log}` sources.
 
-Full CRUD, Terminus `/api/*` parity (INTEGER ids instead of UUIDs):
-devices (list/show/patch/delete, bulk import, log wipe), screens
-(list/show/patch/delete + PNG preview), playlists (list/show/patch/
-delete, items add/hide/remove), firmware (CRUD + wipe — feeds
-/api/latest_firmware OTA gating), models (seeded og/x registry).
-Patch semantics: only present keys are updated; `playlist_id: null`
-unassigns. Deleting a screen cascades out of playlists; deleting a
-playlist unassigns its devices.
+### 2. Real firmware in QEMU (`scripts/e2e_sim.py`)
 
-## Next
+The docs lie; the firmware doesn't. This harness builds the **actual TRMNL
+firmware** from source (PlatformIO, `pio run -e trmnl`) and runs it inside
+QEMU via [trmnl-sim](https://github.com/mooselace/trmnl-sim), then drives it
+against a freshly spawned mntr:
 
-1. TRMNL wire compat pass against a real device (partial updates, custom
-   templates via `markup` pass-through later if ever needed).
-2. Web UI on top of the admin API (CRUD is complete: devices, screens,
-   playlists + item visibility, firmware, models, bulk import/wipe).
+```bash
+cargo build --release
+python3 scripts/e2e_sim.py \
+  --firmware .pio/build/trmnl/FW1.8.16-trmnl.bin --seconds 240
+```
 
-## Verification
+The simulated device boots, pairs over the QEMU gateway, polls, downloads
+the BMP, and decodes it. This pass caught bugs no doc review would:
 
-`cargo test` = 4 unit tests (BMP header/bit-packing, dither) + 1 e2e test
-that spawns the real binary on an ephemeral port and drives the whole flow:
-admin gate 401 → register (first=admin, second=unverified) → verify → login
-(bad pw 401, unverified 403) → create screen/playlist → device pair/assign/
-poll (valid 800×480 2-bit BMP, rotation, wrong token reset_firmware) → PNG
-preview; + 13 spec conformance tests (see above). Preview output visually
-verified legible.
+- firmware sends `ID: <mac>`, not `idempotency-key` (a real device 401'd at setup)
+- `refresh_rate` must be a **number of seconds** — a string reads as 0 and
+  the device wakes continuously (battery killer)
+- unknown access-token must return `{status:500, reset_firmware:true}`, not 401
+- `image_url` must be absolute (it goes straight into `HTTPClient::begin`)
+- the OG panel demands exactly 48,062-byte 1bpp BMPs; a base64 image
+  inlined in the JSON OOMs the ESP32 heap (max alloc ~63 KB) — never inline
 
-Note: port 2300 on the Hermes box is already taken (something serves a 404
-page there); dev default is 2301.
+The device's decoded screen, captured from the simulator:
+
+![Screen rendered by real firmware in QEMU](docs/img/firmware-sim.png)
+
+A native render of a full dashboard (header, key/value rows, progress bar,
+7-bar week chart) at 800×480:
+
+![Native screen render](docs/img/screen-render.png)
+
+### 3. UI end-to-end (`scripts/ui_check.py`)
+
+Spawns the server on an ephemeral port + temp DB, drives the admin UI in
+headless Chromium: register → login → create screen with Liquid + vars →
+walk every tab → assert **zero JS console errors** (the pre-login
+`/admin/me` 401 is expected and filtered). Exits nonzero on any error.
+
+![Devices tab](docs/img/ui_devices.png)
+
+![Screens tab with live preview](docs/img/ui_screens.png)
+
+![Playlists tab](docs/img/ui_playlists.png)
+
+![Users tab](docs/img/ui_users.png)
+
+## Design notes
+
+**Why not GPUI?** The first attempt used GPUI 0.2.2 as a headless
+rasterizer. It can't be: `Scene`, `Quad`, and paint output are all
+`pub(crate)`, the test platform's `draw()` is a no-op sink, and the Linux
+headless platform bails on `open_window`. So the renderer is hand-rolled
+(tiny-skia + fontdue) but keeps GPUI's vocabulary — measure/paint two-pass,
+flex grow/align — so a future GPUI with a software backend drops in without
+redesign.
+
+**Why not just fix Terminus?** Respect to the Terminus team — the wire
+contract they published is what mntr conforms to. But the container-stack
+direction is a product choice, not a bug, and my constraint (a dashboard
+that talks to my LAN in one binary on the box that already runs everything)
+isn't compatible with it. Different tool for a different constraint.
+
+## Status
+
+Wire-compatible with TRMNL firmware 1.6.10+ (OG and X panels). The admin
+plane uses INTEGER ids where Terminus uses UUIDs. No plugin marketplace —
+that's the point: your data sources are your own HTTP endpoints, and
+screens are Liquid you control.
+
+## License
+
+TBD — see `LICENSE` once chosen (AGPL-3.0 + commercial dual-license is the
+current direction).

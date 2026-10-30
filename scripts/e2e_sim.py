@@ -83,7 +83,7 @@ def main():
         {"type": "divider", "padding": [30]},
         {"type": "text", "text": "mntr + trmnl-sim", "style": {"font_px": 18}, "padding": [30]}]})
     _, r = http(base + "/admin/screens", {"name": "e2e", "template": template,
-        "vars": {"title": "TERMINUS-RS", "body": "real firmware, no real hardware"}}, auth)
+        "vars": {"title": "MNTR", "body": "real firmware, no real hardware"}}, auth)
     sid = r["id"]
     _, r = http(base + "/admin/playlists", {"name": "p", "screen_ids": [sid]}, auth)
     # device MAC we will burn into the sim's eFuse so we can pre-assign
