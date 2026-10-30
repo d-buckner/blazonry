@@ -6,6 +6,8 @@ export const app = $state({
   role: '',
   tab: 'devices',
   booted: false,
+  online: true,        // false when the SW reports API unreachable
+  updateReady: false,  // a new service worker is waiting
 });
 
 export const toasts = $state([]);

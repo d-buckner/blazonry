@@ -34,6 +34,9 @@ dialog { border:1px solid var(--line); border-radius:14px; padding:20px; width:m
 dialog::backdrop { background:#0006 }
 #login { max-width:340px; margin:12vh auto }
 #toasts { position:fixed; bottom:16px; right:16px; display:flex; flex-direction:column; gap:8px }
+#offline-banner { background:#fdecd0; color:#7a4b00; text-align:center; padding:6px 12px; font-size:13px; border-bottom:1px solid #e8cfa0 }
+#update-banner { background:#d9e6ff; color:#1c3d7a; text-align:center; padding:6px 12px; font-size:13px; border-bottom:1px solid #b9cef5 }
+#update-banner button { margin-left:8px }
 .toast { background:var(--ink); color:#fff; padding:10px 14px; border-radius:10px; font-size:14px }
 .toast.err { background:#c0392b }
 img.prev { max-width:200px; border:1px solid var(--line); border-radius:6px; display:block }

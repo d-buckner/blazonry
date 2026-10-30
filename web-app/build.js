@@ -81,7 +81,21 @@ const { renderApp } = await import(url.pathToFileURL(tmp).href);
 const { body } = renderApp();
 fs.rmSync(path.dirname(tmp), { recursive: true, force: true });
 
-// 3. assemble the single-file page
+// 3. PWA assets: manifest, icons, and the service worker. sw.js must be a
+//    separate top-level file (its scope can't be inline), so it is emitted
+//    alongside index.html and embedded via include_bytes! on the Rust side.
+//    The build stamp makes every deploy produce new bytes => SW update.
+const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+fs.mkdirSync(OUT, { recursive: true });
+fs.copyFileSync(path.join(SRC, 'manifest.webmanifest'), path.join(OUT, 'manifest.webmanifest'));
+for (const f of fs.readdirSync(path.join(SRC, 'icons'))) {
+  fs.mkdirSync(path.join(OUT, 'icons'), { recursive: true });
+  fs.copyFileSync(path.join(SRC, 'icons', f), path.join(OUT, 'icons', f));
+}
+const swSrc = fs.readFileSync(path.join(SRC, 'sw.js'), 'utf8');
+fs.writeFileSync(path.join(OUT, 'sw.js'), swSrc.replace('__BUILD__', stamp));
+
+// 4. assemble the single-file page
 const css = fs.readFileSync(path.join(SRC, 'app.css'), 'utf8');
 const html = `<!doctype html>
 <html lang="en">
@@ -89,16 +103,38 @@ const html = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mntr</title>
+<meta name="theme-color" content="#1a1a1a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <style>${css}</style>
 </head>
 <body>
 <div id="app">${body}</div>
 <script>${clientJs}</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then((reg) => {
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw && nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          window.dispatchEvent(new CustomEvent('mntr-update'));
+        }
+      });
+    });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data === 'online' || e.data === 'offline') {
+      window.dispatchEvent(new CustomEvent('mntr-net', { detail: e.data }));
+    }
+  });
+}
+</script>
 </body>
 </html>
 `;
 
-fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'index.html'), html);
 const kb = (n) => (n / 1024).toFixed(1) + ' KB';
 console.log(`web/index.html: ${kb(html.length)} (shell ${kb(body.length)} + js ${kb(clientJs.length)})`);
