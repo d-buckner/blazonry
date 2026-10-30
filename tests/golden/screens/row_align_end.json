@@ -1,0 +1,34 @@
+{
+ "name": "row_align_end",
+ "parts": [
+  {
+   "type": "flex",
+   "direction": "row",
+   "gap": 12,
+   "align": "end",
+   "padding": [
+    10,
+    20,
+    10,
+    20
+   ],
+   "children": [
+    {
+     "type": "text",
+     "text": "two words here",
+     "style": {
+      "font_px": 24
+     }
+    },
+    {
+     "type": "text",
+     "text": "x",
+     "style": {
+      "font_px": 24,
+      "bold": true
+     }
+    }
+   ]
+  }
+ ]
+}

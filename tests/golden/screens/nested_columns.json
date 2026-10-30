@@ -1,0 +1,51 @@
+{
+ "name": "nested_columns",
+ "parts": [
+  {
+   "type": "flex",
+   "direction": "column",
+   "gap": 8,
+   "padding": [
+    20,
+    20,
+    20,
+    20
+   ],
+   "align": "center",
+   "children": [
+    {
+     "type": "text",
+     "text": "outer",
+     "style": {
+      "font_px": 28,
+      "bold": true
+     }
+    },
+    {
+     "type": "flex",
+     "direction": "column",
+     "gap": 4,
+     "padding": [
+      10,
+      10,
+      10,
+      10
+     ],
+     "border": true,
+     "children": [
+      {
+       "type": "keyed_value",
+       "key": "a",
+       "value": "1"
+      },
+      {
+       "type": "keyed_value",
+       "key": "bb",
+       "value": "222"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

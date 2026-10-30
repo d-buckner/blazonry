@@ -1,0 +1,26 @@
+{
+ "name": "border_box",
+ "parts": [
+  {
+   "type": "flex",
+   "direction": "row",
+   "padding": [
+    30,
+    30,
+    30,
+    30
+   ],
+   "border": true,
+   "children": [
+    {
+     "type": "text",
+     "text": "bordered",
+     "style": {
+      "font_px": 26,
+      "bold": true
+     }
+    }
+   ]
+  }
+ ]
+}

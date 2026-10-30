@@ -1,0 +1,35 @@
+{
+ "name": "progress_edges",
+ "parts": [
+  {
+   "type": "progress",
+   "value": 0.0,
+   "padding": [
+    20,
+    20,
+    20,
+    20
+   ]
+  },
+  {
+   "type": "progress",
+   "value": 1.0,
+   "padding": [
+    20,
+    20,
+    20,
+    20
+   ]
+  },
+  {
+   "type": "progress",
+   "value": 1.7,
+   "padding": [
+    20,
+    20,
+    20,
+    20
+   ]
+  }
+ ]
+}

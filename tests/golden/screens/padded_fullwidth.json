@@ -1,0 +1,24 @@
+{
+ "name": "padded_fullwidth",
+ "parts": [
+  {
+   "type": "divider",
+   "padding": [
+    0,
+    20,
+    20,
+    20
+   ]
+  },
+  {
+   "type": "progress",
+   "value": 0.5,
+   "padding": [
+    0,
+    20,
+    20,
+    20
+   ]
+  }
+ ]
+}

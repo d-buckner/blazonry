@@ -1,0 +1,22 @@
+{
+ "name": "fixed_size",
+ "parts": [
+  {
+   "type": "divider",
+   "width": 400
+  },
+  {
+   "type": "flex",
+   "direction": "column",
+   "children": [
+    {
+     "type": "divider",
+     "height": 120
+    },
+    {
+     "type": "divider"
+    }
+   ]
+  }
+ ]
+}

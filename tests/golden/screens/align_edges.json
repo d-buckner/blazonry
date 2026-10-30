@@ -1,0 +1,23 @@
+{
+ "name": "align_edges",
+ "parts": [
+  {
+   "type": "text",
+   "text": "hello",
+   "align": "start",
+   "style": {
+    "font_px": 40,
+    "bold": true
+   }
+  },
+  {
+   "type": "text",
+   "text": "hello",
+   "align": "end",
+   "style": {
+    "font_px": 40,
+    "bold": true
+   }
+  }
+ ]
+}

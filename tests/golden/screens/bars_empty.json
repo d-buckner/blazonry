@@ -1,0 +1,29 @@
+{
+ "name": "bars_empty",
+ "parts": [
+  {
+   "type": "text",
+   "text": "no data",
+   "style": {
+    "font_px": 20
+   },
+   "padding": [
+    20,
+    20,
+    20,
+    20
+   ]
+  },
+  {
+   "type": "bars",
+   "values": [],
+   "labels": [],
+   "padding": [
+    0,
+    20,
+    0,
+    20
+   ]
+  }
+ ]
+}
