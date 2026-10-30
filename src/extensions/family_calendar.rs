@@ -1,8 +1,9 @@
-//! Extensions: consumers of provider shapes. The first one is the Family
-//! Calendar — TRMNL's most popular plugin (Google Calendar, #4 overall on
-//! trmnl.com/integrations; its "Default" agenda layout is the canonical
-//! calendar screen): upcoming events grouped by day, merged from all picked
-//! calendar providers, sorted by start.
+//! Family Calendar extension — TRMNL's most popular calendar plugin's
+//! "Default" layout, rebuilt: upcoming events grouped by day, merged from
+//! all picked calendar providers, sorted by start.
+//!
+//! Requirement: CalendarSource, cardinality 1..n — zero resolved providers
+//! is a config error at create time, not a blank screen at 7am.
 //!
 //! Settings (JSON):
 //!   provider_ids: [i64]   explicit pick list (empty = all caldav providers)
@@ -10,18 +11,9 @@
 //!   max_events: usize     cap (default 12)
 //!   time_format: "24h" | "12h" (default "12h")
 //!   include_description: bool (default false)
-//!
-//! Cardinality: CalendarSource 1..n — zero resolved providers is a config
-//! error surfaced at create time, not a blank screen at 7am.
 
-use crate::provider::la;
-use chrono::{DateTime, NaiveDate, Timelike, Utc};
 use serde_json::{json, Value};
-use sqlx::AssertSqlSafe;
-use sqlx::Row;
 use sqlx::SqlitePool;
-
-pub const MIGRATE: &str = crate::provider::MIGRATE;
 
 /// The agenda template: Liquid -> Screen JSON, fed by merged events.
 /// Day headers are LA-local dates; times arrive pre-formatted so the
@@ -56,20 +48,20 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
     let h24 = settings.get("time_format").and_then(|v| v.as_str()) == Some("24h");
     let include_desc = settings.get("include_description").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    let tz = la();
-    let now = Utc::now();
+    let tz = crate::providers::la();
+    let now = chrono::Utc::now();
     let today = now.with_timezone(&tz).date_naive();
     let win_end = today.checked_add_days(chrono::Days::new(days_window as u64 - 1)).unwrap_or(today);
 
     // Group by LA-local date, dropping past timed events (TRMNL behavior:
     // today's agenda starts at "now"; all-day events stay all day).
-    let mut by_day: std::collections::BTreeMap<NaiveDate, Vec<Value>> = Default::default();
+    let mut by_day: std::collections::BTreeMap<chrono::NaiveDate, Vec<Value>> = Default::default();
     let mut count = 0usize;
     for (start, all_day, title, location, description, source) in rows {
         let date = if *all_day {
-            NaiveDate::parse_from_str(start, "%Y-%m-%d").ok()
+            chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").ok()
         } else {
-            DateTime::parse_from_rfc3339(start).ok().map(|dt| dt.with_timezone(&tz).date_naive())
+            chrono::DateTime::parse_from_rfc3339(start).ok().map(|dt| dt.with_timezone(&tz).date_naive())
         };
         let Some(date) = date else { continue };
         if date < today || date > win_end {
@@ -78,7 +70,7 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
         let dt = if *all_day {
             "All day".to_string()
         } else {
-            match DateTime::parse_from_rfc3339(start) {
+            match chrono::DateTime::parse_from_rfc3339(start) {
                 Ok(dt) => {
                     let l = dt.with_timezone(&tz);
                     if h24 { l.format("%H:%M").to_string() } else { l.format("%-l:%M %p").to_string().to_lowercase() }
@@ -88,7 +80,7 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
         };
         // Past timed events today are history, not agenda.
         if !*all_day && date == today {
-            if let Ok(dt) = DateTime::parse_from_rfc3339(start) {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(start) {
                 if dt < now {
                     continue;
                 }
@@ -126,70 +118,11 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
     })
 }
 
-/// Resolve an extension's provider pick list: explicit ids, or all providers
-/// of the shape when unset (selector: "all" | explicit list — no tags).
-async fn resolved_provider_ids(pool: &SqlitePool, settings: &Value) -> anyhow::Result<Vec<i64>> {
-    if let Some(ids) = settings.get("provider_ids").and_then(|v| v.as_array()) {
-        let ids: Vec<i64> = ids.iter().filter_map(|v| v.as_i64()).collect();
-        if !ids.is_empty() {
-            return Ok(ids);
-        }
-    }
-    Ok(sqlx::query_scalar("SELECT id FROM providers WHERE kind = 'caldav' ORDER BY id")
-        .fetch_all(pool).await?)
-}
-
-/// Rebuild every extension's bound screen from current snapshots.
-/// Returns the number of extensions rebuilt.
-pub async fn rebuild_extensions(pool: &SqlitePool, cache: &crate::cache::BmpCache) -> anyhow::Result<usize> {
-    let exts = sqlx::query("SELECT id, kind, name, settings, screen_id FROM extensions").fetch_all(pool).await?;
-    let mut n = 0;
-    for ext in exts {
-        let kind: String = ext.get(1);
-        if kind != "family_calendar" {
-            continue;
-        }
-        let name: String = ext.get(2);
-        let settings: String = ext.get(3);
-        let screen_id: Option<i64> = ext.get(4);
-        let settings: Value = serde_json::from_str(&settings).unwrap_or(json!({}));
-        let ids = resolved_provider_ids(pool, &settings).await?;
-        if ids.is_empty() {
-            tracing::warn!(extension = name, "no calendar providers resolved; leaving screen as-is");
-            continue;
-        }
-        let placeholders = vec!["?"; ids.len()].join(",");
-        let mut q = sqlx::query(AssertSqlSafe(format!(
-            "SELECT pe.start, pe.all_day, pe.title, pe.location, pe.description, p.name \
-             FROM provider_events pe JOIN providers p ON p.id = pe.provider_id \
-             WHERE pe.provider_id IN ({placeholders}) ORDER BY pe.start"
-        )));
-        for id in &ids {
-            q = q.bind(id);
-        }
-        let rows = q.fetch_all(pool).await?;
-        let merged: Vec<(String, bool, String, String, String, String)> = rows.iter().map(|r| {
-            (r.get(0), r.get::<i64, _>(1) != 0, r.get(2), r.get(3), r.get(4), r.get(5))
-        }).collect();
-        let vars = agenda_vars(&merged, &settings);
-        let vars_json = serde_json::to_string(&vars)?;
-        let Some(sid) = screen_id else { continue };
-        sqlx::query("UPDATE screens SET vars = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(&vars_json).bind(sid).execute(pool).await?;
-        for bpp in [1u16, 2u16] {
-            if let Err(e) = crate::cache::render_and_cache(pool, &crate::render::Renderer::new()?, cache, sid, bpp).await {
-                tracing::warn!(%e, screen = sid, "extension re-render failed");
-            }
-        }
-        n += 1;
-    }
-    Ok(n)
-}
-
 /// Create a family_calendar extension: validates cardinality (1..n), creates
 /// its screen row with the agenda template, and renders it immediately.
-pub async fn create_family_calendar(pool: &SqlitePool, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<i64> {
-    let ids = resolved_provider_ids(pool, &settings).await?;
+/// Returns (extension_id, screen_id).
+pub async fn create(pool: &SqlitePool, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
+    let ids = super::resolved_provider_ids(pool, &settings).await?;
     if ids.is_empty() {
         anyhow::bail!("family_calendar requires 1..n calendar providers; none configured or picked");
     }
@@ -203,6 +136,6 @@ pub async fn create_family_calendar(pool: &SqlitePool, cache: &crate::cache::Bmp
         .execute(pool).await?
         .last_insert_rowid();
     // Immediate first paint from existing snapshots.
-    rebuild_extensions(pool, cache).await?;
-    Ok(id)
+    super::rebuild_extensions(pool, cache).await?;
+    Ok((id, sid))
 }

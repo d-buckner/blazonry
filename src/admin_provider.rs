@@ -8,7 +8,7 @@
 //! "requires a calendar, picked none" fails here at config time.
 
 use crate::api::SharedState;
-use crate::provider;
+use crate::providers;
 use axum::extract::{Path, State};
 use sqlx::AssertSqlSafe;
 use axum::http::StatusCode;
@@ -48,24 +48,18 @@ pub async fn list_providers(State(st): State<SharedState>) -> Res {
 
 pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
     let kind = b.get("kind").and_then(|v| v.as_str()).ok_or_else(|| bad("kind required"))?;
-    if kind != "caldav" {
-        return Err(bad(format!("unknown provider kind '{kind}' (supported: caldav)")));
-    }
     let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("calendar");
     let config = b.get("config").cloned().unwrap_or(Value::Object(Default::default()));
-    // Validate the config shape before storing — a broken URL should fail here.
-    let cfg: provider::CalDavConfig = serde_json::from_value(config.clone())
-        .map_err(|e| bad(format!("invalid caldav config: {e}")))?;
-    if !cfg.url.starts_with("http://") && !cfg.url.starts_with("https://") {
-        return Err(bad("config.url must be an http(s) URL"));
-    }
+    // Validate the config through the provider registry — bad config fails
+    // here, not at render time.
+    providers::validate_config(kind, &config).map_err(|e| bad(e.to_string()))?;
     let refresh_secs = b.get("refresh_secs").and_then(|v| v.as_i64())
-        .unwrap_or(provider::DEFAULT_REFRESH_SECS).max(60);
+        .unwrap_or(providers::DEFAULT_REFRESH_SECS).max(60);
     let id = sqlx::query("INSERT INTO providers (kind, name, config, refresh_secs) VALUES (?, ?, ?, ?)")
         .bind(kind).bind(name).bind(config.to_string()).bind(refresh_secs)
         .execute(&st.pool).await.map_err(err)?.last_insert_rowid();
     // First refresh inline so the admin sees success/failure immediately.
-    let refresh = provider::refresh_provider(&st.pool, id).await;
+    let refresh = providers::refresh_provider(&st.pool, id).await;
     let row = sqlx::query(AssertSqlSafe(format!("SELECT {PROVIDER_COLS} FROM providers WHERE id = ?")))
         .bind(id).fetch_one(&st.pool).await.map_err(err)?;
     let mut out = provider_json(&row);
@@ -74,7 +68,7 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
         out["first_refresh_error"] = json!(e.to_string());
     }
     // New provider may satisfy an "all" selector on existing extensions.
-    if let Err(e) = crate::extension::rebuild_extensions(&st.pool, &st.cache).await {
+    if let Err(e) = crate::extensions::rebuild_extensions(&st.pool, &st.cache).await {
         tracing::warn!(%e, "extension rebuild after provider create failed");
     }
     Ok(Json(out))
@@ -106,11 +100,11 @@ pub async fn patch_provider(State(st): State<SharedState>, Path(id): Path<i64>, 
             .bind(secs.max(60)).bind(id).execute(&st.pool).await.map_err(err)?;
     }
     if let Some(config) = b.get("config") {
-        let cfg: provider::CalDavConfig = serde_json::from_value(config.clone())
-            .map_err(|e| bad(format!("invalid caldav config: {e}")))?;
+        let kind: String = sqlx::query_scalar("SELECT kind FROM providers WHERE id = ?")
+            .bind(id).fetch_one(&st.pool).await.map_err(err)?;
+        providers::validate_config(&kind, config).map_err(|e| bad(e.to_string()))?;
         sqlx::query("UPDATE providers SET config = ? WHERE id = ?")
-            .bind(serde_json::to_string(&json!({"url": cfg.url, "user": cfg.user, "pass": cfg.pass})).unwrap())
-            .bind(id).execute(&st.pool).await.map_err(err)?;
+            .bind(config.to_string()).bind(id).execute(&st.pool).await.map_err(err)?;
     }
     Ok(Json(json!({ "ok": true })))
 }
@@ -125,9 +119,9 @@ pub async fn delete_provider(State(st): State<SharedState>, Path(id): Path<i64>)
 
 /// Manual "refresh now" — the escape hatch beside the timer.
 pub async fn refresh_provider_now(State(st): State<SharedState>, Path(id): Path<i64>) -> Res {
-    match provider::refresh_provider(&st.pool, id).await {
+    match providers::refresh_provider(&st.pool, id).await {
         Ok(n) => {
-            if let Err(e) = crate::extension::rebuild_extensions(&st.pool, &st.cache).await {
+            if let Err(e) = crate::extensions::rebuild_extensions(&st.pool, &st.cache).await {
                 tracing::warn!(%e, "extension rebuild after refresh failed");
             }
             Ok(Json(json!({ "ok": true, "events": n })))
@@ -152,13 +146,10 @@ pub async fn list_extensions(State(st): State<SharedState>) -> Res {
 
 pub async fn create_extension(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
     let kind = b.get("kind").and_then(|v| v.as_str()).ok_or_else(|| bad("kind required"))?;
-    if kind != "family_calendar" {
-        return Err(bad(format!("unknown extension kind '{kind}' (supported: family_calendar)")));
-    }
     let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("Family Calendar");
     let settings = b.get("settings").cloned().unwrap_or(json!({}));
-    match crate::extension::create_family_calendar(&st.pool, &st.cache, name, settings).await {
-        Ok(id) => Ok(Json(json!({ "id": id }))),
+    match crate::extensions::create(&st.pool, &st.cache, kind, name, settings).await {
+        Ok((id, screen_id)) => Ok(Json(json!({ "id": id, "screen_id": screen_id }))),
         Err(e) => Err(bad(e.to_string())),
     }
 }
@@ -179,7 +170,7 @@ pub async fn patch_extension(State(st): State<SharedState>, Path(id): Path<i64>,
             if !ids.is_empty() {
                 let placeholders = vec!["?"; ids.len()].join(",");
                 let mut q = sqlx::query(AssertSqlSafe(format!(
-                    "SELECT COUNT(*) FROM providers WHERE id IN ({placeholders}) AND kind = 'caldav'")));
+                    "SELECT COUNT(*) FROM providers WHERE id IN ({placeholders})")));
                 for v in ids {
                     let id_v = v.as_i64().ok_or_else(|| bad("provider_ids must be integers"))?;
                     q = q.bind(id_v);
@@ -193,7 +184,7 @@ pub async fn patch_extension(State(st): State<SharedState>, Path(id): Path<i64>,
         sqlx::query("UPDATE extensions SET settings = ? WHERE id = ?")
             .bind(settings.to_string()).bind(id).execute(&st.pool).await.map_err(err)?;
     }
-    if let Err(e) = crate::extension::rebuild_extensions(&st.pool, &st.cache).await {
+    if let Err(e) = crate::extensions::rebuild_extensions(&st.pool, &st.cache).await {
         tracing::warn!(%e, "extension rebuild after patch failed");
     }
     Ok(Json(json!({ "ok": true })))

@@ -1,66 +1,16 @@
-//! Providers: leaf data dependencies implementing capability shapes.
+//! CalDAV provider: one configured calendar collection (Radicale, Nextcloud,
+//! Fastmail published feeds, …). Implements the CalendarSource shape.
 //!
-//! Design (AFFiNE: "mntr: Providers & Extensions Design"): providers publish
-//! normalized snapshots on their own refresh cadence (default 1h); extensions
-//! declare a shape + cardinality and consume merged snapshots. Shapes are
-//! typed interfaces, not vendors — a screen never knows if CalDAV or Google
-//! answered.
-//!
-//! Shape implemented today: `CalendarSource` -> sorted normalized events.
-//! Provider instance = one configured connection (URL + creds). Failed
-//! refresh keeps the last good snapshot; stale timestamp is surfaced.
+//! Fetch strategy: plain GET with Depth:1 — Radicale answers with merged
+//! text/calendar. Servers that answer PROPFIND-style XML instead get the
+//! fallback: enumerate item hrefs and GET each.
 
-use chrono::{Timelike, TimeZone, Utc};
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use sqlx::SqlitePool;
+use super::{CalendarEvent, Provider};
+use chrono::{TimeZone, Utc};
+use serde::Deserialize;
 use std::str::FromStr;
 
-pub const DEFAULT_REFRESH_SECS: i64 = 3600;
-
-/// One normalized calendar event — the CalendarSource shape's row type.
-#[derive(Debug, Clone, Serialize)]
-pub struct CalendarEvent {
-    pub uid: String,
-    /// ISO UTC datetime, or `YYYY-MM-DD` when all_day.
-    pub start: String,
-    pub all_day: bool,
-    pub title: String,
-    pub location: String,
-    pub description: String,
-}
-
-pub const MIGRATE: &str = r#"
-CREATE TABLE IF NOT EXISTS providers (
-  id INTEGER PRIMARY KEY,
-  kind TEXT NOT NULL,
-  name TEXT NOT NULL,
-  config TEXT NOT NULL DEFAULT '{}',
-  refresh_secs INTEGER NOT NULL DEFAULT 3600,
-  last_ok_at TEXT,
-  last_error TEXT
-);
-CREATE TABLE IF NOT EXISTS provider_events (
-  provider_id INTEGER NOT NULL,
-  uid TEXT NOT NULL,
-  start TEXT NOT NULL,
-  all_day INTEGER NOT NULL DEFAULT 0,
-  title TEXT NOT NULL,
-  location TEXT NOT NULL DEFAULT '',
-  description TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS extensions (
-  id INTEGER PRIMARY KEY,
-  kind TEXT NOT NULL,
-  name TEXT NOT NULL,
-  settings TEXT NOT NULL DEFAULT '{}',
-  screen_id INTEGER
-);
-"#;
-
-// ---------------------------------------------------------------------------
-// CalDAV provider
-// ---------------------------------------------------------------------------
+pub struct CalDav;
 
 #[derive(Debug, Deserialize)]
 pub struct CalDavConfig {
@@ -72,13 +22,38 @@ pub struct CalDavConfig {
     pub pass: Option<String>,
 }
 
-pub fn la() -> chrono_tz::Tz {
-    "America/Los_Angeles".parse().expect("static tz")
+/// Snapshot window: 8 days covers any extension's `days` setting with margin.
+const WINDOW_DAYS: i64 = 8;
+
+impl Provider for CalDav {
+    fn kind(&self) -> &'static str {
+        "caldav"
+    }
+
+    fn validate(&self, config: &serde_json::Value) -> anyhow::Result<()> {
+        let cfg: CalDavConfig = serde_json::from_value(config.clone())
+            .map_err(|e| anyhow::anyhow!("invalid caldav config: {e}"))?;
+        if !cfg.url.starts_with("http://") && !cfg.url.starts_with("https://") {
+            anyhow::bail!("config.url must be an http(s) URL");
+        }
+        Ok(())
+    }
+
+    fn fetch(&self, config: serde_json::Value)
+        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Vec<CalendarEvent>>> + Send>>
+    {
+        Box::pin(async move {
+            let cfg: CalDavConfig = serde_json::from_value(config)?;
+            fetch(&cfg, WINDOW_DAYS).await
+        })
+    }
 }
+
+use std::pin::Pin;
 
 /// Fetch a CalDAV collection and return normalized events for the next
 /// `window_days` days (LA wall clock). Recurrences are expanded client-side.
-pub async fn fetch_caldav(cfg: &CalDavConfig, window_days: i64) -> anyhow::Result<Vec<CalendarEvent>> {
+pub async fn fetch(cfg: &CalDavConfig, window_days: i64) -> anyhow::Result<Vec<CalendarEvent>> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
@@ -148,7 +123,7 @@ fn join_url(base: &str, href: &str) -> String {
 /// expansion already windows itself; single instances need the same filter).
 fn in_window(dt: &icalendar::DatePerhapsTime, win_start: chrono::DateTime<icalendar::Tz>, win_end: chrono::DateTime<icalendar::Tz>) -> bool {
     use icalendar::{CalendarDateTime, DatePerhapsTime};
-    let tz = la();
+    let tz = super::la();
     let start: chrono::DateTime<Utc> = match dt {
         DatePerhapsTime::Date(d) => tz.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
             .single().map(|l| l.to_utc()).unwrap_or_else(|| Utc.from_utc_datetime(&d.and_hms_opt(0,0,0).unwrap())),
@@ -174,7 +149,7 @@ fn in_window(dt: &icalendar::DatePerhapsTime, win_start: chrono::DateTime<icalen
 pub fn parse_ics_events(ics: &str, window_days: i64) -> anyhow::Result<Vec<CalendarEvent>> {
     use icalendar::{Component, DatePerhapsTime};
     let cal = icalendar::Calendar::from_str(ics).map_err(|e| anyhow::anyhow!("ics parse: {e}"))?;
-    let tz = la();
+    let tz = super::la();
     let today = Utc::now().with_timezone(&tz).date_naive();
     let win_end_date = today.checked_add_days(chrono::Days::new(window_days.max(1) as u64))
         .unwrap_or(today);
@@ -249,95 +224,6 @@ pub fn parse_ics_events(ics: &str, window_days: i64) -> anyhow::Result<Vec<Calen
     }
     events.sort_by(|a, b| (&a.start, &a.title).cmp(&(&b.start, &b.title)));
     Ok(events)
-}
-
-// ---------------------------------------------------------------------------
-// Snapshot store + refresh loop
-// ---------------------------------------------------------------------------
-
-/// Replace one provider's snapshot atomically-ish (delete+insert).
-pub async fn store_snapshot(pool: &SqlitePool, provider_id: i64, events: &[CalendarEvent]) -> anyhow::Result<()> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM provider_events WHERE provider_id = ?").bind(provider_id)
-        .execute(&mut *tx).await?;
-    for e in events {
-        sqlx::query("INSERT INTO provider_events (provider_id, uid, start, all_day, title, location, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .bind(provider_id).bind(&e.uid).bind(&e.start).bind(e.all_day as i64)
-            .bind(&e.title).bind(&e.location).bind(&e.description)
-            .execute(&mut *tx).await?;
-    }
-    tx.commit().await?;
-    Ok(())
-}
-
-/// Refresh one provider by id: fetch, store snapshot, record outcome.
-/// Failure keeps the last good snapshot (design: no backoff machinery).
-pub async fn refresh_provider(pool: &SqlitePool, id: i64) -> anyhow::Result<usize> {
-    let row = sqlx::query("SELECT kind, config FROM providers WHERE id = ?").bind(id)
-        .fetch_optional(pool).await?
-        .ok_or_else(|| anyhow::anyhow!("provider {id} not found"))?;
-    let kind: String = row.get(0);
-    let config: String = row.get(1);
-    let result: anyhow::Result<usize> = match kind.as_str() {
-        "caldav" => {
-            let cfg: CalDavConfig = serde_json::from_str(&config)?;
-            let events = fetch_caldav(&cfg, 8).await?;
-            let n = events.len();
-            store_snapshot(pool, id, &events).await?;
-            Ok(n)
-        }
-        other => Err(anyhow::anyhow!("unknown provider kind {other}")),
-    };
-    match result {
-        Ok(n) => {
-            sqlx::query("UPDATE providers SET last_ok_at = datetime('now'), last_error = NULL WHERE id = ?")
-                .bind(id).execute(pool).await?;
-            tracing::info!(provider = id, events = n, "provider refreshed");
-            Ok(n)
-        }
-        Err(e) => {
-            sqlx::query("UPDATE providers SET last_error = ? WHERE id = ?")
-                .bind(e.to_string()).bind(id).execute(pool).await?;
-            Err(e)
-        }
-    }
-}
-
-/// Background provider loop: every `tick`, refresh providers whose interval
-/// elapsed, then rebuild extension screens if anything changed.
-pub fn spawn_provider_loop(pool: SqlitePool, cache: crate::cache::BmpCache, tick: std::time::Duration) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut t = tokio::time::interval(tick);
-        t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            t.tick().await;
-            let rows = sqlx::query("SELECT id, refresh_secs, last_ok_at FROM providers").fetch_all(&pool).await;
-            let Ok(rows) = rows else { continue };
-            let mut changed = false;
-            for row in rows {
-                let id: i64 = row.get(0);
-                let secs: i64 = row.get(1);
-                let last: Option<String> = row.get(2);
-                let due = match last {
-                    None => true,
-                    Some(t) => chrono::NaiveDateTime::parse_from_str(&t, "%Y-%m-%d %H:%M:%S")
-                        .map(|t| (Utc::now().naive_utc() - t).num_seconds() >= secs)
-                        .unwrap_or(true),
-                };
-                if due {
-                    match refresh_provider(&pool, id).await {
-                        Ok(_) => changed = true,
-                        Err(e) => tracing::warn!(%e, provider = id, "provider refresh failed"),
-                    }
-                }
-            }
-            if changed {
-                if let Err(e) = crate::extension::rebuild_extensions(&pool, &cache).await {
-                    tracing::warn!(%e, "extension rebuild failed");
-                }
-            }
-        }
-    })
 }
 
 #[cfg(test)]
@@ -425,5 +311,12 @@ END:VCALENDAR
     fn join_url_absolute_paths() {
         assert_eq!(join_url("http://h:5232/caldav-service/family/", "/x/y.ics"), "http://h:5232/x/y.ics");
         assert_eq!(join_url("http://h:5232/a/b/", "http://o/z"), "http://o/z");
+    }
+
+    #[test]
+    fn validate_rejects_bad_config() {
+        assert!(CalDav.validate(&serde_json::json!({"url": "ftp://x"})).is_err());
+        assert!(CalDav.validate(&serde_json::json!({"url": "http://h/"})).is_ok());
+        assert!(CalDav.validate(&serde_json::json!({})).is_err());
     }
 }

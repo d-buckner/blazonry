@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         std::time::Duration::from_secs(job_secs));
     // provider refresh loop: per-provider cadence (default 1h) -> snapshots
     // -> extension screen rebuilds
-    mntr::provider::spawn_provider_loop(pool.clone(), cache.clone(),
+    mntr::providers::spawn_provider_loop(pool.clone(), cache.clone(),
         std::time::Duration::from_secs(60));
 
     let admin = Router::new()
