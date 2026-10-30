@@ -1,17 +1,28 @@
 //! Software renderer: Screen tree -> greyscale pixmap.
 //!
-//! Two passes like GPUI: measure (returns size) then paint (given bounds).
-//! Flex layout is hand-rolled (single-axis distribution + grow) — enough for
-//! the screen vocabulary without pulling a full taffy pass into the hot path.
+//! Geometry is taffy 0.15 (CSS flexbox): the screen vocabulary maps onto taffy
+//! styles, leaf intrinsic sizes come from fontdue measurements, and we paint
+//! the resulting boxes ourselves with tiny-skia. Boxes are taffy's; pixels are
+//! ours. (This replaced a hand-rolled measure/paint pass — see issue #4 and the
+//! README design note for why.)
+//!
 //! Text: fontdue per-char raster + manual advance layout (enough for the
 //! vocabulary; shaping can graduate to cosmic-text later).
 
 use crate::dither::floyd_steinberg_4;
 use crate::screen::{Align, Direction, Node, NodeKind, Screen};
 use crate::{HEIGHT, WIDTH};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use taffy::prelude::*;
+use taffy::{compute_leaf_layout, LayoutInput};
+use taffy::geometry::Rect as TaffyRect;
 use tiny_skia::{Color, ColorU8, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
 const GREYS: [f32; 4] = [0.0, 0.333, 0.667, 1.0];
+
+/// Gap between key and value in a `keyed_value` row.
+const KEYED_GAP: f32 = 24.0;
 
 /// Fonts are embedded so the binary stays self-contained (no fontconfig, no
 /// system package). Order of resolution: `MNTR_FONT[_BOLD]` override →
@@ -91,9 +102,21 @@ fn load_font(idx: usize, env_var: &str) -> anyhow::Result<fontdue::Font> {
     Err(anyhow::anyhow!("no usable font: {}", errors.join("; ")))
 }
 
+/// True for leaves that fill their container's content width (the vocabulary
+/// treats divider/progress/bars as full-width rules, not content-sized).
+fn is_stretchy(kind: &NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Divider | NodeKind::Progress { .. } | NodeKind::Bars { .. }
+    )
+}
+
 pub struct Renderer {
     font: fontdue::Font,
     bold: fontdue::Font,
+    /// taffy may measure the same leaf repeatedly (min/max-content passes);
+    /// fontdue rasterizes per call, so cache advances per (text, px, bold).
+    text_cache: Mutex<HashMap<(String, u32, bool), (f32, f32)>>,
 }
 
 impl Renderer {
@@ -101,6 +124,7 @@ impl Renderer {
         Ok(Renderer {
             font: load_font(0, "MNTR_FONT")?,
             bold: load_font(1, "MNTR_FONT_BOLD")?,
+            text_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -108,19 +132,109 @@ impl Renderer {
     pub fn render(&self, screen: &Screen) -> Vec<u8> {
         let mut pm = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
         pm.fill(Color::from_rgba8(255, 255, 255, 255));
-        let mut y = 0.0f32;
-        for part in &screen.parts {
-            let m = self.measure(part, WIDTH as f32);
-            // A top-level part gets a box as wide as the panel unless it asks
-            // for a narrower one; align needs that slack to have anywhere to
-            // go, so the measured (content) width must not be used here.
-            let w = part.width.unwrap_or(WIDTH as f32);
-            self.paint(part, &mut pm, 0.0, y, w);
-            y += m.1;
+
+        // --- taffy tree -------------------------------------------------------
+        // Root is a column; each top-level part sits inside a full-width
+        // wrapper that carries the part's `align`. A content-sized leaf has no
+        // slack of its own for align to act on — the wrapper gives it some,
+        // which is where flex puts alignment (the old pass faked it inside
+        // each leaf's own box).
+        let mut taffy = TaffyTree::<usize>::new();
+        taffy.disable_rounding(); // the old pass never snapped; dither shows seams
+        let root = taffy
+            .new_with_children(
+                Style {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    size: Size { width: length::<f32, Dimension>(WIDTH as f32), height: auto() },
+                    ..Default::default()
+                },
+                &[],
+            )
+            .expect("root node");
+
+        // Each leaf carries its vocabulary node's index (into the flattened
+        // tree) as its taffy NodeContext, so the measure callback can find it.
+        let mut registry: Vec<*const Node> = Vec::new();
+        let mut wrappers: Vec<NodeId> = Vec::with_capacity(screen.parts.len());
+        {
+            fn build(taffy: &mut TaffyTree<usize>, node: &Node, registry: &mut Vec<*const Node>, top_level: bool) -> NodeId {
+                let style = node_style(node, top_level);
+                match &node.kind {
+                    NodeKind::Flex { children, .. } => {
+                        let kids: Vec<NodeId> =
+                            children.iter().map(|c| build(taffy, c, registry, false)).collect();
+                        taffy.new_with_children(style, &kids).expect("flex node")
+                    }
+                    _ => {
+                        let idx = registry.len();
+                        registry.push(node as *const Node);
+                        taffy.new_leaf_with_context(style, idx)
+                            .expect("leaf node")
+                    }
+                }
+            }
+            for part in &screen.parts {
+                let child = build(&mut taffy, part, &mut registry, true);
+                let wrapper = taffy
+                    .new_with_children(wrapper_style(part), &[child])
+                    .expect("wrapper node");
+                taffy.add_child(root, wrapper).expect("add part");
+                wrappers.push(wrapper);
+            }
         }
+
+        taffy
+            .compute_layout_with_measure(
+                root,
+                Size {
+                    width: AvailableSpace::Definite(WIDTH as f32),
+                    height: AvailableSpace::MaxContent,
+                },
+                |inputs: LayoutInput, _id, ctx, style| {
+                    // SAFETY: every registry pointer points into `screen`,
+                    // which is borrowed for the whole call.
+                    let node: &Node = ctx
+                        .and_then(|c| registry.get(*c).map(|p| unsafe { &**p }))
+                        .unwrap_or(&EMPTY_NODE);
+                    compute_leaf_layout(inputs, style, |_, v| v, |_known, _avail| {
+                        self.leaf_measure(node)
+                    })
+                },
+            )
+            .expect("taffy layout");
+
+        // --- paint ------------------------------------------------------------
+        for (wrapper, part) in wrappers.iter().zip(&screen.parts) {
+            let child = taffy.child_at_index(*wrapper, 0).expect("child");
+            let wl = taffy.unrounded_layout(*wrapper);
+            self.paint_node(&taffy, child, part, &mut pm, wl.location.x, wl.location.y);
+        }
+
         // greyscale from premultiplied RGBA (opaque paint, so r == grey)
         let grey: Vec<u8> = pm.pixels().iter().map(|p| p.red()).collect();
         floyd_steinberg_4(&grey, WIDTH, HEIGHT)
+    }
+
+    /// Intrinsic content size of a leaf (no padding — taffy adds it).
+    /// `avail_w` is the width the container offers; stretchy leaves report 0
+    /// width and rely on stretch, text leaves report their natural advance.
+    fn leaf_measure(&self, node: &Node) -> Size<f32> {
+        match &node.kind {
+            NodeKind::Text { text } => {
+                let (w, h) = self.measure_text(text, node);
+                Size { width: w, height: h }
+            }
+            NodeKind::KeyedValue { key, value } => {
+                let (kw, kh) = self.measure_text(key, node);
+                let (vw, vh) = self.measure_text(value, node);
+                Size { width: kw + vw + KEYED_GAP, height: kh.max(vh) }
+            }
+            NodeKind::Divider => Size { width: 0.0, height: 2.0 },
+            NodeKind::Progress { .. } => Size { width: 0.0, height: 28.0 },
+            NodeKind::Bars { .. } => Size { width: 0.0, height: 140.0 },
+            NodeKind::Flex { .. } => Size { width: 0.0, height: 0.0 },
+        }
     }
 
     fn font_for(&self, node: &Node) -> &fontdue::Font {
@@ -128,71 +242,27 @@ impl Renderer {
     }
 
     fn measure_text(&self, text: &str, node: &Node) -> (f32, f32) {
+        let key = (text.to_string(), node.style.font_px.to_bits(), node.style.bold);
+        if let Some(&m) = self.text_cache.lock().expect("text cache").get(&key) {
+            return m;
+        }
         let font = self.font_for(node);
         let px = node.style.font_px;
         let mut w = 0.0f32;
-        let mut adv_max = 0.0f32;
         for ch in text.chars() {
             let (m, _) = font.rasterize(ch, px);
             w += m.advance_width;
-            adv_max = adv_max.max(m.advance_width);
         }
-        _ = adv_max;
-        (w, px * 1.35)
+        let m = (w, px * 1.35);
+        self.text_cache.lock().expect("text cache").insert(key, m);
+        m
     }
 
-    fn measure(&self, node: &Node, max_w: f32) -> (f32, f32) {
-        let pad = node.padding;
-        let inner_w = (max_w - pad[1] - pad[3]).max(0.0);
-        let size = match &node.kind {
-            NodeKind::Text { text } => self.measure_text(text, node),
-            NodeKind::KeyedValue { key, value } => {
-                let (kw, kh) = self.measure_text(key, node);
-                let (vw, vh) = self.measure_text(value, node);
-                (kw + vw + 24.0, kh.max(vh))
-            }
-            NodeKind::Divider => (inner_w, 2.0),
-            NodeKind::Progress { .. } => (inner_w, 28.0),
-            NodeKind::Bars { .. } => (inner_w, 140.0),
-            NodeKind::Flex { direction, children } => match direction {
-                Direction::Column => {
-                    let mut h = 0.0f32;
-                    let mut w = 0.0f32;
-                    for c in children {
-                        let m = self.measure(c, inner_w);
-                        h += m.1;
-                        w = w.max(m.0);
-                    }
-                    h += node.gap * children.len().saturating_sub(1) as f32;
-                    (w, h)
-                }
-                Direction::Row => {
-                    let grows = children.iter().any(|c| c.grow > 0.0);
-                    let mut w = 0.0f32;
-                    let mut h = 0.0f32;
-                    for c in children {
-                        let m = self.measure(c, if c.grow > 0.0 { 1.0 } else { inner_w });
-                        w += m.0;
-                        h = h.max(m.1);
-                    }
-                    w += node.gap * children.len().saturating_sub(1) as f32;
-                    if grows {
-                        w = inner_w;
-                    }
-                    (w, h)
-                }
-            },
-        };
-    // width/height are border-box: they size the whole node, padding included.
-    let w = node.width.unwrap_or(size.0 + pad[1] + pad[3]);
-    let h = node.height.unwrap_or(size.1 + pad[0] + pad[2]);
-    (w, h)
-    }
-
-    /// Horizontal offset that `align` produces for content of width
-    /// `content_w` inside a box of `box_w`. Clamped, so content wider than its
-    /// box stays at the origin instead of sliding off-screen.
-    fn align_dx(&self, node: &Node, box_w: f32, content_w: f32) -> f32 {
+    /// Horizontal offset that a leaf's own `align` produces inside its box.
+    /// Top-level alignment is handled by the wrapper; this only matters for
+    /// leaves whose box is wider than their content (explicit `width`).
+    /// Clamped, so content wider than its box stays at the origin.
+    fn align_dx(node: &Node, box_w: f32, content_w: f32) -> f32 {
         let slack = (box_w - content_w).max(0.0);
         match node.align {
             Align::Start => 0.0,
@@ -201,8 +271,23 @@ impl Renderer {
         }
     }
 
-    /// Paint node at (x, y) into a box of width `w`.
-    fn paint(&self, node: &Node, pm: &mut Pixmap, x: f32, y: f32, w: f32) {
+    /// Paint a taffy-laid-out node. `ox`/`oy` are the parent's absolute
+    /// top-left (taffy locations are parent-relative, so we accumulate).
+    fn paint_node(
+        &self,
+        taffy: &TaffyTree<usize>,
+        id: NodeId,
+        node: &Node,
+        pm: &mut Pixmap,
+        ox: f32,
+        oy: f32,
+    ) {
+        let layout = taffy.unrounded_layout(id);
+        let x = ox + layout.location.x;
+        let y = oy + layout.location.y;
+        let w = layout.size.width;
+        let h = layout.size.height;
+
         let pad = node.padding;
         let fg = grey_color(node.style.fg);
         if node.border {
@@ -210,15 +295,11 @@ impl Renderer {
             stroke.width = 1.0;
             let mut p = Paint::default();
             p.set_color(fg);
-            let h = self.measure(node, w).1;
             let mut pb = PathBuilder::new();
-            {
-                let r = Rect::from_xywh(x + 0.5, y + 0.5, (w - 1.0).max(1.0), (h - 1.0).max(1.0));
-                if let Some(r) = r {
-                    pb.push_rect(r);
-                    if let Some(path) = pb.finish() {
-                        pm.stroke_path(&path, &p, &stroke, Transform::default(), None);
-                    }
+            if let Some(r) = Rect::from_xywh(x + 0.5, y + 0.5, (w - 1.0).max(1.0), (h - 1.0).max(1.0)) {
+                pb.push_rect(r);
+                if let Some(path) = pb.finish() {
+                    pm.stroke_path(&path, &p, &stroke, Transform::default(), None);
                 }
             }
         }
@@ -226,21 +307,23 @@ impl Renderer {
         match &node.kind {
             NodeKind::Text { text } => {
                 let (tw, _) = self.measure_text(text, node);
-                let dx = self.align_dx(node, iw, tw);
-                self.draw_text(pm, text, ix + dx, iy, node);
+                let dx = Self::align_dx(node, iw, tw);
+                self.draw_text(pm, text, (ix + dx).max(0.0), iy, node);
             }
             NodeKind::KeyedValue { key, value } => {
                 let (kw, _) = self.measure_text(key, node);
                 let (vw, _) = self.measure_text(value, node);
-                let dx = self.align_dx(node, iw, kw + 24.0 + vw);
-                self.draw_text(pm, key, ix + dx, iy, node);
-                self.draw_text(pm, value, ix + dx + kw + 24.0, iy, node);
+                let dx = Self::align_dx(node, iw, kw + KEYED_GAP + vw);
+                self.draw_text(pm, key, (ix + dx).max(0.0), iy, node);
+                self.draw_text(pm, value, (ix + dx + kw + KEYED_GAP).max(0.0), iy, node);
             }
             NodeKind::Divider => fill_rect(pm, ix, iy + 1.0, iw, 1.0, fg),
             NodeKind::Progress { value } => {
                 let mut p = Paint::default();
                 p.set_color(fg);
-                if let Some(r) = Rect::from_xywh(ix, iy + 6.0, (iw * value.clamp(0.0, 1.0)).max(0.5), 16.0) {
+                if let Some(r) =
+                    Rect::from_xywh(ix, iy + 6.0, (iw * value.clamp(0.0, 1.0)).max(0.5), 16.0)
+                {
                     pm.fill_rect(r, &p, Transform::default(), None);
                 }
                 let mut s = Stroke::default();
@@ -263,8 +346,13 @@ impl Renderer {
                 let mut p = Paint::default();
                 p.set_color(fg);
                 for (i, v) in values.iter().enumerate() {
-                    let h = (chart_h * (v / max)).max(1.0);
-                    if let Some(r) = Rect::from_xywh(ix + i as f32 * bw + 2.0, iy + chart_h - h, (bw - 4.0).max(1.0), h) {
+                    let bh = (chart_h * (v / max)).max(1.0);
+                    if let Some(r) = Rect::from_xywh(
+                        ix + i as f32 * bw + 2.0,
+                        iy + chart_h - bh,
+                        (bw - 4.0).max(1.0),
+                        bh,
+                    ) {
                         pm.fill_rect(r, &p, Transform::default(), None);
                     }
                 }
@@ -272,40 +360,12 @@ impl Renderer {
                     self.draw_text(pm, l, ix + i as f32 * bw + 2.0, iy + chart_h + 6.0, node);
                 }
             }
-            NodeKind::Flex { direction, children } => match direction {
-                Direction::Column => {
-                    let mut cy = iy;
-                    for c in children {
-                        let m = self.measure(c, iw);
-                        let cx = ix + self.align_dx(node, iw, m.0);
-                        self.paint(c, pm, cx, cy, m.0.max(1.0));
-                        cy += m.1 + node.gap;
-                    }
+            NodeKind::Flex { children, .. } => {
+                let kids = taffy.children(id).expect("children");
+                for (child, cnode) in kids.iter().zip(children.iter()) {
+                    self.paint_node(taffy, *child, cnode, pm, x, y);
                 }
-                Direction::Row => {
-                    let fixed: f32 = children
-                        .iter()
-                        .filter(|c| c.grow <= 0.0)
-                        .map(|c| self.measure(c, iw).0)
-                        .sum::<f32>()
-                        + node.gap * children.len().saturating_sub(1) as f32;
-                    let grow_sum: f32 = children.iter().map(|c| c.grow.max(0.0)).sum();
-                    let grow_w = (iw - fixed).max(0.0);
-                    // a row with growing children fills its box, so align has
-                    // no slack to work with; otherwise shift the whole row.
-                    let natural = if grow_sum > 0.0 { iw } else { fixed };
-                    let mut cx = ix + self.align_dx(node, iw, natural);
-                    for c in children {
-                        let cw = if c.grow > 0.0 && grow_sum > 0.0 {
-                            grow_w * c.grow / grow_sum
-                        } else {
-                            self.measure(c, iw).0
-                        };
-                        self.paint(c, pm, cx, iy, cw);
-                        cx += cw + node.gap;
-                    }
-                }
-            },
+            }
         }
     }
 
@@ -337,6 +397,111 @@ impl Renderer {
             }
             pen_x += m.advance_width;
         }
+    }
+}
+
+/// Fallback for measure calls on nodes we did not register (shouldn't happen;
+/// keeps the callback infallible).
+static EMPTY_NODE: std::sync::LazyLock<Node> = std::sync::LazyLock::new(|| Node {
+    style: Default::default(),
+    padding: [0.0; 4],
+    gap: 0.0,
+    align: Align::Start,
+    grow: 0.0,
+    width: None,
+    height: None,
+    border: false,
+    kind: NodeKind::Text { text: String::new() },
+});
+
+/// Taffy style for a vocabulary node (flex containers and leaves alike).
+/// `width`/`height` are border-box, matching the vocabulary's contract.
+fn node_style(node: &Node, top_level: bool) -> Style {
+    let mut s = Style {
+        padding: TaffyRect {
+            top: length(node.padding[0]),
+            right: length(node.padding[1]),
+            bottom: length(node.padding[2]),
+            left: length(node.padding[3]),
+        },
+        box_sizing: BoxSizing::BorderBox,
+        flex_grow: node.grow.max(0.0),
+        ..Default::default()
+    };
+    if node.grow > 0.0 {
+        // The old pass handed grow children exactly the leftover space even
+        // when their content was wider; CSS min-width:auto would refuse.
+        s.min_size.width = length::<f32, LengthPercentageAuto>(0.0);
+    }
+    match &node.kind {
+        NodeKind::Flex { direction, .. } => {
+            s.display = Display::Flex;
+            s.flex_direction = match direction {
+                Direction::Row => FlexDirection::Row,
+                Direction::Column => FlexDirection::Column,
+            };
+            s.gap = Size::<LengthPercentage> { width: length(node.gap), height: length(node.gap) };
+            // The old pass gave every top-level part a full-width box; a
+            // nested row only fills its parent when it has growing children.
+            let wants_full_width = node.width.is_none()
+                && (top_level || children_have_grow(node));
+            if wants_full_width {
+                s.align_self = Some(AlignSelf::STRETCH);
+            }
+            // The vocabulary's `align` means "shift content along the main
+            // axis in a row, across it in a column" — same mapping taffy uses.
+            match direction {
+                Direction::Row => s.justify_content = justify(node.align),
+                Direction::Column => s.align_items = items(node.align),
+            };
+        }
+        _ => {
+            // Stretchy leaves fill the container's content width — but an
+            // explicit `width` wins (stretch is ignored when width is set).
+            if is_stretchy(&node.kind) && node.width.is_none() {
+                s.align_self = Some(AlignSelf::STRETCH);
+            }
+        }
+    }
+    s.size.width = node.width.map(|w| length::<f32, Dimension>(w)).unwrap_or(auto());
+    s.size.height = node.height.map(|h| length::<f32, Dimension>(h)).unwrap_or(auto());
+    s
+}
+
+fn children_have_grow(node: &Node) -> bool {
+    match &node.kind {
+        NodeKind::Flex { children, .. } => children.iter().any(|c| c.grow > 0.0),
+        _ => false,
+    }
+}
+
+/// Full-width wrapper around each top-level part: gives `align` somewhere to
+/// act (a content-sized leaf has no slack of its own). Stretchy parts fill
+/// the wrapper regardless of align — divider/progress/bars are full-width
+/// rules in this vocabulary.
+fn wrapper_style(part: &Node) -> Style {
+    Style {
+        display: Display::Flex,
+        flex_direction: FlexDirection::Column,
+        size: Size { width: length::<f32, Dimension>(WIDTH as f32), height: auto() },
+        align_items: items(part.align),
+        ..Default::default()
+    }
+}
+
+fn justify(a: Align) -> JustifyContent {
+    match a {
+        Align::Start => JustifyContent::START,
+        Align::Center => JustifyContent::CENTER,
+        Align::End => JustifyContent::END,
+    }
+}
+
+fn items(a: Align) -> AlignItems {
+    match a {
+        Align::Start => AlignItems::START,
+        Align::Center => AlignItems::CENTER,
+        Align::End => AlignItems::END,
     }
 }
 
