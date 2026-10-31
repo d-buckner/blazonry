@@ -4,7 +4,7 @@
 //! doesn't log everyone out.
 
 use argon2::Argon2;
-use password_hash::{PasswordHash, PasswordHasher, PasswordVerifier};
+use password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier};
 use axum::extract::{Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::StatusCode;

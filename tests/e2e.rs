@@ -133,5 +133,3 @@ async fn pwa_assets_serve_with_correct_types() {
 
     child.kill().await.ok();
 }
-
-use base64::Engine as _;

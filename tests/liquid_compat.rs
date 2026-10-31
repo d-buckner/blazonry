@@ -334,6 +334,22 @@ fn where_exp_string_equality() {
 }
 
 #[test]
+fn where_exp_comparisons() {
+    let items = json!({ "items": [{ "n": "a", "v": 1 }, { "n": "b", "v": 2 }, { "n": "c", "v": 3 }] });
+    let names = |cond: &str| {
+        render(
+            &format!("{{{{ items | where_exp: \"i\", \"{cond}\" | map: \"n\" | join: \",\" }}}}"),
+            items.clone(),
+        )
+        .unwrap()
+    };
+    assert_eq!(names("i.v >= 2"), "b,c");
+    assert_eq!(names("i.v <= 2"), "a,b");
+    assert_eq!(names("i.v != 2"), "a,c");
+    assert_eq!(names("i.v > 3"), "");
+}
+
+#[test]
 fn pluralize_filter() {
     let out = render(
         "{{ n | pluralize: \"entry\", \"entries\" }}",

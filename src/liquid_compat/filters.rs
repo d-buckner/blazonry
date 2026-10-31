@@ -434,11 +434,9 @@ fn compare(jv: &serde_json::Value, op: &str, lit: &str) -> bool {
         _ => None,
     };
     match (ord, op) {
-        (Some(std::cmp::Ordering::Less), "<") | (Some(std::cmp::Ordering::Less), "<=") => true,
-        (Some(std::cmp::Ordering::Greater), ">") | (Some(std::cmp::Ordering::Greater), ">=") => true,
-        (Some(std::cmp::Ordering::Equal), "=") | (Some(std::cmp::Ordering::Equal), "==") => true,
-        (Some(_), ">=") | (Some(_), "<=") | (Some(_), "!=") => true,
-        (Some(std::cmp::Ordering::Equal), "!=") => false,
+        (Some(std::cmp::Ordering::Less), "<" | "<=" | "!=")
+        | (Some(std::cmp::Ordering::Greater), ">" | ">=" | "!=")
+        | (Some(std::cmp::Ordering::Equal), "=" | "==" | ">=" | "<=") => true,
         _ => false,
     }
 }

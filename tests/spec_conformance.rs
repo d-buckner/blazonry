@@ -6,7 +6,6 @@
 //!
 //! Status: device plane fully covered; admin-plane checklist at the bottom.
 
-use base64::Engine as _;
 use std::process::Stdio;
 
 static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
