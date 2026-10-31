@@ -96,7 +96,15 @@ const swSrc = fs.readFileSync(path.join(SRC, 'sw.js'), 'utf8');
 fs.writeFileSync(path.join(OUT, 'sw.js'), swSrc.replace('__BUILD__', stamp));
 
 // 4. assemble the single-file page
-const css = fs.readFileSync(path.join(SRC, 'app.css'), 'utf8');
+// Self-host the device font (TRMNL) as a base64 @font-face so the UI stays
+// fully offline — mntr never makes a cloud round-trip for core function.
+const fontB64 = fs
+  .readFileSync(path.join(HERE, '..', 'assets', 'framework', 'fonts', 'TRMNL16-Bold.woff2'))
+  .toString('base64');
+const fontFace =
+  `@font-face{font-family:'TRMNL';font-style:normal;font-weight:700;font-display:swap;` +
+  `src:url(data:font/woff2;base64,${fontB64}) format('woff2')}`;
+const css = fontFace + '\n' + fs.readFileSync(path.join(SRC, 'app.css'), 'utf8');
 const html = `<!doctype html>
 <html lang="en">
 <head>

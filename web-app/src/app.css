@@ -1,15 +1,29 @@
 :root { --bg:#f5f4f0; --card:#fff; --ink:#1a1a1a; --mut:#777; --line:#e2e0da; --acc:#2457e6; }
+/* mntr design system (restrained "Bitmap") — see DESIGN.md */
+:root {
+  --paper:#F4F2ED; --paper2:#ECE8DF;
+  --ink1:#1C1A16; --ink2:#575146; --ink3:#6E685C;
+  --ln:#E0DBCF; --ln2:#C9C3B4;
+  --red:#B23A2E; --dot:#D9D3C5;
+  --display:'TRMNL', ui-monospace, monospace;
+  --body:system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono:ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
 * { box-sizing:border-box; margin:0 }
-body { font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--ink) }
-header { background:var(--card); border-bottom:1px solid var(--line); padding:12px 20px;
-  display:flex; align-items:center; gap:16px }
-header h1 { font-size:17px; letter-spacing:-.3px }
-header nav { display:flex; gap:4px }
-header nav a { border:0; background:none; padding:6px 12px; border-radius:8px;
-  font:inherit; cursor:pointer; color:var(--mut); text-decoration:none }
-header nav a.on { background:var(--ink); color:#fff }
+body { font:15px/1.5 var(--body); background:var(--paper); color:var(--ink1); -webkit-font-smoothing:antialiased }
+header { display:flex; align-items:center; gap:22px; flex-wrap:wrap; background:var(--paper);
+  border-bottom:1px solid var(--ln); padding:0 26px; height:62px; position:sticky; top:0; z-index:20 }
+header .brand { display:flex; align-items:baseline; gap:11px }
+header h1 { font-family:var(--display); font-weight:700; font-size:25px; letter-spacing:.01em; line-height:1 }
+header nav { display:flex; gap:22px; margin-left:6px }
+header nav a { border:0; background:none; padding:4px 0; font:inherit; font-size:14px; font-weight:500;
+  color:var(--ink2); text-decoration:none; position:relative; cursor:pointer }
+header nav a:hover { color:var(--ink1) }
+header nav a.on { color:var(--ink1); font-weight:600 }
+header nav a.on::after { content:""; position:absolute; left:0; right:0; bottom:-19px; height:2px; background:var(--ink1) }
 header .sp { flex:1 }
-main { max-width:1100px; margin:20px auto; padding:0 16px }
+header .mut { font-family:var(--mono); font-size:12px; color:var(--ink2) }
+main { max-width:1320px; margin:26px auto; padding:0 26px }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
   padding:16px; margin-bottom:16px }
 table { width:100%; border-collapse:collapse; font-size:14px }
@@ -45,3 +59,91 @@ img.prev { max-width:200px; border:1px solid var(--line); border-radius:6px; dis
 .rowflex { display:flex; align-items:center; margin-bottom:10px }
 .rowflex .sp { flex:1 }
 .acts { text-align:right; white-space:nowrap }
+
+/* ===================== overview (home / devices) ===================== */
+.ov-sec-head { display:flex; align-items:baseline; gap:14px; margin-bottom:16px }
+.ov-sec-head h2 { font-size:14px; font-weight:700; letter-spacing:.01em; text-transform:uppercase }
+.ov-sec-head .rule { flex:1; height:1px; background:var(--ln) }
+.ov-sec-head .meta { font-family:var(--mono); font-size:11px; color:var(--ink3); letter-spacing:.04em }
+.ov-btn { font-family:var(--body); font-weight:600; font-size:13.5px; border:1px solid var(--ink1);
+  background:var(--ink1); color:var(--paper); padding:8px 15px; cursor:pointer; border-radius:0;
+  box-shadow:2px 2px 0 var(--ln2); transition:transform .08s, box-shadow .08s }
+.ov-btn:hover { transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--ln2) }
+.ov-btn:active { transform:translate(1px,1px); box-shadow:0 0 0 var(--ln2) }
+
+/* e-ink screen preview — the single home of the dither */
+.ov-screen { position:relative; background:var(--paper2); border:1px solid var(--ln2); overflow:hidden;
+  background-image:radial-gradient(var(--dot) 1px, transparent 1.5px); background-size:5px 5px;
+  display:grid; place-items:center; aspect-ratio:5/3 }
+.ov-screen img { width:100%; height:100%; object-fit:contain; image-rendering:pixelated; display:block }
+.ov-ph { font-family:var(--display); color:var(--ink3); font-size:20px; letter-spacing:.02em }
+
+/* hero */
+.ov-hero { display:grid; grid-template-columns:1.5fr 1fr; gap:24px; align-items:stretch; margin-bottom:34px }
+.ov-hero > * { min-width:0 }
+.ov-feature .ov-screen { max-width:600px }
+.ov-feature .ov-cap { font-family:var(--mono); font-size:11px; color:var(--ink2); letter-spacing:.03em; margin-top:10px }
+.ov-feature .ov-cap b { color:var(--ink1); font-weight:600 }
+.ov-status { border:1px solid var(--ln); background:var(--paper); padding:20px 22px }
+.ov-status h3 { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; margin-bottom:6px }
+.ov-srow { display:flex; justify-content:space-between; align-items:baseline; padding:13px 0; border-bottom:1px solid var(--ln) }
+.ov-srow:last-child { border-bottom:0; padding-bottom:0 }
+.ov-srow .k { font-family:var(--mono); font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink2) }
+.ov-srow .v { font-size:14px; font-weight:600; font-variant-numeric:tabular-nums }
+.ov-srow .v small { font-weight:400; color:var(--ink2); font-size:12px }
+.ov-srow .v.alert { color:var(--red) }
+
+/* spec line */
+.ov-spec { display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center; padding:15px 2px;
+  border-top:1px solid var(--ln); border-bottom:1px solid var(--ln); margin-bottom:34px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink2) }
+.ov-spec b { color:var(--ink1); font-weight:700 }
+.ov-spec .sep { color:var(--ln2) }
+
+/* split: displays + attention */
+.ov-split { display:grid; grid-template-columns:1fr 320px; gap:26px; align-items:start }
+.ov-split > * { min-width:0 }
+.ov-displays { display:grid; grid-template-columns:1fr 1fr; gap:16px }
+.ov-card { border:1px solid var(--ln); background:var(--paper); padding:14px; display:flex; flex-direction:column; gap:13px }
+.ov-card:hover { border-color:var(--ln2) }
+.ov-card.sel { border-color:var(--ink1); box-shadow:3px 3px 0 var(--ln) }
+.ov-card-top { display:flex; justify-content:space-between; align-items:center }
+.ov-card-top .id { font-family:var(--mono); font-size:11px; color:var(--ink3); letter-spacing:.06em }
+.ov-st { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px;
+  font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink2) }
+.ov-st .d { width:7px; height:7px; border-radius:50%; background:var(--ink1) }
+.ov-st.low .d { background:transparent; border:1.5px solid var(--ink1) }
+.ov-st.off { color:var(--red) } .ov-st.off .d { background:var(--red) }
+.ov-card .ov-screen { padding:0 }
+.ov-card-body h3 { font-size:16px; font-weight:700; letter-spacing:-.01em }
+.ov-card-body p { font-size:13px; color:var(--ink2); margin-top:2px }
+.ov-card-foot { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--ln); padding-top:11px }
+.ov-card-foot button { border:0; background:none; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink1); cursor:pointer; padding:0 }
+.ov-card-foot button:hover { text-decoration:underline; text-underline-offset:3px }
+.ov-card-foot .dim { font-family:var(--mono); font-size:11px; color:var(--ink3); letter-spacing:.04em }
+
+/* attention rail */
+.ov-attention { border:1px solid var(--ln); background:var(--paper); padding:18px 20px }
+.ov-attention .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px }
+.ov-attention h2 { font-size:14px; font-weight:700; letter-spacing:.01em; text-transform:uppercase }
+.ov-attention .date { font-family:var(--mono); font-size:11px; color:var(--ink3); letter-spacing:.06em; text-transform:uppercase }
+.ov-attn { display:flex; gap:14px; padding:13px 0; border-bottom:1px solid var(--ln) }
+.ov-attn:last-child { border-bottom:0 }
+.ov-attn .mk { width:8px; height:8px; border-radius:50%; background:var(--red); margin-top:6px; flex:none }
+.ov-attn .who { font-size:14px; font-weight:600 }
+.ov-attn .who small { display:block; font-family:var(--mono); font-size:11px; font-weight:400; color:var(--ink2); letter-spacing:.04em; text-transform:uppercase; margin-top:3px }
+.ov-attn button { border:0; background:none; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink1); cursor:pointer; padding:0; margin-left:auto; align-self:center }
+.ov-attn button:hover { text-decoration:underline; text-underline-offset:3px }
+.ov-empty { padding:16px 0 4px; color:var(--ink2); font-size:13.5px }
+.ov-empty .ok { display:inline-flex; align-items:center; gap:8px }
+.ov-empty .ok .d { width:8px; height:8px; border-radius:50%; background:var(--ink1) }
+
+@media (max-width:1000px) {
+  .ov-hero { grid-template-columns:1fr } .ov-split { grid-template-columns:1fr }
+  .ov-feature .ov-screen { max-width:none }
+}
+@media (max-width:680px) {
+  header { padding:12px 16px; height:auto; gap:10px 16px }
+  main { padding:0 16px; margin:20px auto }
+  .ov-displays { grid-template-columns:1fr }
+}

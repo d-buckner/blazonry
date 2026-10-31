@@ -58,7 +58,9 @@ async function register(e) {
 {/if}
 {#if app.token}
   <header>
-    <h1>mntr</h1>
+    <div class="brand">
+      <h1>mntr</h1>
+    </div>
     <nav>
       {#each TABS as t}
         <a class={t === app.tab ? 'on' : ''} href="#{t}" onclick={(e) => { e.preventDefault(); app.tab = t; }}>

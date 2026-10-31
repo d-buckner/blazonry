@@ -309,7 +309,8 @@ pub async fn device_list_json(pool: &SqlitePool) -> Result<Vec<serde_json::Value
             'playlist_id', playlist_id, 'last_poll_at', last_poll_at,
             'firmware_version', firmware_version, 'model', model,
             'battery_voltage', battery_voltage, 'rssi', rssi,
-            'width', width, 'height', height, 'poll_count', poll_count
+            'width', width, 'height', height, 'poll_count', poll_count,
+            'current_screen_id', current_screen_id, 'refresh_interval', refresh_interval
          ) FROM devices ORDER BY id",
     )
     .fetch_all(pool)
@@ -324,7 +325,8 @@ pub async fn device_json(pool: &SqlitePool, id: i64) -> Result<Option<serde_json
             'playlist_id', playlist_id, 'last_poll_at', last_poll_at,
             'firmware_version', firmware_version, 'model', model,
             'battery_voltage', battery_voltage, 'rssi', rssi,
-            'width', width, 'height', height, 'poll_count', poll_count
+            'width', width, 'height', height, 'poll_count', poll_count,
+            'current_screen_id', current_screen_id, 'refresh_interval', refresh_interval
          ) FROM devices WHERE id = ?",
     )
     .bind(id)
