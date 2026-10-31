@@ -40,7 +40,6 @@ const onlineCount = $derived(rows.filter(online).length);
 const attention = $derived(rows.filter((d) => !online(d) || low(d)));
 const featured = $derived(rows.find(online) || rows[0] || null);
 const lastSync = $derived(rows.reduce((m, d) => (d.last_poll_at && (!m || d.last_poll_at > m) ? d.last_poll_at : m), null));
-const panel = $derived(featured ? dims(featured) : '—');
 const firmware = $derived((() => {
   const c = {};
   for (const d of rows) if (d.firmware_version) c[d.firmware_version] = (c[d.firmware_version] || 0) + 1;
@@ -87,12 +86,6 @@ async function del(id) {
     </aside>
   </section>
 {/if}
-
-<div class="ov-spec">
-  <span><b>{panel}</b> panel</span><span class="sep">/</span>
-  <span><b>native</b> render</span><span class="sep">/</span>
-  <span><b>LAN</b> only · no cloud</span>
-</div>
 
 <div class="ov-split">
   <section>

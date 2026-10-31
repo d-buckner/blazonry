@@ -110,13 +110,6 @@ img.prev { max-width:200px; border:1px solid var(--ln2); border-radius:0; displa
 .ov-srow .v small { font-weight:400; color:var(--ink2); font-size:12px }
 .ov-srow .v.alert { color:var(--red) }
 
-/* spec line */
-.ov-spec { display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center; padding:15px 2px;
-  border-top:1px solid var(--ln); border-bottom:1px solid var(--ln); margin-bottom:34px;
-  font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink2) }
-.ov-spec b { color:var(--ink1); font-weight:700 }
-.ov-spec .sep { color:var(--ln2) }
-
 /* split: displays + attention */
 .ov-split { display:grid; grid-template-columns:1fr 320px; gap:26px; align-items:start }
 .ov-split > * { min-width:0 }
