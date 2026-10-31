@@ -118,7 +118,8 @@ The overview is ported and verified against the real backend with seeded data. D
 - **Screen previews are real rendered images**, fetched authed from `/admin/screens/:id/preview` (native renderer output) — the e-ink look is authentic automatically; the dot-field is only the placeholder when a device has no current screen. Required a one-line backend change: `current_screen_id` + `refresh_interval` added to `device_list_json`.
 - **The fictional "Today" calendar and "Recently shown" strip are dropped** — there is no calendar or per-display history in the data model, so inventing them would be dishonest. The right rail is now an **Attention** panel listing offline / low-battery devices (the real "needs attention" items), with a calm "All displays healthy" empty state.
 - **Live state is derived, never fabricated:** online = last poll within `max(2×refresh_interval, 30 min)`; low battery = `voltage < 3.3 V`; needs-attention = offline + low-battery count. Battery shows voltage, not a fake percentage.
-- **Shared header restyled** to the new system (applies to all tabs). The other tabs' content (Screens/Playlists/Firmware/Models/Users) still uses the legacy table styles — an incremental port; the overview was the target surface.
+- **Shared header restyled** to the new system (applies to all tabs).
+- **All tabs ported.** Screens, Playlists, Firmware, Models and Users now share the system via restyled primitives (`.card`, `table`, `.pri`/`.act` buttons, `.pill`, form rows/inputs, `dialog`, banners, toasts) — paper panels, uppercase tracked section labels over a hairline rule, ink primary buttons with the offset shadow, hairline tables, and status pills using the ink-dot language. Verified against the live backend (real screens, playlists, seeded models, users) plus the CRUD dialog and the login/register screen.
 
 ## 10. Porting notes (Svelte)
 

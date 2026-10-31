@@ -19,7 +19,7 @@ async function verify(id) {
 </script>
 
 <div class="card">
-  <h3 style="margin-bottom:10px">Users</h3>
+  <div class="rowflex"><h3>Users</h3></div>
   <table>
     <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
     <tbody>
