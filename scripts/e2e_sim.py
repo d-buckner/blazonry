@@ -48,6 +48,7 @@ def main():
     ap.add_argument("--server-port", type=int, default=2301)
     ap.add_argument("--seconds", type=int, default=120)
     ap.add_argument("--shot", default=os.path.join(ROOT, "sim_screen.png"))
+    ap.add_argument("--seed", default=None, help="JSON file: {providers:[...], extensions:[...]} created before the playlist")
     args = ap.parse_args()
 
     fw = args.firmware
@@ -85,7 +86,22 @@ def main():
     _, r = http(base + "/admin/screens", {"name": "e2e", "template": template,
         "vars": {"title": "MNTR", "body": "real firmware, no real hardware"}}, auth)
     sid = r["id"]
-    _, r = http(base + "/admin/playlists", {"name": "p", "screen_ids": [sid]}, auth)
+    screen_ids = []
+    # optional seed: providers + extensions (core-extension e2e). Extension
+    # screens lead the rotation so the first display poll shows one for real.
+    if args.seed:
+        seed = json.load(open(args.seed))
+        for p in seed.get("providers", []):
+            st, r = http(base + "/admin/providers", p, auth)
+            print(f"[seed] provider {p['kind']} -> {st} id={r.get('id')} events={r.get('last_event_count')} err={r.get('first_refresh_error')}")
+        for e in seed.get("extensions", []):
+            st, r = http(base + "/admin/extensions", e, auth)
+            print(f"[seed] extension {e['kind']} -> {st} {r}")
+            if st == 200 and "screen_id" in r:
+                screen_ids.append(r["screen_id"])
+    if not screen_ids:
+        screen_ids.append(sid)
+    _, r = http(base + "/admin/playlists", {"name": "p", "screen_ids": screen_ids}, auth)
     # device MAC we will burn into the sim's eFuse so we can pre-assign
     DEV_MAC = "7C:DF:A1:12:34:56"
 
@@ -145,14 +161,18 @@ def main():
         sys.exit("device never polled mntr")
 
     # force a wake + refresh, then screenshot what the firmware drew
-    try:
-        http(ctl + "/wake", {})
-    except Exception:
-        pass  # already awake
-    time.sleep(8)
-    png = http(ctl + "/screenshot", raw=True)[1]
-    open(args.shot, "wb").write(png)
-    print(f"[harness] screenshot -> {args.shot} ({len(png)} bytes)")
+    shots = int(os.environ.get("MNTR_SHOTS", "1"))
+    for i in range(shots):
+        try:
+            http(ctl + "/wake", {})
+        except Exception:
+            pass  # already awake
+        time.sleep(20)
+        png = http(ctl + "/screenshot", raw=True)[1]
+        stem, ext = os.path.splitext(args.shot)
+        path = args.shot if shots == 1 else f"{stem}-{i+1}{ext}"
+        open(path, "wb").write(png)
+        print(f"[harness] screenshot -> {path} ({len(png)} bytes)")
 
     _, reqs = http(ctl + "/console?since=0")
     print("[harness] done. sim log:", os.path.join(tmp, "sim.log"))

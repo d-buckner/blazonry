@@ -1,0 +1,11 @@
+{
+  "providers": [
+    { "kind": "open_meteo", "name": "Springfield", "config": { "latitude": 39.7817, "longitude": -89.6501 }, "refresh_secs": 60 },
+    { "kind": "caldav", "name": "Family", "config": { "url": "http://127.0.0.1:5299/family/" }, "refresh_secs": 60 }
+  ],
+  "extensions": [
+    { "kind": "weather", "name": "Weather", "settings": { "days": 3 } },
+    { "kind": "family_calendar", "name": "Family Calendar", "settings": { "days": 3 } },
+    { "kind": "clock", "name": "Clock", "settings": {} }
+  ]
+}

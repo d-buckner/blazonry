@@ -27,7 +27,7 @@ pub const AGENDA_TEMPLATE: &str = r##"{
     { "type": "text", "text": "{{ day.label }}", "style": { "font_px": 22, "bold": true }, "padding": [8, 20, 2, 20] },
 {% for e in day.events %}
     { "type": "flex", "direction": "row", "gap": 14, "padding": [2, 20, 2, 20], "children": [
-      { "type": "text", "text": "{{ e.time }}", "style": { "font_px": 22 }, "width": 92 },
+      { "type": "text", "text": "{{ e.time }}", "style": { "font_px": 22 }, "width": 110 },
       { "type": "text", "text": "{{ e.title }}", "style": { "font_px": 22 }, "grow": 1 }{% if e.extra %},
       { "type": "text", "text": "{{ e.extra }}", "style": { "font_px": 18, "fg": 1 } }{% endif %}
     ] },

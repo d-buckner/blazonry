@@ -19,6 +19,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub mod caldav;
+pub mod open_meteo;
 
 pub const DEFAULT_REFRESH_SECS: i64 = 3600;
 
@@ -32,6 +33,14 @@ pub struct CalendarEvent {
     pub title: String,
     pub location: String,
     pub description: String,
+}
+
+/// What a provider publishes. Shapes are typed interfaces, not vendors.
+#[derive(Debug, Clone)]
+pub enum Snapshot {
+    Calendar(Vec<CalendarEvent>),
+    /// WeatherSource: one JSON object (current + days), see open_meteo.
+    Weather(serde_json::Value),
 }
 
 pub const MIGRATE: &str = r#"
@@ -53,6 +62,11 @@ CREATE TABLE IF NOT EXISTS provider_events (
   location TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS provider_weather (
+  provider_id INTEGER PRIMARY KEY,
+  payload TEXT NOT NULL,
+  fetched_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS extensions (
   id INTEGER PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -71,12 +85,14 @@ pub fn la() -> chrono_tz::Tz {
 /// Implementations live one-per-module (see [`caldav`]).
 pub trait Provider: Send + Sync {
     fn kind(&self) -> &'static str;
+    /// Shape this kind publishes: "calendar" | "weather".
+    fn shape(&self) -> &'static str;
     /// Validate a config JSON at create/patch time — bad config fails in the
     /// admin UI, not at render time.
     fn validate(&self, config: &serde_json::Value) -> anyhow::Result<()>;
-    /// Fetch a fresh CalendarSource snapshot for one configured instance.
+    /// Fetch a fresh snapshot for one configured instance.
     fn fetch(&self, config: serde_json::Value)
-        -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<CalendarEvent>>> + Send>>;
+        -> Pin<Box<dyn Future<Output = anyhow::Result<Snapshot>> + Send>>;
 }
 
 /// The provider registry: kind string -> impl. One line per provider module.
@@ -85,7 +101,7 @@ pub fn registry() -> &'static std::collections::HashMap<&'static str, Box<dyn Pr
     use std::sync::OnceLock;
     static REGISTRY: OnceLock<HashMap<&'static str, Box<dyn Provider>>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        let providers: Vec<Box<dyn Provider>> = vec![Box::new(caldav::CalDav)];
+        let providers: Vec<Box<dyn Provider>> = vec![Box::new(caldav::CalDav), Box::new(open_meteo::OpenMeteo)];
         providers.into_iter().map(|p| (p.kind(), p)).collect()
     })
 }
@@ -203,6 +219,8 @@ pub async fn merged_calendar_rows(pool: &SqlitePool, ids: &[i64]) -> anyhow::Res
 pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM provider_events WHERE provider_id = ?").bind(id)
         .execute(pool).await?;
+    sqlx::query("DELETE FROM provider_weather WHERE provider_id = ?").bind(id)
+        .execute(pool).await?;
     sqlx::query("DELETE FROM providers WHERE id = ?").bind(id)
         .execute(pool).await?;
     Ok(())
@@ -229,18 +247,57 @@ pub async fn all_caldav_ids_exist(pool: &SqlitePool, ids: &[i64]) -> anyhow::Res
 // ---------------------------------------------------------------------------
 
 /// Replace one provider's snapshot atomically-ish (delete+insert).
-pub async fn store_snapshot(pool: &SqlitePool, provider_id: i64, events: &[CalendarEvent]) -> anyhow::Result<()> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM provider_events WHERE provider_id = ?").bind(provider_id)
-        .execute(&mut *tx).await?;
-    for e in events {
-        sqlx::query("INSERT INTO provider_events (provider_id, uid, start, all_day, title, location, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .bind(provider_id).bind(&e.uid).bind(&e.start).bind(e.all_day as i64)
-            .bind(&e.title).bind(&e.location).bind(&e.description)
-            .execute(&mut *tx).await?;
+pub async fn store_snapshot(pool: &SqlitePool, provider_id: i64, snap: &Snapshot) -> anyhow::Result<usize> {
+    match snap {
+        Snapshot::Calendar(events) => {
+            let mut tx = pool.begin().await?;
+            sqlx::query("DELETE FROM provider_events WHERE provider_id = ?").bind(provider_id)
+                .execute(&mut *tx).await?;
+            for e in events {
+                sqlx::query("INSERT INTO provider_events (provider_id, uid, start, all_day, title, location, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                    .bind(provider_id).bind(&e.uid).bind(&e.start).bind(e.all_day as i64)
+                    .bind(&e.title).bind(&e.location).bind(&e.description)
+                    .execute(&mut *tx).await?;
+            }
+            tx.commit().await?;
+            Ok(events.len())
+        }
+        Snapshot::Weather(payload) => {
+            sqlx::query("INSERT INTO provider_weather (provider_id, payload, fetched_at) VALUES (?, ?, datetime('now')) \
+                         ON CONFLICT(provider_id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+                .bind(provider_id).bind(payload.to_string())
+                .execute(pool).await?;
+            Ok(1)
+        }
     }
-    tx.commit().await?;
-    Ok(())
+}
+
+/// Latest weather snapshot payload for one provider, if any.
+pub async fn weather_snapshot(pool: &SqlitePool, provider_id: i64) -> anyhow::Result<Option<Value>> {
+    let row: Option<String> = sqlx::query_scalar("SELECT payload FROM provider_weather WHERE provider_id = ?")
+        .bind(provider_id).fetch_optional(pool).await?;
+    Ok(row.and_then(|s| serde_json::from_str(&s).ok()))
+}
+
+/// All weather-provider ids in creation order (selector default: `all`).
+pub async fn weather_provider_ids(pool: &SqlitePool) -> anyhow::Result<Vec<i64>> {
+    Ok(sqlx::query_scalar("SELECT id FROM providers WHERE kind = 'open_meteo' ORDER BY id")
+        .fetch_all(pool).await?)
+}
+
+/// Validate that every id in `ids` exists as a weather provider.
+pub async fn weather_ids_exist(pool: &SqlitePool, ids: &[i64]) -> anyhow::Result<bool> {
+    if ids.is_empty() {
+        return Ok(true);
+    }
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let mut q = sqlx::query(AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM providers WHERE kind = 'open_meteo' AND id IN ({placeholders})")));
+    for id in ids {
+        q = q.bind(*id);
+    }
+    let n: i64 = q.fetch_one(pool).await?.get(0);
+    Ok(n == ids.len() as i64)
 }
 
 /// Refresh one provider by id: fetch via its kind's impl, store snapshot,
@@ -255,10 +312,8 @@ pub async fn refresh_provider(pool: &SqlitePool, id: i64) -> anyhow::Result<usiz
     let result: anyhow::Result<usize> = match lookup(&kind) {
         Some(p) => {
             let config = serde_json::from_str(&config).unwrap_or(serde_json::Value::Null);
-            let events = p.fetch(config).await?;
-            let n = events.len();
-            store_snapshot(pool, id, &events).await?;
-            Ok(n)
+            let snap = p.fetch(config).await?;
+            store_snapshot(pool, id, &snap).await
         }
         None => Err(anyhow::anyhow!("unknown provider kind {kind}")),
     };
@@ -309,6 +364,10 @@ pub fn spawn_provider_loop(pool: SqlitePool, backends: crate::cache::Backends, c
                 if let Err(e) = crate::extensions::rebuild_extensions(&pool, &backends, &cache).await {
                     tracing::warn!(%e, "extension rebuild failed");
                 }
+            }
+            // Clocks are live regardless of provider activity: repaint every tick.
+            if let Err(e) = crate::extensions::rebuild_clocks(&pool, &backends, &cache).await {
+                tracing::warn!(%e, "clock rebuild failed");
             }
         }
     })

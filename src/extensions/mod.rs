@@ -11,6 +11,8 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 
 pub mod family_calendar;
+pub mod weather;
+pub mod clock;
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
@@ -63,10 +65,48 @@ pub async fn rebuild_extensions(pool: &SqlitePool, backends: &crate::cache::Back
                 repaint(pool, backends, cache, sid).await;
                 n += 1;
             }
+            "weather" => {
+                let Some(pid) = weather::resolved_provider_id(pool, &settings).await? else {
+                    tracing::warn!(extension = name, "no weather provider resolved; leaving screen as-is");
+                    continue;
+                };
+                match crate::providers::weather_snapshot(pool, pid).await? {
+                    Some(snap) => {
+                        let vars = weather::weather_vars(&snap, &settings);
+                        crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                        repaint(pool, backends, cache, sid).await;
+                        n += 1;
+                    }
+                    None => {
+                        let vars = weather::no_data_vars("Waiting for first weather refresh...");
+                        crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                        repaint(pool, backends, cache, sid).await;
+                    }
+                }
+            }
+            "clock" => {
+                let vars = clock::clock_vars(&settings);
+                crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                repaint(pool, backends, cache, sid).await;
+                n += 1;
+            }
             other => tracing::warn!(extension = name, kind = other, "unknown extension kind; skipping"),
         }
     }
     Ok(n)
+}
+
+/// Re-render clock extensions (time is live: every provider-loop tick).
+pub async fn rebuild_clocks(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache) -> anyhow::Result<()> {
+    let exts = all_rows(pool).await?;
+    for ext in exts {
+        if ext.kind != "clock" { continue }
+        let Some(sid) = ext.screen_id else { continue };
+        let vars = clock::clock_vars(&ext.settings);
+        crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+        repaint(pool, backends, cache, sid).await;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +186,8 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<Option<i64>> {
 pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, kind: &str, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
     match kind {
         "family_calendar" => family_calendar::create(pool, backends, cache, name, settings).await,
-        other => anyhow::bail!("unknown extension kind '{other}' (supported: family_calendar)"),
+        "weather" => weather::create(pool, backends, cache, name, settings).await,
+        "clock" => clock::create(pool, backends, cache, name, settings).await,
+        other => anyhow::bail!("unknown extension kind '{other}' (supported: family_calendar, weather, clock)"),
     }
 }

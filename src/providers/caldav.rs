@@ -5,7 +5,7 @@
 //! text/calendar. Servers that answer PROPFIND-style XML instead get the
 //! fallback: enumerate item hrefs and GET each.
 
-use super::{CalendarEvent, Provider};
+use super::{CalendarEvent, Provider, Snapshot};
 use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use std::str::FromStr;
@@ -30,6 +30,10 @@ impl Provider for CalDav {
         "caldav"
     }
 
+    fn shape(&self) -> &'static str {
+        "calendar"
+    }
+
     fn validate(&self, config: &serde_json::Value) -> anyhow::Result<()> {
         let cfg: CalDavConfig = serde_json::from_value(config.clone())
             .map_err(|e| anyhow::anyhow!("invalid caldav config: {e}"))?;
@@ -40,11 +44,11 @@ impl Provider for CalDav {
     }
 
     fn fetch(&self, config: serde_json::Value)
-        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Vec<CalendarEvent>>> + Send>>
+        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Snapshot>> + Send>>
     {
         Box::pin(async move {
             let cfg: CalDavConfig = serde_json::from_value(config)?;
-            fetch(&cfg, WINDOW_DAYS).await
+            Ok(Snapshot::Calendar(fetch(&cfg, WINDOW_DAYS).await?))
         })
     }
 }
