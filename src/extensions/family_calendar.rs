@@ -121,7 +121,7 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
 /// Create a family_calendar extension: validates cardinality (1..n), creates
 /// its screen row with the agenda template, and renders it immediately.
 /// Returns (extension_id, screen_id).
-pub async fn create(pool: &SqlitePool, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
+pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
     let ids = super::resolved_provider_ids(pool, &settings).await?;
     if ids.is_empty() {
         anyhow::bail!("family_calendar requires 1..n calendar providers; none configured or picked");
@@ -130,6 +130,6 @@ pub async fn create(pool: &SqlitePool, cache: &crate::cache::BmpCache, name: &st
     let sid = crate::screens::create(pool, name, AGENDA_TEMPLATE, &vars.to_string()).await?;
     let id = super::insert(pool, "family_calendar", name, &settings, sid).await?;
     // Immediate first paint from existing snapshots.
-    super::rebuild_extensions(pool, cache).await?;
+    super::rebuild_extensions(pool, backends, cache).await?;
     Ok((id, sid))
 }

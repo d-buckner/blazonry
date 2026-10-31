@@ -103,7 +103,7 @@ pub async fn get_screen(State(st): State<SharedState>, Path(id): Path<i64>) -> R
 }
 
 pub async fn patch_screen(State(st): State<SharedState>, Path(id): Path<i64>, Json(b): Json<Value>) -> Res {
-    let n = screens::patch(&st.pool, id, &b, &["name", "template", "vars"]).await.map_err(err)?;
+    let n = screens::patch(&st.pool, id, &b, &["name", "template", "vars", "render_backend"]).await.map_err(err)?;
     if n == 0 { return Err(not_found("screen")); }
     cache::invalidate(&st.cache, id).await;
     Ok(Json(json!({ "ok": true })))

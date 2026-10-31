@@ -19,20 +19,46 @@ async fn main() -> anyhow::Result<()> {
     let job_secs: u64 = arg_after(&args, "--job-secs").and_then(|s| s.parse().ok()).unwrap_or(300);
 
     let pool = mntr::db::connect(&db_path).await?;
-    let renderer = Arc::new(mntr::render::Renderer::new()?);
+
+    // Render backends (issue #14): native always; browser when this build has
+    // the `browser` feature AND a Chromium binary is present. --render-backend
+    // browser makes it the global default; per-screen render_backend overrides.
+    #[cfg_attr(not(feature = "browser"), allow(unused_mut))]
+    let mut backends = mntr::cache::Backends::native_only()?;
+    let want_browser = arg_after(&args, "--render-backend").as_deref() == Some("browser");
+    #[cfg(feature = "browser")]
+    if want_browser || std::env::var("MNTR_BROWSER_PATH").is_ok() {
+        match mntr::browser::find_browser() {
+            Some(chrome) => match mntr::browser::BrowserBackend::launch(&chrome).await {
+                Ok(b) => {
+                    let b = std::sync::Arc::new(b);
+                    tracing::info!(chrome, "browser render backend ready");
+                    if want_browser { backends.default = b.clone(); }
+                    backends.browser = Some(b);
+                }
+                Err(e) => tracing::warn!(%e, "browser backend requested but launch failed; native only"),
+            },
+            None => tracing::warn!("browser backend requested but no Chromium found (set MNTR_BROWSER_PATH)"),
+        }
+    }
+    #[cfg(not(feature = "browser"))]
+    if want_browser {
+        tracing::warn!("--render-backend browser requested but this build lacks the 'browser' feature; using native");
+    }
+
     let cache = mntr::cache::new_cache();
     let state = Arc::new(mntr::api::AppState {
         pool: pool.clone(),
-        renderer: renderer.clone(),
+        backends: backends.clone(),
         cache: cache.clone(),
     });
 
     // background refresh loop (replaces Sidekiq + poller procs)
-    mntr::cache::spawn_job_loop(pool.clone(), renderer.clone(), cache.clone(),
+    mntr::cache::spawn_job_loop(pool.clone(), backends.clone(), cache.clone(),
         std::time::Duration::from_secs(job_secs));
     // provider refresh loop: per-provider cadence (default 1h) -> snapshots
     // -> extension screen rebuilds
-    mntr::providers::spawn_provider_loop(pool.clone(), cache.clone(),
+    mntr::providers::spawn_provider_loop(pool.clone(), backends.clone(), cache.clone(),
         std::time::Duration::from_secs(60));
 
     let admin = Router::new()

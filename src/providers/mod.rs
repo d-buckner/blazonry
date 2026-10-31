@@ -279,7 +279,7 @@ pub async fn refresh_provider(pool: &SqlitePool, id: i64) -> anyhow::Result<usiz
 
 /// Background provider loop: every `tick`, refresh providers whose interval
 /// elapsed, then rebuild extension screens if anything changed.
-pub fn spawn_provider_loop(pool: SqlitePool, cache: crate::cache::BmpCache, tick: std::time::Duration) -> tokio::task::JoinHandle<()> {
+pub fn spawn_provider_loop(pool: SqlitePool, backends: crate::cache::Backends, cache: crate::cache::BmpCache, tick: std::time::Duration) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut t = tokio::time::interval(tick);
         t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -306,7 +306,7 @@ pub fn spawn_provider_loop(pool: SqlitePool, cache: crate::cache::BmpCache, tick
                 }
             }
             if changed {
-                if let Err(e) = crate::extensions::rebuild_extensions(&pool, &cache).await {
+                if let Err(e) = crate::extensions::rebuild_extensions(&pool, &backends, &cache).await {
                     tracing::warn!(%e, "extension rebuild failed");
                 }
             }

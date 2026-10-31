@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 argon2 = "0.6.0"
+async-trait = "0.1"
 axum = { version = "0.8.9", features = ["tokio"] }
 base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -31,6 +32,32 @@ tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "p
 tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[features]
+default = []
+browser = ["dep:chromiumoxide", "dep:futures-util", "dep:brotli"]
+
+[dependencies.chromiumoxide]
+version = "0.9"
+default-features = false
+features = ["rustls", "zip8"]
+optional = true
+
+[dependencies.futures-util]
+version = "0.3"
+optional = true
+
+[dependencies.brotli]
+version = "8"
+optional = true
+
+[[bin]]
+name = "browser_demo"
+required-features = ["browser"]
+
+[[bin]]
+name = "recipe_shot"
+required-features = ["browser"]
 
 [dev-dependencies]
 reqwest = { version = "0.13.5", features = ["json"] }

@@ -93,6 +93,7 @@ pub const COLUMN_MIGRATIONS: &[&str] = &[
     "ALTER TABLE firmware ADD COLUMN created_at TEXT",
     "ALTER TABLE playlists ADD COLUMN mirror INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE playlist_screens ADD COLUMN visible INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE screens ADD COLUMN render_backend TEXT",
 ];
 
 /// Seed the device-model registry once (Terminus /api/models parity: og + x).

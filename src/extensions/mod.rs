@@ -33,22 +33,17 @@ pub async fn merged_calendar_rows(pool: &SqlitePool, ids: &[i64]) -> anyhow::Res
 }
 
 /// Re-render one extension screen into the BMP cache (both panel depths).
-async fn repaint(pool: &SqlitePool, cache: &crate::cache::BmpCache, screen_id: i64) {
+async fn repaint(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, screen_id: i64) {
     for bpp in [1u16, 2u16] {
-        match crate::render::Renderer::new() {
-            Ok(r) => {
-                if let Err(e) = crate::cache::render_and_cache(pool, &r, cache, screen_id, bpp).await {
-                    tracing::warn!(%e, screen = screen_id, "extension re-render failed");
-                }
-            }
-            Err(e) => tracing::warn!(%e, "renderer init failed during extension repaint"),
+        if let Err(e) = crate::cache::render_and_cache(pool, backends, cache, screen_id, bpp).await {
+            tracing::warn!(%e, screen = screen_id, "extension re-render failed");
         }
     }
 }
 
 /// Rebuild every extension's bound screen from current snapshots.
 /// Returns the number of extensions rebuilt.
-pub async fn rebuild_extensions(pool: &SqlitePool, cache: &crate::cache::BmpCache) -> anyhow::Result<usize> {
+pub async fn rebuild_extensions(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache) -> anyhow::Result<usize> {
     let exts = all_rows(pool).await?;
     let mut n = 0;
     for ext in exts {
@@ -65,7 +60,7 @@ pub async fn rebuild_extensions(pool: &SqlitePool, cache: &crate::cache::BmpCach
                 let vars = family_calendar::agenda_vars(&merged, &settings);
                 let vars_json = serde_json::to_string(&vars)?;
                 crate::screens::set_vars(pool, sid, &vars_json).await?;
-                repaint(pool, cache, sid).await;
+                repaint(pool, backends, cache, sid).await;
                 n += 1;
             }
             other => tracing::warn!(extension = name, kind = other, "unknown extension kind; skipping"),
@@ -148,9 +143,9 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<Option<i64>> {
 
 /// Create an extension by kind: validate cardinality, create its screen row,
 /// render immediately from existing snapshots. Returns (extension_id, screen_id).
-pub async fn create(pool: &SqlitePool, cache: &crate::cache::BmpCache, kind: &str, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
+pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, kind: &str, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
     match kind {
-        "family_calendar" => family_calendar::create(pool, cache, name, settings).await,
+        "family_calendar" => family_calendar::create(pool, backends, cache, name, settings).await,
         other => anyhow::bail!("unknown extension kind '{other}' (supported: family_calendar)"),
     }
 }
