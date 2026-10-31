@@ -35,7 +35,7 @@ COPY assets ./assets
 COPY web ./web
 RUN set -e; \
     case "$TARGETPLATFORM" in \
-      linux/amd64) T=x8_64-unknown-linux-musl ;; \
+      linux/amd64) T=x86_64-unknown-linux-musl ;; \
       linux/arm64) T=aarch64-unknown-linux-musl ;; \
       *) echo "unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
     esac; \
