@@ -1,0 +1,8 @@
+{
+  "providers": [
+    { "kind": "caldav", "name": "Family", "config": { "url": "http://127.0.0.1:5299/family/" }, "refresh_secs": 60 }
+  ],
+  "extensions": [
+    { "kind": "calendar", "name": "Calendar", "settings": { "days": 3 } }
+  ]
+}

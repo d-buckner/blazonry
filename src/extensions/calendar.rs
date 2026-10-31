@@ -1,4 +1,4 @@
-//! Family Calendar extension — TRMNL's most popular calendar plugin's
+//! Calendar extension — TRMNL's most popular calendar plugin's
 //! "Default" layout, rebuilt: upcoming events grouped by day, merged from
 //! all picked calendar providers, sorted by start.
 //!
@@ -111,24 +111,24 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
     }).collect();
 
     json!({
-        "title": settings.get("title").and_then(|v| v.as_str()).unwrap_or("Family Calendar"),
+        "title": settings.get("title").and_then(|v| v.as_str()).unwrap_or("Calendar"),
         "days": days,
         "empty": days.is_empty(),
         "footer": format!("Updated {}", now.with_timezone(&tz).format("%-l:%M %p").to_string().to_lowercase()),
     })
 }
 
-/// Create a family_calendar extension: validates cardinality (1..n), creates
+/// Create a calendar extension: validates cardinality (1..n), creates
 /// its screen row with the agenda template, and renders it immediately.
 /// Returns (extension_id, screen_id).
 pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
     let ids = super::resolved_provider_ids(pool, &settings).await?;
     if ids.is_empty() {
-        anyhow::bail!("family_calendar requires 1..n calendar providers; none configured or picked");
+        anyhow::bail!("calendar requires 1..n calendar providers; none configured or picked");
     }
-    let vars = json!({ "title": "Family Calendar", "days": [], "empty": true, "footer": "" });
+    let vars = json!({ "title": "Calendar", "days": [], "empty": true, "footer": "" });
     let sid = crate::screens::create(pool, name, AGENDA_TEMPLATE, &vars.to_string()).await?;
-    let id = super::insert(pool, "family_calendar", name, &settings, sid).await?;
+    let id = super::insert(pool, "calendar", name, &settings, sid).await?;
     // Immediate first paint from existing snapshots.
     super::rebuild_extensions(pool, backends, cache).await?;
     Ok((id, sid))

@@ -104,7 +104,7 @@ pub async fn list_extensions(State(st): State<SharedState>) -> Res {
 
 pub async fn create_extension(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
     let kind = b.get("kind").and_then(|v| v.as_str()).ok_or_else(|| bad("kind required"))?;
-    let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("Family Calendar");
+    let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("Calendar");
     let settings = b.get("settings").cloned().unwrap_or(json!({}));
     match extensions::create(&st.pool, &st.backends, &st.cache, kind, name, settings).await {
         Ok((id, screen_id)) => Ok(Json(json!({ "id": id, "screen_id": screen_id }))),

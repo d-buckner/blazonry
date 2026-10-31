@@ -1,5 +1,5 @@
 //! Extensions: consumers of provider shapes. One module per extension under
-//! `extensions/` (today: `family_calendar`). Each extension declares its
+//! `extensions/` (today: `calendar`). Each extension declares its
 //! required shape + cardinality and turns merged snapshots into a screen.
 //!
 //! The framework here is generic: selector resolution (all | explicit pick
@@ -10,7 +10,7 @@
 use serde_json::Value;
 use sqlx::SqlitePool;
 
-pub mod family_calendar;
+pub mod calendar;
 pub mod weather;
 pub mod clock;
 
@@ -52,14 +52,14 @@ pub async fn rebuild_extensions(pool: &SqlitePool, backends: &crate::cache::Back
         let ExtRow { kind, name, settings, screen_id } = ext;
         let Some(sid) = screen_id else { continue };
         match kind.as_str() {
-            "family_calendar" => {
+            "calendar" => {
                 let ids = resolved_provider_ids(pool, &settings).await?;
                 if ids.is_empty() {
                     tracing::warn!(extension = name, "no calendar providers resolved; leaving screen as-is");
                     continue;
                 }
                 let merged = merged_calendar_rows(pool, &ids).await?;
-                let vars = family_calendar::agenda_vars(&merged, &settings);
+                let vars = calendar::agenda_vars(&merged, &settings);
                 let vars_json = serde_json::to_string(&vars)?;
                 crate::screens::set_vars(pool, sid, &vars_json).await?;
                 repaint(pool, backends, cache, sid).await;
@@ -185,9 +185,9 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<Option<i64>> {
 /// render immediately from existing snapshots. Returns (extension_id, screen_id).
 pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, kind: &str, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
     match kind {
-        "family_calendar" => family_calendar::create(pool, backends, cache, name, settings).await,
+        "calendar" => calendar::create(pool, backends, cache, name, settings).await,
         "weather" => weather::create(pool, backends, cache, name, settings).await,
         "clock" => clock::create(pool, backends, cache, name, settings).await,
-        other => anyhow::bail!("unknown extension kind '{other}' (supported: family_calendar, weather, clock)"),
+        other => anyhow::bail!("unknown extension kind '{other}' (supported: calendar, weather, clock)"),
     }
 }

@@ -5,7 +5,7 @@
   ],
   "extensions": [
     { "kind": "weather", "name": "Weather", "settings": { "days": 3 } },
-    { "kind": "family_calendar", "name": "Family Calendar", "settings": { "days": 3 } },
+    { "kind": "calendar", "name": "Calendar", "settings": { "days": 3 } },
     { "kind": "clock", "name": "Clock", "settings": {} }
   ]
 }
