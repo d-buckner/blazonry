@@ -4,8 +4,14 @@
 //!
 //! The framework here is generic: selector resolution (all | explicit pick
 //! list — no tags, no expressions), snapshot merge, and rebuild dispatch.
-//! Adding an extension = new module + one match arm in [`rebuild_extensions`]
+//! Adding an extension = new module + one match arm in [`rebuild_extension`]
 //! and [`create`].
+//!
+//! Two framework services read the same kind→shape table so consumers never
+//! re-derive it: [`referenced_provider_ids`] (which providers any screen
+//! actually consumes — the refresh loop fetches nothing else) and
+//! [`rebuild_extensions_shapes`] (rebuild only screens whose consumed shape
+//! changed).
 
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -16,16 +22,45 @@ pub mod clock;
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
-/// Resolve an extension's provider pick list: explicit ids, or all providers
-/// of the shape when unset.
-pub async fn resolved_provider_ids(pool: &SqlitePool, settings: &Value) -> anyhow::Result<Vec<i64>> {
+/// The shape an extension kind consumes, if any (clock computes; no provider).
+/// This is the single kind→shape table — reference resolution and rebuild
+/// filtering both read it, so they can never disagree.
+pub fn consumes_shape(kind: &str) -> Option<&'static str> {
+    match kind {
+        "calendar" => Some("calendar"),
+        "weather" => Some("weather"),
+        _ => None,
+    }
+}
+
+/// Resolve an extension's provider pick list for a shape: explicit ids, or
+/// all providers of the shape when unset.
+pub async fn resolved_provider_ids(pool: &SqlitePool, settings: &Value, shape: &str) -> anyhow::Result<Vec<i64>> {
     if let Some(ids) = settings.get("provider_ids").and_then(|v| v.as_array()) {
         let ids: Vec<i64> = ids.iter().filter_map(|v| v.as_i64()).collect();
         if !ids.is_empty() {
             return Ok(ids);
         }
     }
-    Ok(crate::providers::calendar_provider_ids(pool).await?)
+    Ok(crate::providers::provider_ids_by_shape(pool, shape).await?)
+}
+
+/// The set of provider ids actually referenced by existing extensions.
+/// A provider no extension consumes is never refreshed — an orphan costs
+/// nothing. Weather's singular `provider_id` setting is folded in here so
+/// the loop sees one uniform reference set.
+pub async fn referenced_provider_ids(pool: &SqlitePool) -> anyhow::Result<std::collections::HashSet<i64>> {
+    use std::collections::HashSet;
+    let mut set = HashSet::new();
+    for ext in all_rows(pool).await? {
+        let Some(shape) = consumes_shape(&ext.kind) else { continue };
+        let mut ids = resolved_provider_ids(pool, &ext.settings, shape).await?;
+        if let Some(pid) = ext.settings.get("provider_id").and_then(|v| v.as_i64()) {
+            ids.push(pid);
+        }
+        set.extend(ids);
+    }
+    Ok(set)
 }
 
 /// Merged calendar snapshot rows for a resolved provider set, sorted by start.
@@ -49,52 +84,81 @@ pub async fn rebuild_extensions(pool: &SqlitePool, backends: &crate::cache::Back
     let exts = all_rows(pool).await?;
     let mut n = 0;
     for ext in exts {
-        let ExtRow { kind, name, settings, screen_id } = ext;
-        let Some(sid) = screen_id else { continue };
-        match kind.as_str() {
-            "calendar" => {
-                let ids = resolved_provider_ids(pool, &settings).await?;
-                if ids.is_empty() {
-                    tracing::warn!(extension = name, "no calendar providers resolved; leaving screen as-is");
-                    continue;
-                }
-                let merged = merged_calendar_rows(pool, &ids).await?;
-                let vars = calendar::agenda_vars(&merged, &settings);
-                let vars_json = serde_json::to_string(&vars)?;
-                crate::screens::set_vars(pool, sid, &vars_json).await?;
-                repaint(pool, backends, cache, sid).await;
-                n += 1;
-            }
-            "weather" => {
-                let Some(pid) = weather::resolved_provider_id(pool, &settings).await? else {
-                    tracing::warn!(extension = name, "no weather provider resolved; leaving screen as-is");
-                    continue;
-                };
-                match crate::providers::weather_snapshot(pool, pid).await? {
-                    Some(snap) => {
-                        let vars = weather::weather_vars(&snap, &settings);
-                        crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                        repaint(pool, backends, cache, sid).await;
-                        n += 1;
-                    }
-                    None => {
-                        let vars = weather::no_data_vars("Waiting for first weather refresh...");
-                        crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                        repaint(pool, backends, cache, sid).await;
-                    }
-                }
-            }
-            "clock" => {
-                let vars = clock::clock_vars(&settings);
-                crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                repaint(pool, backends, cache, sid).await;
-                n += 1;
-            }
-            other => tracing::warn!(extension = name, kind = other, "unknown extension kind; skipping"),
-        }
+        if rebuild_extension(pool, backends, cache, ext).await? { n += 1 }
     }
     Ok(n)
 }
+
+/// Rebuild only extensions consuming one of `shapes` — a weather refresh
+/// never repaints the calendar, and clock extensions (no shape) are never
+/// touched here. Returns the number of extensions rebuilt.
+pub async fn rebuild_extensions_shapes(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, shapes: &std::collections::HashSet<String>) -> anyhow::Result<usize> {
+    let exts = all_rows(pool).await?;
+    let mut n = 0;
+    for ext in exts {
+        let consumed = consumes_shape(&ext.kind).map(str::to_string);
+        let Some(consumed) = consumed else { continue };
+        if !shapes.contains(&consumed) { continue }
+        if rebuild_extension(pool, backends, cache, ext).await? { n += 1 }
+    }
+    Ok(n)
+}
+
+/// Rebuild one extension's bound screen from current snapshots.
+/// Returns whether the screen was rebuilt (false = skipped, e.g. no
+/// providers resolved — the last paint stays up).
+async fn rebuild_extension(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, ext: ExtRow) -> anyhow::Result<bool> {
+    let ExtRow { kind, name, settings, screen_id } = ext;
+    let Some(sid) = screen_id else { return Ok(false) };
+    match kind.as_str() {
+        "calendar" => {
+            let ids = resolved_provider_ids(pool, &settings, "calendar").await?;
+            if ids.is_empty() {
+                tracing::warn!(extension = name, "no calendar providers resolved; leaving screen as-is");
+                return Ok(false);
+            }
+            let merged = merged_calendar_rows(pool, &ids).await?;
+            let vars = calendar::agenda_vars(&merged, &settings);
+            let vars_json = serde_json::to_string(&vars)?;
+            crate::screens::set_vars(pool, sid, &vars_json).await?;
+            repaint(pool, backends, cache, sid).await;
+            Ok(true)
+        }
+        "weather" => {
+            let Some(pid) = weather::resolved_provider_id(pool, &settings).await? else {
+                tracing::warn!(extension = name, "no weather provider resolved; leaving screen as-is");
+                return Ok(false);
+            };
+            match crate::providers::load_snapshot(pool, pid).await? {
+                Some(snap) => {
+                    let Snapshot::Weather(payload) = snap else {
+                        tracing::warn!(extension = name, "resolved provider does not publish weather; leaving screen as-is");
+                        return Ok(false);
+                    };
+                    let vars = weather::weather_vars(&payload, &settings);
+                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                    repaint(pool, backends, cache, sid).await;
+                    Ok(true)
+                }
+                None => {
+                    let vars = weather::no_data_vars("Waiting for first weather refresh...");
+                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                    repaint(pool, backends, cache, sid).await;
+                    Ok(true)
+                }
+            }
+        }
+        "clock" => {
+            let vars = clock::clock_vars(&settings);
+            crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+            repaint(pool, backends, cache, sid).await;
+            Ok(true)
+        }
+        other => { tracing::warn!(extension = name, kind = other, "unknown extension kind; skipping"); Ok(false) }
+    }
+}
+
+use crate::providers::Snapshot;
 
 /// Re-render clock extensions (time is live: every provider-loop tick).
 pub async fn rebuild_clocks(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache) -> anyhow::Result<()> {
@@ -129,6 +193,49 @@ async fn all_rows(pool: &SqlitePool) -> anyhow::Result<Vec<ExtRow>> {
         settings: serde_json::from_str(r.get(2)).unwrap_or(serde_json::json!({})),
         screen_id: r.get(3),
     }).collect())
+}
+
+pub async fn kind_of(pool: &SqlitePool, id: i64) -> anyhow::Result<String> {
+    Ok(sqlx::query_scalar("SELECT kind FROM extensions WHERE id = ?").bind(id).fetch_one(pool).await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    async fn test_pool() -> SqlitePool {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(crate::providers::MIGRATE).execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn referenced_ids_exclude_orphans_and_honor_explicit_picks() {
+        let pool = test_pool().await;
+        let cal1 = crate::providers::create(&pool, "caldav", "A", &json!({"url": "http://x/"}), 3600).await.unwrap();
+        let cal2 = crate::providers::create(&pool, "caldav", "B", &json!({"url": "http://y/"}), 3600).await.unwrap();
+        let met = crate::providers::create(&pool, "open_meteo", "W", &json!({"latitude": 1.0, "longitude": 2.0}), 3600).await.unwrap();
+
+        // No extensions: nothing is referenced, even though providers exist.
+        assert!(referenced_provider_ids(&pool).await.unwrap().is_empty());
+
+        // A calendar extension with default selector references all calendar
+        // providers but never the weather one.
+        insert(&pool, "calendar", "Cal", &json!({}), 1).await.unwrap();
+        let refs = referenced_provider_ids(&pool).await.unwrap();
+        assert!(refs.contains(&cal1) && refs.contains(&cal2) && !refs.contains(&met));
+
+        // Explicit pick narrows the set; the un-picked provider is orphaned.
+        set_settings(&pool, 1, &json!({"provider_ids": [cal1]})).await.unwrap();
+        let refs = referenced_provider_ids(&pool).await.unwrap();
+        assert!(refs.contains(&cal1) && !refs.contains(&cal2));
+
+        // Weather's singular provider_id is folded into the same set.
+        insert(&pool, "weather", "Wx", &json!({"provider_id": met}), 2).await.unwrap();
+        let refs = referenced_provider_ids(&pool).await.unwrap();
+        assert!(refs.contains(&cal1) && refs.contains(&met) && !refs.contains(&cal2));
+    }
 }
 
 pub async fn list(pool: &SqlitePool) -> anyhow::Result<Vec<Value>> {
