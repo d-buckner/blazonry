@@ -23,6 +23,7 @@ async fn main() -> anyhow::Result<()> {
     // Render backends (issue #14): native always; browser when this build has
     // the `browser` feature AND a Chromium binary is present. --render-backend
     // browser makes it the global default; per-screen render_backend overrides.
+    #[cfg_attr(not(feature = "browser"), allow(unused_mut))]
     let mut backends = mntr::cache::Backends::native_only()?;
     let want_browser = arg_after(&args, "--render-backend").as_deref() == Some("browser");
     #[cfg(feature = "browser")]
