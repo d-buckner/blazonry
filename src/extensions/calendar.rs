@@ -21,22 +21,26 @@ use sqlx::SqlitePool;
 pub const AGENDA_TEMPLATE: &str = r##"{
   "name": "{{ title }}",
   "parts": [
-    { "type": "text", "text": "{{ title }}", "style": { "font_px": 34, "bold": true }, "padding": [16, 20, 4, 20] },
-    { "type": "divider", "padding": [4, 20, 8, 20] },
+    { "type": "flex", "direction": "row", "align": "center", "style": { "bg": 0 }, "padding": [14, 28, 14, 28], "children": [
+      { "type": "text", "text": "{{ title }}", "style": { "font_px": 34, "bold": true, "fg": 3 }, "grow": 1 },
+      { "type": "text", "text": "{{ today }}", "style": { "font_px": 22, "fg": 2 } }
+    ] },
 {% for day in days %}
-    { "type": "text", "text": "{{ day.label }}", "style": { "font_px": 22, "bold": true }, "padding": [8, 20, 2, 20] },
+    { "type": "flex", "direction": "column", "style": { "bg": {{ day.bg }} }, "padding": [6, 28, 6, 28], "children": [
+      { "type": "text", "text": "{{ day.label }}", "style": { "font_px": 20, "bold": true, "fg": {{ day.fg }} } }
+    ] },
 {% for e in day.events %}
-    { "type": "flex", "direction": "row", "gap": 14, "padding": [2, 20, 2, 20], "children": [
-      { "type": "text", "text": "{{ e.time }}", "style": { "font_px": 22 }, "width": 110 },
-      { "type": "text", "text": "{{ e.title }}", "style": { "font_px": 22 }, "grow": 1 }{% if e.extra %},
-      { "type": "text", "text": "{{ e.extra }}", "style": { "font_px": 18, "fg": 1 } }{% endif %}
+    { "type": "flex", "direction": "row", "gap": 18, "align": "center", "padding": [7, 28, 7, 28], "children": [
+      { "type": "text", "text": "{{ e.time }}", "style": { "font_px": 22, "bold": true }, "width": 110 },
+      { "type": "text", "text": "{{ e.title }}", "style": { "font_px": 24 }, "grow": 1 }{% if e.extra %},
+      { "type": "text", "text": "{{ e.extra }}", "style": { "font_px": 17, "fg": 1 } }{% endif %}
     ] },
 {% endfor %}
 {% endfor %}
 {% if empty %}
-    { "type": "text", "text": "Nothing scheduled. Enjoy it.", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 20, 0, 20] },
+    { "type": "text", "text": "Nothing scheduled. Enjoy it.", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 28, 0, 28] },
 {% endif %}
-    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 16, "fg": 1 }, "padding": [10, 20, 0, 20] }
+    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 15, "fg": 1 }, "padding": [12, 28, 0, 28] }
   ]
 }"##;
 
@@ -107,11 +111,14 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
         } else {
             d.format("%a %b %-d").to_string()
         };
-        json!({ "label": label, "events": events })
+        json!({ "label": label, "events": events,
+            "bg": if d == today { 1 } else { 2 },
+            "fg": if d == today { 3 } else { 0 } })
     }).collect();
 
     json!({
         "title": settings.get("title").and_then(|v| v.as_str()).unwrap_or("Calendar"),
+        "today": now.with_timezone(&tz).format("%a %b %-d").to_string(),
         "days": days,
         "empty": days.is_empty(),
         "footer": format!("Updated {}", now.with_timezone(&tz).format("%-l:%M %p").to_string().to_lowercase()),
@@ -126,7 +133,7 @@ pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache:
     if ids.is_empty() {
         anyhow::bail!("calendar requires 1..n calendar providers; none configured or picked");
     }
-    let vars = json!({ "title": "Calendar", "days": [], "empty": true, "footer": "" });
+    let vars = json!({ "title": "Calendar", "today": "", "days": [], "empty": true, "footer": "" });
     let sid = crate::screens::create(pool, name, AGENDA_TEMPLATE, &vars.to_string()).await?;
     let id = super::insert(pool, "calendar", name, &settings, sid).await?;
     // Immediate first paint from existing snapshots.

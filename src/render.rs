@@ -290,6 +290,12 @@ impl Renderer {
 
         let pad = node.padding;
         let fg = grey_color(node.style.fg);
+        // Node background: bg defaults to 3 (white = page ground), so only
+        // non-white levels pay for a fill. This is what makes inverted bands
+        // and dark cards possible on a 4-level panel.
+        if node.style.bg % 4 != 3 {
+            fill_rect(pm, x, y, w, h, grey_color(node.style.bg));
+        }
         if node.border {
             let mut stroke = Stroke::default();
             stroke.width = 1.0;

@@ -15,22 +15,21 @@ use sqlx::SqlitePool;
 pub const WEATHER_TEMPLATE: &str = r##"{
   "name": "{{ title }}",
   "parts": [
-    { "type": "text", "text": "{{ title }}", "style": { "font_px": 30, "bold": true }, "padding": [16, 20, 0, 20] },
 {% if have_data %}
-    { "type": "flex", "direction": "row", "gap": 18, "align": "center", "padding": [6, 20, 0, 20], "children": [
-      { "type": "text", "text": "{{ current.temp }}{{ units }}", "style": { "font_px": 96, "bold": true } },
-      { "type": "flex", "direction": "column", "gap": 4, "children": [
-        { "type": "text", "text": "{{ current.label }}", "style": { "font_px": 30 } },
-        { "type": "text", "text": "feels {{ current.feels }}{{ units }}  {{ current.wind }} mph  {{ current.humidity }}%", "style": { "font_px": 20, "fg": 1 } }
+    { "type": "flex", "direction": "row", "gap": 28, "align": "center", "style": { "bg": 0 }, "padding": [18, 28, 18, 28], "children": [
+      { "type": "text", "text": "{{ current.temp }}{{ units }}", "style": { "font_px": 104, "bold": true, "fg": 3 } },
+      { "type": "flex", "direction": "column", "gap": 6, "grow": 1, "children": [
+        { "type": "text", "text": "{{ title }}", "style": { "font_px": 30, "bold": true, "fg": 3 } },
+        { "type": "text", "text": "{{ current.label }}", "style": { "font_px": 26, "fg": 2 } },
+        { "type": "text", "text": "feels {{ current.feels }}{{ units}}   {{ current.wind }} mph   {{ current.humidity }}%", "style": { "font_px": 18, "fg": 2 } }
       ] }
     ] },
-    { "type": "divider", "padding": [10, 20, 6, 20] },
-    { "type": "flex", "direction": "row", "gap": 12, "padding": [0, 20, 0, 20], "children": [
+    { "type": "flex", "direction": "row", "gap": 14, "padding": [18, 24, 0, 24], "children": [
 {% for d in days %}
-      { "type": "flex", "direction": "column", "gap": 2, "grow": 1, "border": true, "padding": [8, 10, 8, 10], "children": [
-        { "type": "text", "text": "{{ d.label }}", "style": { "font_px": 20, "bold": true } },
-        { "type": "text", "text": "{{ d.hi }}/{{ d.lo }}", "style": { "font_px": 24 } },
-        { "type": "text", "text": "{{ d.sub }}", "style": { "font_px": 16, "fg": 1 } }
+      { "type": "flex", "direction": "column", "gap": 4, "grow": 1, "style": { "bg": {{ d.card_bg }} }, "padding": [12, 16, 14, 16], "children": [
+        { "type": "text", "text": "{{ d.label }}", "style": { "font_px": 20, "bold": true, "fg": {{ d.fg }} } },
+        { "type": "text", "text": "{{ d.hi }}/{{ d.lo }}", "style": { "font_px": 28, "bold": true, "fg": {{ d.fg }} } },
+        { "type": "text", "text": "{{ d.sub }}", "style": { "font_px": 16, "fg": {{ d.sub_fg }} } }
       ] }{% if forloop.last %}{% else %},{% endif %}
 {% endfor %}
 {% if days.size > 0 %}
@@ -38,9 +37,10 @@ pub const WEATHER_TEMPLATE: &str = r##"{
 {% endif %}
     ] },
 {% else %}
-    { "type": "text", "text": "{{ message }}", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 20, 0, 20] },
+    { "type": "text", "text": "{{ title }}", "style": { "font_px": 30, "bold": true }, "padding": [16, 24, 0, 24] },
+    { "type": "text", "text": "{{ message }}", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 24, 0, 24] },
 {% endif %}
-    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 16, "fg": 1 }, "padding": [10, 20, 0, 20] }
+    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 15, "fg": 1 }, "padding": [12, 24, 0, 24] }
   ]
 }"##;
 
@@ -58,7 +58,12 @@ pub fn weather_vars(snap: &Value, settings: &Value) -> Value {
             Some(p) if p > 0 => format!("{p}% precip"),
             _ => d["label"].as_str().unwrap_or("").to_string(),
         };
-        json!({ "label": label, "hi": d["hi"], "lo": d["lo"], "sub": sub })
+        // Today's card is inverted (black ground); the rest sit on light gray.
+        let is_today = label == "Today";
+        json!({ "label": label, "hi": d["hi"], "lo": d["lo"], "sub": sub,
+            "card_bg": if is_today { 0 } else { 2 },
+            "fg": if is_today { 3 } else { 0 },
+            "sub_fg": if is_today { 2 } else { 1 } })
     }).collect()).unwrap_or_default();
 
     json!({

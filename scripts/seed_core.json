@@ -1,6 +1,6 @@
 {
   "providers": [
-    { "kind": "open_meteo", "name": "Springfield", "config": { "latitude": 39.7817, "longitude": -89.6501 }, "refresh_secs": 60 },
+    { "kind": "open_meteo", "name": "Springfield", "config": { "name": "Springfield, IL", "latitude": 39.7817, "longitude": -89.6501 }, "refresh_secs": 60 },
     { "kind": "caldav", "name": "Family", "config": { "url": "http://127.0.0.1:5299/family/" }, "refresh_secs": 60 }
   ],
   "extensions": [

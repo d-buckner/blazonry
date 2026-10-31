@@ -15,11 +15,17 @@ use sqlx::SqlitePool;
 pub const CLOCK_TEMPLATE: &str = r##"{
   "name": "Clock",
   "parts": [
+    { "type": "flex", "direction": "row", "align": "center", "height": 480, "children": [
+      { "type": "flex", "direction": "column", "align": "center", "gap": 10, "grow": 1, "children": [
 {% if title %}
-    { "type": "text", "text": "{{ title }}", "style": { "font_px": 24, "fg": 1 }, "padding": [14, 20, 0, 20] },
+        { "type": "text", "text": "{{ title }}", "style": { "font_px": 24, "fg": 1 } },
 {% endif %}
-    { "type": "text", "text": "{{ time }}", "style": { "font_px": 140, "bold": true }, "padding": [30, 20, 0, 20] },
-    { "type": "text", "text": "{{ date }}", "style": { "font_px": 34 }, "padding": [6, 20, 0, 20] }
+        { "type": "text", "text": "{{ time }}", "style": { "font_px": 150, "bold": true } },
+        { "type": "flex", "direction": "row", "style": { "bg": 0 }, "padding": [8, 22, 8, 22], "children": [
+          { "type": "text", "text": "{{ date }}", "style": { "font_px": 28, "bold": true, "fg": 3 } }
+        ] }
+      ] }
+    ] }
   ]
 }"##;
 
