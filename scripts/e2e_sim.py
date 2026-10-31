@@ -93,7 +93,7 @@ def main():
         seed = json.load(open(args.seed))
         for p in seed.get("providers", []):
             st, r = http(base + "/admin/providers", p, auth)
-            print(f"[seed] provider {p['kind']} -> {st} id={r.get('id')} events={r.get('last_event_count')} err={r.get('first_refresh_error')}")
+            print(f"[seed] provider {p['kind']} -> {st} id={r.get('id')} items={r.get('last_item_count')} err={r.get('first_refresh_error')}")
         for e in seed.get("extensions", []):
             st, r = http(base + "/admin/extensions", e, auth)
             print(f"[seed] extension {e['kind']} -> {st} {r}")

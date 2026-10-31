@@ -45,7 +45,7 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
     let refresh = providers::refresh_provider(&st.pool, id).await;
     let mut out = providers::get(&st.pool, id).await.map_err(err)?
         .ok_or_else(|| err("provider vanished after create"))?;
-    out["last_event_count"] = json!(refresh.as_ref().ok().copied().unwrap_or(0));
+    out["last_item_count"] = json!(refresh.as_ref().ok().map(|r| r.items).unwrap_or(0));
     if let Err(e) = refresh {
         out["first_refresh_error"] = json!(e.to_string());
     }
@@ -59,7 +59,7 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
 pub async fn get_provider(State(st): State<SharedState>, Path(id): Path<i64>) -> Res {
     let mut out = providers::get(&st.pool, id).await.map_err(err)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "unknown provider".into()))?;
-    out["event_count"] = json!(providers::event_count(&st.pool, id).await.map_err(err)?);
+    out["item_count"] = json!(providers::snapshot_items(&st.pool, id).await.map_err(err)?);
     Ok(Json(out))
 }
 
@@ -86,11 +86,16 @@ pub async fn delete_provider(State(st): State<SharedState>, Path(id): Path<i64>)
 /// Manual "refresh now" — the escape hatch beside the timer.
 pub async fn refresh_provider_now(State(st): State<SharedState>, Path(id): Path<i64>) -> Res {
     match providers::refresh_provider(&st.pool, id).await {
-        Ok(n) => {
-            if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.backends, &st.cache).await {
+        Ok(r) => {
+            // Shape-scoped: a manual refresh repaints only screens consuming
+            // this provider's shape (and only if content changed).
+            let mut shapes: std::collections::HashSet<String> = Default::default();
+            if r.changed { shapes.insert(r.shape); }
+            if !shapes.is_empty()
+                && let Err(e) = extensions::rebuild_extensions_shapes(&st.pool, &st.backends, &st.cache, &shapes).await {
                 tracing::warn!(%e, "extension rebuild after refresh failed");
             }
-            Ok(Json(json!({ "ok": true, "events": n })))
+            Ok(Json(json!({ "ok": true, "items": r.items, "changed": r.changed })))
         }
         Err(e) => Ok(Json(json!({ "ok": false, "error": e.to_string() }))),
     }
@@ -120,14 +125,21 @@ pub async fn patch_extension(State(st): State<SharedState>, Path(id): Path<i64>,
         extensions::set_name(&st.pool, id, name).await.map_err(err)?;
     }
     if let Some(settings) = b.get("settings") {
-        // Re-validate cardinality on settings change (explicit picks must exist).
+        // Re-validate cardinality on settings change (explicit picks must
+        // exist AND publish the shape this extension consumes).
         if let Some(ids) = settings.get("provider_ids").and_then(|v| v.as_array()) {
             let ids: Vec<i64> = ids.iter().filter_map(|v| v.as_i64()).collect();
             if ids.len() != settings["provider_ids"].as_array().map_or(0, |a| a.len()) {
                 return Err(bad("provider_ids must be integers"));
             }
-            if !providers::all_caldav_ids_exist(&st.pool, &ids).await.map_err(err)? {
-                return Err(bad("provider_ids contains unknown or non-calendar providers"));
+            let kind = extensions::kind_of(&st.pool, id).await.map_err(err)?;
+            match extensions::consumes_shape(&kind) {
+                Some(shape) => {
+                    if !providers::ids_with_shape_exist(&st.pool, shape, &ids).await.map_err(err)? {
+                        return Err(bad(format!("provider_ids contains unknown or non-{shape} providers")));
+                    }
+                }
+                None => return Err(bad("this extension kind consumes no providers; provider_ids is not applicable")),
             }
         }
         extensions::set_settings(&st.pool, id, settings).await.map_err(err)?;

@@ -81,7 +81,7 @@ pub async fn resolved_provider_id(pool: &SqlitePool, settings: &Value) -> anyhow
     if let Some(id) = settings.get("provider_id").and_then(|v| v.as_i64()) {
         return Ok(Some(id));
     }
-    Ok(crate::providers::weather_provider_ids(pool).await?.into_iter().next())
+    Ok(crate::providers::provider_ids_by_shape(pool, "weather").await?.into_iter().next())
 }
 
 /// Create a weather extension: cardinality exactly 1 checked here, screen
@@ -92,11 +92,12 @@ pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache:
         anyhow::bail!("weather requires exactly 1 weather provider; none configured — create a provider first");
     };
     // Fail out-of-existence: an explicit id that doesn't exist is a config error.
-    if !crate::providers::weather_ids_exist(pool, &[pid]).await? {
+    if !crate::providers::ids_with_shape_exist(pool, "weather", &[pid]).await? {
         anyhow::bail!("provider_id {pid} is not a known weather provider");
     }
-    let vars = match crate::providers::weather_snapshot(pool, pid).await? {
-        Some(snap) => weather_vars(&snap, &settings),
+    let vars = match crate::providers::load_snapshot(pool, pid).await? {
+        Some(crate::providers::Snapshot::Weather(snap)) => weather_vars(&snap, &settings),
+        Some(_) => no_data_vars("Resolved provider does not publish weather"),
         None => no_data_vars("Waiting for first weather refresh..."),
     };
     let sid = crate::screens::create(pool, name, WEATHER_TEMPLATE, &vars.to_string()).await?;

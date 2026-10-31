@@ -15,7 +15,7 @@
 //! | users, sessions                | `auth`                   |
 //! | firmware                       | `firmware`               |
 //! | models                         | `models` (seed DDL here) |
-//! | providers, provider_events     | `providers`              |
+//! | providers, provider_snapshots  | `providers`              |
 //! | extensions                     | `extensions`             |
 //!
 //! DDL for all tables stays here (MIGRATE / COLUMN_MIGRATIONS / SEED_MODELS);
@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS device_logs (
 /// Column additions applied idempotently (SQLite has no ADD COLUMN IF NOT EXISTS;
 /// a duplicate-column error is expected and ignored).
 pub const COLUMN_MIGRATIONS: &[&str] = &[
+    "ALTER TABLE providers ADD COLUMN shape TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE devices ADD COLUMN firmware_version TEXT",
     "ALTER TABLE devices ADD COLUMN model TEXT",
     "ALTER TABLE devices ADD COLUMN battery_voltage REAL",
@@ -124,6 +125,10 @@ pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
         // idempotent: ignore "duplicate column name" on re-run
         let _ = sqlx::query(*stmt).execute(&pool).await;
     }
+    // Shape column is a total invariant after this (pre-shape rows backfilled
+    // from the registry), and pre-snapshot-store data is carried forward.
+    crate::providers::backfill_shapes(&pool).await?;
+    crate::providers::migrate_legacy_snapshots(&pool).await?;
     Ok(pool)
 }
 

@@ -122,7 +122,7 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
 /// its screen row with the agenda template, and renders it immediately.
 /// Returns (extension_id, screen_id).
 pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
-    let ids = super::resolved_provider_ids(pool, &settings).await?;
+    let ids = super::resolved_provider_ids(pool, &settings, "calendar").await?;
     if ids.is_empty() {
         anyhow::bail!("calendar requires 1..n calendar providers; none configured or picked");
     }
