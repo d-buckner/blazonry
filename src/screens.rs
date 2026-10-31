@@ -8,7 +8,7 @@
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, SqlitePool};
 
-const SCREEN_JSON: &str = "json_object('id', id, 'name', name, 'template', template, 'vars', vars, 'updated_at', updated_at)";
+const SCREEN_JSON: &str = "json_object('id', id, 'name', name, 'template', template, 'vars', vars, 'updated_at', updated_at, 'render_backend', COALESCE(render_backend, ''))";
 
 pub async fn list_json(pool: &SqlitePool) -> Result<Vec<Value>, sqlx::Error> {
     let rows: Vec<String> = sqlx::query_scalar(AssertSqlSafe(format!("SELECT {SCREEN_JSON} FROM screens ORDER BY id")))
@@ -59,6 +59,14 @@ pub async fn template_vars(pool: &SqlitePool, id: i64) -> Result<(String, String
     let row = sqlx::query("SELECT template, vars FROM screens WHERE id = ?").bind(id)
         .fetch_one(pool).await?;
     Ok((row.get(0), row.get(1)))
+}
+
+/// Template + vars + per-screen backend preference ("" = global default).
+pub async fn template_vars_backend(pool: &SqlitePool, id: i64) -> Result<(String, String, String), sqlx::Error> {
+    use sqlx::Row;
+    let row = sqlx::query("SELECT template, vars, COALESCE(render_backend, '') FROM screens WHERE id = ?").bind(id)
+        .fetch_one(pool).await?;
+    Ok((row.get(0), row.get(1), row.get(2)))
 }
 
 pub async fn all_ids(pool: &SqlitePool) -> Result<Vec<i64>, sqlx::Error> {

@@ -13,3 +13,4 @@ fixtures/
 fwassets
 web-app/node_modules/
 !docs/screens/*.png
+.site/

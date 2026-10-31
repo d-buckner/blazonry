@@ -50,7 +50,7 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
         out["first_refresh_error"] = json!(e.to_string());
     }
     // New provider may satisfy an "all" selector on existing extensions.
-    if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.cache).await {
+    if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.backends, &st.cache).await {
         tracing::warn!(%e, "extension rebuild after provider create failed");
     }
     Ok(Json(out))
@@ -87,7 +87,7 @@ pub async fn delete_provider(State(st): State<SharedState>, Path(id): Path<i64>)
 pub async fn refresh_provider_now(State(st): State<SharedState>, Path(id): Path<i64>) -> Res {
     match providers::refresh_provider(&st.pool, id).await {
         Ok(n) => {
-            if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.cache).await {
+            if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.backends, &st.cache).await {
                 tracing::warn!(%e, "extension rebuild after refresh failed");
             }
             Ok(Json(json!({ "ok": true, "events": n })))
@@ -106,7 +106,7 @@ pub async fn create_extension(State(st): State<SharedState>, Json(b): Json<Value
     let kind = b.get("kind").and_then(|v| v.as_str()).ok_or_else(|| bad("kind required"))?;
     let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("Family Calendar");
     let settings = b.get("settings").cloned().unwrap_or(json!({}));
-    match extensions::create(&st.pool, &st.cache, kind, name, settings).await {
+    match extensions::create(&st.pool, &st.backends, &st.cache, kind, name, settings).await {
         Ok((id, screen_id)) => Ok(Json(json!({ "id": id, "screen_id": screen_id }))),
         Err(e) => Err(bad(e.to_string())),
     }
@@ -132,7 +132,7 @@ pub async fn patch_extension(State(st): State<SharedState>, Path(id): Path<i64>,
         }
         extensions::set_settings(&st.pool, id, settings).await.map_err(err)?;
     }
-    if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.cache).await {
+    if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.backends, &st.cache).await {
         tracing::warn!(%e, "extension rebuild after patch failed");
     }
     Ok(Json(json!({ "ok": true })))

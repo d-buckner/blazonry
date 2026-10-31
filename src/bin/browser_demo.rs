@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     let grey = if html_path.starts_with("http") {
         renderer.render_url(&html_path, 1500).await?
     } else {
-        renderer.render_grey(&html, 1500).await?
+        renderer.render_markup(&html).await?
     };
     let render_ms = t0.elapsed().as_millis();
 

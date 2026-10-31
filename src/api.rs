@@ -16,7 +16,6 @@
 
 use crate::cache::{self, BmpCache};
 use crate::db;
-use crate::render::Renderer;
 use crate::{firmware, playlists};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -26,7 +25,7 @@ use std::sync::Arc;
 
 pub struct AppState {
     pub pool: SqlitePool,
-    pub renderer: Arc<Renderer>,
+    pub backends: crate::cache::Backends,
     pub cache: BmpCache,
 }
 pub type SharedState = Arc<AppState>;
@@ -93,7 +92,7 @@ fn base_url(headers: &HeaderMap) -> String {
 
 /// Shared payload builder for display + display/current.
 async fn screen_payload(st: &SharedState, screen_id: i64, refresh_secs: i64, base: &str, bpp: u16) -> Option<serde_json::Value> {
-    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id, bpp).await.ok()?;
+    let bmp = cache::cached_bmp(&st.pool, &st.backends, &st.cache, screen_id, bpp).await.ok()?;
     let hash = content_hash(&bmp);
     // bpp lives in the filename: the firmware's image GET sends no headers
     let filename = format!("screen-{screen_id}-{hash}-{bpp}");
@@ -222,7 +221,8 @@ pub async fn serve_image(
     };
     if stem == "setup-logo" {
         let tmpl = "{\"name\":\"setup\",\"parts\":[{\"type\":\"text\",\"text\":\"mntr\",\"style\":{\"font_px\":64,\"bold\":true},\"align\":\"center\",\"padding\":[180,200]}]}";
-        return match cache::render_bmp(&st.renderer, tmpl, "{}", bpp) {
+        let native = st.backends.for_pref("native");
+        return match native.render_bmp(tmpl, "{}", bpp).await {
             Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp).into_response(),
             Err(_) => (StatusCode::NOT_FOUND, "render failed").into_response(),
         };
@@ -233,7 +233,7 @@ pub async fn serve_image(
     let Ok(screen_id) = id_str.parse::<i64>() else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
-    match cache::cached_bmp(&st.pool, &st.renderer, &st.cache, screen_id, bpp).await {
+    match cache::cached_bmp(&st.pool, &st.backends, &st.cache, screen_id, bpp).await {
         Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp.to_vec()).into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
@@ -328,7 +328,7 @@ pub async fn preview_screen(
     State(st): State<SharedState>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
-    let bmp = cache::cached_bmp(&st.pool, &st.renderer, &st.cache, id, 2).await
+    let bmp = cache::cached_bmp(&st.pool, &st.backends, &st.cache, id, 2).await
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
     let png = bmp_to_png(&bmp).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], png).into_response())
