@@ -18,11 +18,12 @@ use sqlx::SqlitePool;
 
 pub mod calendar;
 pub mod weather;
-pub mod clock;
+pub mod countdown;
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
-/// The shape an extension kind consumes, if any (clock computes; no provider).
+/// The shape an extension kind consumes, if any (countdown computes from the
+/// calendar date; no provider).
 /// This is the single kind→shape table — reference resolution and rebuild
 /// filtering both read it, so they can never disagree.
 pub fn consumes_shape(kind: &str) -> Option<&'static str> {
@@ -90,8 +91,8 @@ pub async fn rebuild_extensions(pool: &SqlitePool, backends: &crate::cache::Back
 }
 
 /// Rebuild only extensions consuming one of `shapes` — a weather refresh
-/// never repaints the calendar, and clock extensions (no shape) are never
-/// touched here. Returns the number of extensions rebuilt.
+/// never repaints the calendar, and providerless extensions (no shape) are
+/// never touched here. Returns the number of extensions rebuilt.
 pub async fn rebuild_extensions_shapes(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, shapes: &std::collections::HashSet<String>) -> anyhow::Result<usize> {
     let exts = all_rows(pool).await?;
     let mut n = 0;
@@ -148,8 +149,8 @@ async fn rebuild_extension(pool: &SqlitePool, backends: &crate::cache::Backends,
                 }
             }
         }
-        "clock" => {
-            let vars = clock::clock_vars(&settings);
+        "countdown" => {
+            let vars = countdown::countdown_vars(&settings)?;
             crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
             repaint(pool, backends, cache, sid).await;
             Ok(true)
@@ -160,15 +161,18 @@ async fn rebuild_extension(pool: &SqlitePool, backends: &crate::cache::Backends,
 
 use crate::providers::Snapshot;
 
-/// Re-render clock extensions (time is live: every provider-loop tick).
-pub async fn rebuild_clocks(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache) -> anyhow::Result<()> {
+/// Re-render providerless extensions whose content depends on the local
+/// date (countdown). Called once per local-day rollover, never per minute:
+/// a screen whose content changes daily must not force a minute refresh
+/// cycle (e-ink wear + battery).
+pub async fn rebuild_daily(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache) -> anyhow::Result<()> {
     let exts = all_rows(pool).await?;
     for ext in exts {
-        if ext.kind != "clock" { continue }
-        let Some(sid) = ext.screen_id else { continue };
-        let vars = clock::clock_vars(&ext.settings);
-        crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-        repaint(pool, backends, cache, sid).await;
+        if consumes_shape(&ext.kind).is_some() { continue }
+        if ext.screen_id.is_none() { continue };
+        if let Err(e) = rebuild_extension(pool, backends, cache, ext).await {
+            tracing::warn!(%e, "daily rebuild failed");
+        }
     }
     Ok(())
 }
@@ -294,7 +298,7 @@ pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache:
     match kind {
         "calendar" => calendar::create(pool, backends, cache, name, settings).await,
         "weather" => weather::create(pool, backends, cache, name, settings).await,
-        "clock" => clock::create(pool, backends, cache, name, settings).await,
-        other => anyhow::bail!("unknown extension kind '{other}' (supported: calendar, weather, clock)"),
+        "countdown" => countdown::create(pool, backends, cache, name, settings).await,
+        other => anyhow::bail!("unknown extension kind '{other}' (supported: calendar, weather, countdown)"),
     }
 }

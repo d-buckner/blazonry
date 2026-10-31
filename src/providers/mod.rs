@@ -488,11 +488,13 @@ pub const REFRESH_CONCURRENCY: usize = 4;
 /// 3. rebuild only the extension screens whose consumed shape changed —
 ///    a weather refresh never repaints the calendar, and an unchanged
 ///    snapshot never repaints anything.
-/// Clocks are live regardless: repainted every tick.
+/// Date-dependent providerless screens (countdown) repaint once per local-day
+/// rollover — nothing in the core set needs a faster cycle.
 pub fn spawn_provider_loop(pool: SqlitePool, backends: crate::cache::Backends, cache: crate::cache::BmpCache, tick: std::time::Duration) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut t = tokio::time::interval(tick);
         t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut last_local_date = Utc::now().with_timezone(&crate::providers::la()).date_naive();
         loop {
             t.tick().await;
             let referenced = match crate::extensions::referenced_provider_ids(&pool).await {
@@ -542,9 +544,14 @@ pub fn spawn_provider_loop(pool: SqlitePool, backends: crate::cache::Backends, c
                     Err(e) => tracing::warn!(%e, "extension rebuild failed"),
                 }
             }
-            // Clocks are live regardless of provider activity: repaint every tick.
-            if let Err(e) = crate::extensions::rebuild_clocks(&pool, &backends, &cache).await {
-                tracing::warn!(%e, "clock rebuild failed");
+            // Date-dependent providerless screens (countdown) change once a
+            // day: repaint only when the local date rolls over.
+            let today = Utc::now().with_timezone(&crate::providers::la()).date_naive();
+            if today != last_local_date {
+                last_local_date = today;
+                if let Err(e) = crate::extensions::rebuild_daily(&pool, &backends, &cache).await {
+                    tracing::warn!(%e, "daily rebuild failed");
+                }
             }
         }
     })
