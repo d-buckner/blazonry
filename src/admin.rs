@@ -103,6 +103,20 @@ pub async fn get_screen(State(st): State<SharedState>, Path(id): Path<i64>) -> R
 }
 
 pub async fn patch_screen(State(st): State<SharedState>, Path(id): Path<i64>, Json(b): Json<Value>) -> Res {
+    // Validate the post-patch state: if template or vars change, the screen
+    // must still compile (#21).
+    if b.get("template").is_some() || b.get("vars").is_some() {
+        let cur = screens::get_json(&st.pool, id).await.map_err(err)?
+            .ok_or_else(|| not_found("screen"))?;
+        let template = b.get("template").and_then(|v| v.as_str())
+            .or_else(|| cur["template"].as_str()).unwrap_or("");
+        let vars = match b.get("vars") {
+            Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+            Some(v) => v.to_string(),
+            None => cur["vars"].as_str().unwrap_or("{}").to_string(),
+        };
+        crate::api::validate_screen(template, &vars).map_err(bad)?;
+    }
     let n = screens::patch(&st.pool, id, &b, &["name", "template", "vars", "render_backend"]).await.map_err(err)?;
     if n == 0 { return Err(not_found("screen")); }
     cache::invalidate(&st.cache, id).await;

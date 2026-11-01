@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
             .patch(mntr::admin::patch_screen)
             .delete(mntr::admin::delete_screen))
         .route("/screens/{id}/preview", get(mntr::api::preview_screen))
+        .route("/screens/preview", post(mntr::api::preview_draft))
         .route("/playlists", get(mntr::admin::list_playlists).post(mntr::api::create_playlist))
         .route("/playlists/{id}", get(mntr::admin::get_playlist)
             .patch(mntr::admin::patch_playlist)

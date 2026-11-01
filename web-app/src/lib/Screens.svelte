@@ -14,6 +14,8 @@ let rows = $state([]);
 let dlg = $state(null);
 let f = $state({ id: null, name: '', template: EXAMPLE, vars: '{}' });
 let showPreview = $state(false);
+let previewUrl = $state('');
+let previewErr = $state('');
 
 async function load() {
   try { rows = await api('GET', '/admin/screens'); }
@@ -25,7 +27,7 @@ $effect(() => { if (app.tab === 'screens') load(); });
 function open(id) {
   const s = id ? rows.find((r) => r.id === id) : {};
   f = { id: id ?? null, name: s.name ?? '', template: s.template ?? EXAMPLE, vars: s.vars ?? '{}' };
-  showPreview = false;
+  showPreview = false; previewUrl = ''; previewErr = '';
   dlg?.show();
 }
 async function save(e) {
@@ -37,6 +39,20 @@ async function save(e) {
     dlg.close(); load(); toast('saved');
   } catch (err) { toast(err.message, true); }
   return false;
+}
+// Real draft preview: render the dialog's current template+vars without
+// saving (#21 — the old button showed a static logo).
+async function preview() {
+  showPreview = true; previewErr = ''; previewUrl = '';
+  try {
+    const r = await fetch('/admin/screens/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + app.token },
+      body: JSON.stringify({ template: f.template, vars: f.vars }),
+    });
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    previewUrl = URL.createObjectURL(await r.blob());
+  } catch (err) { previewErr = err.message; }
 }
 async function del(id) {
   if (!confirm('Delete this screen (removed from all playlists)?')) return;
@@ -77,8 +93,14 @@ async function del(id) {
     <div class="row"><label>Template (JSON)</label><textarea bind:value={f.template}></textarea></div>
     <div class="row"><label>Variables (JSON)</label><textarea style="min-height:80px" bind:value={f.vars}></textarea></div>
     <button class="pri">Save</button>
-    <button class="act" type="button" onclick={() => (showPreview = true)}>Preview</button>
+    <button class="act" type="button" onclick={preview}>Preview</button>
     <button class="act" type="button" onclick={() => dlg.close()}>Cancel</button>
   </form>
-  {#if showPreview}<div style="margin-top:12px"><img class="prev" style="max-width:400px" src="/images/setup-logo-2.bmp" alt=""></div>{/if}
+  {#if showPreview}
+    <div style="margin-top:12px">
+      {#if previewErr}<p class="mut" style="color:var(--red)">{previewErr}</p>
+      {:else if previewUrl}<img class="prev" style="max-width:400px" src={previewUrl} alt="Screen preview">
+      {:else}<p class="mut">Rendering…</p>{/if}
+    </div>
+  {/if}
 </Dialog>
