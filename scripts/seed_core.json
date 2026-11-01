@@ -6,6 +6,6 @@
   "extensions": [
     { "kind": "weather", "name": "Weather", "settings": { "days": 3 } },
     { "kind": "calendar", "name": "Calendar", "settings": { "days": 3 } },
-    { "kind": "countdown", "name": "Countdown", "settings": { "title": "Housewarming", "date": "2027-02-10" } }
+    { "kind": "countdown", "name": "Countdown", "settings": { "title": "Housewarming", "date": "2027-06-01" } }
   ]
 }

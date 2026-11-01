@@ -239,7 +239,7 @@ async fn auth_oidc_full_browser_flow() {
     let cli2 = reqwest::Client::builder().cookie_store(true).redirect(reqwest::redirect::Policy::none()).build().unwrap();
     let tok2 = oidc_browser_login(&cli2, &addr, "bob", "bobpass").await.expect("second oidc flow");
     let me2: serde_json::Value = cli2.get(format!("http://{addr}/admin/me")).header("authorization", format!("Bearer {tok2}")).send().await.unwrap().json().await.unwrap();
-    assert_eq!(me2["email"], "alice@mntr.test");
+    assert_eq!(me2["email"], "bob@mntr.test");
     assert_eq!(me2["role"], "user");
 
     // replayed callback (same code/state) must be rejected
