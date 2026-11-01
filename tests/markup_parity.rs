@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Parity harness: render the same no-JS TRMNL recipes through BOTH backends
 //! (native markup front-end vs real headless Chromium with the framework CSS)
 //! and measure the visual gap.

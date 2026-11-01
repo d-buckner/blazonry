@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Shared test helper: render a Liquid template through mntr's full parser.
 #![allow(dead_code)]
 

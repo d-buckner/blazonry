@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
 """Render TRMNL framework markup to PNG with vendored framework assets.
 
 Serves the vendored trmnl-framework public/ dir over HTTP, wraps fixture

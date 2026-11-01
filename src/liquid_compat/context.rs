@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The `trmnl.*` context object community templates read:
 //! `trmnl.user.utc_offset`, `trmnl.plugin_settings.instance_name`,
 //! `trmnl.system.timestamp_utc`, `trmnl.user.locale`, `trmnl.device.width`, …

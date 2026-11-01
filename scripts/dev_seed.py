@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
 """Seed a local mntr for hands-on testing (browser + trmnl-sim).
 
 Idempotent-ish: registers the admin if missing (first user becomes admin),

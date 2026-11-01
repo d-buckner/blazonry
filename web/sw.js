@@ -1,4 +1,5 @@
-// mntr admin PWA service worker. Emitted by web-app/build.js with 20261101022231
+/* SPDX-License-Identifier: AGPL-3.0-only */
+// mntr admin PWA service worker. Emitted by web-app/build.js with 20261101230922
 // replaced by a build stamp, so every deploy produces new bytes and browsers
 // pick up the update. Strategy:
 //   - app shell ('/', manifest, icons): cache-first (it is one inlined file)

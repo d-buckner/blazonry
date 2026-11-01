@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
 // Build: Svelte 5 -> one static HTML file (SSR-prerendered shell + inlined
 // hydrating client bundle), written to ../web/index.html for include_str!.
 //

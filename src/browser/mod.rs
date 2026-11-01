@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Headless-Chromium render backend (`browser` feature, issue #14).
 //!
 //! Production path: Liquid markup -> framework page shell -> served from a

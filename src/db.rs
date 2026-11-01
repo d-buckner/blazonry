@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! SQLite schema + bootstrap. sqlx runtime API (no compile-time macros —
 //! keeps builds DB-free).
 //!

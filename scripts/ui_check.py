@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
 """Drive the mntr admin SPA in headless Chromium against a freshly
 spawned server on an ephemeral DB: register admin, create screen + playlist,
 walk every tab, screenshot each, fail on JS console errors.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Verify PWA: SW registers, shell cache fills, login works through SW, and
 # with the server dead the same context reloads to the cached shell + banner.
 import subprocess, sys, time, socket, tempfile, os, signal

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! TRMNL Liquid compatibility test suite.
 //!
 //! Every test here encodes a specific, measured gap between mntr's bare

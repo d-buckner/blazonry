@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Countdown extension — TRMNL's #3 plugin rebuilt: days remaining until a
 //! date, big-number layout. No provider: the content depends only on the
 //! household date, so it repaints once a day (the provider loop triggers a

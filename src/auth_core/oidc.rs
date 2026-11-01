@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! OIDC protocol: authorization-code flow with PKCE.
 //!
 //! Narrow surface for the HTTP layer (src/auth.rs):

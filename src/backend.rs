@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Render backend abstraction (issue #14).
 //!
 //! Two interchangeable backends produce panel BMP bytes from the same

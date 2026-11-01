@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Embedded trmnl-framework assets + page shell for the browser backend.
 //!
 //! The framework's `plugins.min.css` is ~19 MB of generated utility CSS; we

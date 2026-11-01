@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! TRMNL Liquid compatibility layer.
 //!
 //! mntr's authoring surface is Shopify Liquid (liquid-rs stdlib), but the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `playlists` + `playlist_screens` table owner: all SQL touching these
 //! tables lives here (issue #9). The list/items queries join `screens` for
 //! display names — read-only joins are allowed in the driving table's owner.

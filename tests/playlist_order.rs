@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Playlist ordering regressions (#22): concurrent appends must never
 //! collide on a duplicate position, and the replace endpoint must
 //! reassign positions 0..n in order.

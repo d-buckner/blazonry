@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Corpus probe: how much of the real TRMNL recipe corpus renders natively
 //! through the markup front-end? Skips silently when the dump is absent so CI
 //! stays green; run locally with `cargo test --test markup_corpus -- --nocapture`.

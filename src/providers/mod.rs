@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Providers: leaf data dependencies implementing capability shapes.
 //!
 //! Design (AFFiNE: "mntr: Providers & Extensions Design"): providers publish

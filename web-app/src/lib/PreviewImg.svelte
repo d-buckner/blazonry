@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <script>
 import { authedBlobUrl } from './api.js';
 let { id } = $props();

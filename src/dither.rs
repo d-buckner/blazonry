@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Greyscale -> 4-level dithering. E-ink panels take 4 grey levels; antialiased
 //! text and charts must be dithered or they band badly. Floyd–Steinberg on the
 //! 4-level lattice.

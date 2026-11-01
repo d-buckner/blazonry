@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! CalDAV provider: one configured calendar collection (Radicale, Nextcloud,
 //! Fastmail published feeds, …). Implements the CalendarSource shape.
 //!

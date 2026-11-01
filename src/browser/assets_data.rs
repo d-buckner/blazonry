@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Generated: brotli-compressed trmnl-framework assets (MIT, github.com/usetrmnl/framework).
 //! Regenerate with scripts/vendor_fw_assets.sh. Keys are URL paths (no leading slash).
 

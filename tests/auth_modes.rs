@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Auth-mode integration tests: real OpenLDAP (slapd) and a real OIDC
 //! provider (node oidc-provider) must be running locally. These are opt-in:
 //! they skip cleanly when the test IdPs are absent.

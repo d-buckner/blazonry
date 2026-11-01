@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! End-to-end spike: Liquid template + vars -> Screen -> greyscale -> dither
 //! -> 2-bit BMP + PNG preview. `cargo run --bin demo`
 

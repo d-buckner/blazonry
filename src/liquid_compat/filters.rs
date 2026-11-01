@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The TRMNL filter pack: Ruby-Liquid standard filters liquid-rs omits, plus
 //! TRMNL cloud's custom filters, plus a strict `date` that replaces liquid-rs's
 //! silent-passthrough one.

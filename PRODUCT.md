@@ -40,7 +40,7 @@ It does not try to be TRMNL (no curated plugin catalog, no hosted mobile apps). 
 - **Admin API:** bearer-auth CRUD mirroring Terminus `/api/*` (bulk device import, playlist item visibility, firmware wipe, log wipe). Uses INTEGER ids where Terminus uses UUIDs.
 - **No plugin marketplace:** data sources are the user's own HTTP endpoints; screens are Liquid the user controls. A TRMNL-recipe importer is planned, not built.
 - **Deliberate stances (held, not limitations):** core function never depends on a vendor cloud; no lock-in or dark patterns.
-- **License is undecided** (current direction: AGPL-3.0 + commercial dual-license). Do not state a license as fact.
+- **License: AGPL-3.0 with commercial dual-licensing available** (decided Nov 2026; `LICENSE` in repo).
 
 ## Brand Commitments
 

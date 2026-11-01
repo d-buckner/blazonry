@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Open-Meteo provider: current conditions + daily forecast for one location.
 //! Implements the WeatherSource shape. Free API, no key — the right default
 //! for a self-hosted server (TRMNL's #1 plugin is weather; their plugin needs

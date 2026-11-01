@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Device plane: the endpoints TRMNL firmware actually calls.
 //!
 //! Wire contract (tests/spec/ — BYOS docs + Terminus source, Oct 2026):

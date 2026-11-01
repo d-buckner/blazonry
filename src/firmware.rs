@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `firmware` table owner: all SQL touching `firmware` lives here (issue #9).
 
 use serde_json::Value;
