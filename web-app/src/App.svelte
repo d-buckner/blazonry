@@ -5,11 +5,12 @@ import { api, doLogin, doRegister, logout } from './lib/api.js';
 import Devices from './lib/Devices.svelte';
 import Screens from './lib/Screens.svelte';
 import Playlists from './lib/Playlists.svelte';
+import Connections from './lib/Connections.svelte';
 import Firmware from './lib/Firmware.svelte';
 import Models from './lib/Models.svelte';
 import Users from './lib/Users.svelte';
 
-const TABS = ['devices', 'screens', 'playlists', 'firmware', 'models', 'users'];
+const TABS = ['devices', 'screens', 'playlists', 'connections', 'firmware', 'models', 'users'];
 let authTab = $state('login');
 let authMode = $state('local');
 let li = $state({ email: '', pass: '' });
@@ -87,6 +88,7 @@ async function register(e) {
     {#if app.tab === 'devices'}<Devices />
     {:else if app.tab === 'screens'}<Screens />
     {:else if app.tab === 'playlists'}<Playlists />
+    {:else if app.tab === 'connections'}<Connections />
     {:else if app.tab === 'firmware'}<Firmware />
     {:else if app.tab === 'models'}<Models />
     {:else if app.tab === 'users'}<Users />
