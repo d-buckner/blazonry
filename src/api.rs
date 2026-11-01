@@ -27,6 +27,8 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub backends: crate::cache::Backends,
     pub cache: BmpCache,
+    pub auth: Arc<crate::auth_core::AuthConfig>,
+    pub pending_oidc: Arc<crate::auth_core::PendingOidc>,
 }
 pub type SharedState = Arc<AppState>;
 

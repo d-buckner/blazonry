@@ -11,10 +11,18 @@ import Users from './lib/Users.svelte';
 
 const TABS = ['devices', 'screens', 'playlists', 'firmware', 'models', 'users'];
 let authTab = $state('login');
+let authMode = $state('local');
 let li = $state({ email: '', pass: '' });
 let rg = $state({ email: '', pass: '' });
 
 onMount(async () => {
+  // OIDC callback lands here as /#mntr_token=... — adopt and scrub the URL.
+  const m = location.hash.match(/mntr_token=([0-9a-f]+)/);
+  if (m) {
+    sessionStorage.setItem('tr-token', m[1]);
+    history.replaceState(null, '', '/');
+  }
+  try { authMode = (await api('GET', '/admin/auth/mode')).mode; } catch {}
   const t = sessionStorage.getItem('tr-token');
   if (t) {
     app.token = t;
@@ -22,6 +30,9 @@ onMount(async () => {
       const me = await api('GET', '/admin/me');
       app.email = me.email; app.role = me.role;
     } catch { logout(); }
+  } else if (authMode === 'none') {
+    // open server: enter directly, no session needed
+    app.token = 'open'; app.email = 'open'; app.role = 'admin';
   }
   app.booted = true;
 });
@@ -82,16 +93,31 @@ async function register(e) {
     {/if}
   </main>
 {:else}
+  {#if authMode === 'oidc'}
+  <div id="login" class="card">
+    <h2 style="margin-bottom:12px">Sign in</h2>
+    <p class="mut" style="margin-bottom:12px">This server uses single sign-on.</p>
+    <a class="pri" href="/auth/oidc/login" style="display:inline-block;text-decoration:none">Sign in with SSO</a>
+  </div>
+  {:else}
   <div id="login" class="card" hidden={authTab !== 'login'}>
     <h2 style="margin-bottom:12px">Sign in</h2>
     <form onsubmit={login}>
+      {#if authMode === 'ldap'}
+      <div class="row"><label>Username</label><input type="text" bind:value={li.email} required></div>
+      {:else}
       <div class="row"><label>Email</label><input type="email" bind:value={li.email} required></div>
+      {/if}
       <div class="row"><label>Password</label><input type="password" bind:value={li.pass} required></div>
       <button class="pri">Sign in</button>
+      {#if authMode === 'local'}
       <p class="mut" style="margin-top:10px">First account registered becomes admin:
         <a href="#" onclick={(e) => { e.preventDefault(); authTab = 'register'; }}>register</a></p>
+      {/if}
     </form>
   </div>
+  {/if}
+  {#if authMode === 'local'}
   <div id="reg" class="card" hidden={authTab !== 'register'}>
     <h2 style="margin-bottom:12px">Register</h2>
     <form onsubmit={register}>
@@ -102,6 +128,7 @@ async function register(e) {
         <a href="#" onclick={(e) => { e.preventDefault(); authTab = 'login'; }}>sign in</a></p>
     </form>
   </div>
+  {/if}
 {/if}
 
 <div id="toasts">

@@ -47,10 +47,14 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let cache = mntr::cache::new_cache();
+    let auth_cfg = mntr::auth_core::AuthConfig::from_env()?;
+    tracing::info!(mode = auth_cfg.mode_str(), "admin auth mode");
     let state = Arc::new(mntr::api::AppState {
         pool: pool.clone(),
         backends: backends.clone(),
         cache: cache.clone(),
+        auth: Arc::new(auth_cfg),
+        pending_oidc: Arc::new(mntr::auth_core::PendingOidc::new()),
     });
 
     // background refresh loop (replaces Sidekiq + poller procs)
@@ -145,6 +149,10 @@ async fn main() -> anyhow::Result<()> {
         // auth (open by design)
         .route("/admin/register", post(mntr::auth::register))
         .route("/admin/login", post(mntr::auth::login))
+        .route("/admin/auth/mode", get(mntr::auth::auth_mode))
+        // OIDC browser flow (open by design)
+        .route("/auth/oidc/login", get(mntr::auth::oidc_login))
+        .route("/auth/oidc/callback", get(mntr::auth::oidc_callback))
         // admin plane (bearer session required)
         .nest("/admin", admin)
         .with_state(state);
