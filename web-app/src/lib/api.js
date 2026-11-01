@@ -10,9 +10,14 @@ export async function api(method, path, body) {
   const r = await fetch(path, opts);
   if (r.status === 401 && app.token) { logout(); throw new Error('signed out'); }
   if (!r.ok) {
-    let d = r.statusText;
-    try { d = (await r.json()).detail || d; } catch {}
-    throw new Error(r.status + ': ' + d);
+    // Server errors are plain text (axum String) or JSON {detail}; prefer the
+    // human message over the status line — users never need "403: Forbidden".
+    let d = '';
+    const body = await r.text().catch(() => '');
+    try { d = JSON.parse(body).detail || ''; } catch { d = body; }
+    if (r.status === 403 && /verification/i.test(d))
+      d = 'Your account is waiting for an admin to approve it.';
+    throw new Error(d || r.status + ': ' + r.statusText);
   }
   return r.status === 204 ? null : r.json();
 }
@@ -40,6 +45,10 @@ export async function doLogin(email, password) {
 }
 
 export async function doRegister(email, password) {
-  await api('POST', '/admin/register', { email, password });
-  toast('registered — an admin must verify this account');
+  const r = await api('POST', '/admin/register', { email, password });
+  // The first account IS the admin — telling them to wait for verification
+  // would be a lie (issue #20).
+  toast(r.role === 'admin'
+    ? "You're the admin — sign in to get started."
+    : 'Account created — an admin needs to approve it before you can sign in.');
 }
