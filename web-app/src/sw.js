@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
 // mntr admin PWA service worker. Emitted by web-app/build.js with __BUILD__
 // replaced by a build stamp, so every deploy produces new bytes and browsers
 // pick up the update. Strategy:

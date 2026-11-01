@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! PoC driver for issue #14 with REAL TRMNL recipes from the dump:
 //! render the recipe's Liquid through mntr's own compat engine, wrap it in
 //! the trmnl-framework page shell (real CSS + fonts over localhost), capture

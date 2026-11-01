@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `models` table owner: all SQL touching `models` lives here (issue #9).
 //! Seed DDL stays in db::SEED_MODELS (bootstrap is db.rs's job).
 

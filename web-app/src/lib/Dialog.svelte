@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <script>
 let el = $state(null);
 export function show() { el?.showModal(); }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! PoC driver for issue #14: render a JS-dependent recipe HTML through
 //! headless Chromium, dither, and emit the panel BMPs.
 //!

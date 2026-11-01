@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
 // Runes-based shared state. token starts empty so the first client render
 // matches the SSR'd (logged-out) HTML; onMount fills it in afterwards.
 export const app = $state({

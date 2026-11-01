@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `screens` table owner: all SQL touching `screens` lives here (issue #9).
 //!
 //! Other modules call these typed functions instead of writing raw SQL

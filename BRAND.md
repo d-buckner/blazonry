@@ -107,10 +107,10 @@ Brand-visible items only; the git/container mechanics live elsewhere.
       LAN, your screens."*
 - [ ] Topics: `self-hosted`, `e-ink`, `trmnl`, `rust`, `dashboard` (+
       `bloud-os` if the org adopts a family topic).
-- [ ] README: keep as-is except (a) container image path
+- [x] README: keep as-is except (a) container image path
       `internal-forgejo` → the bloud-os registry path once the
-      image moves; (b) License section stays "TBD" until the AGPL +
-      dual-license decision is actually made — do not state a license as fact.
+      image moves; (b) License section now states AGPL-3.0 + dual-licensing
+      (decided Nov 2026) — keep it in sync with `LICENSE`.
 - [ ] Org avatar and mntr icon: both already conform to §3's mark grammar;
       no redraw needed.
 - [ ] Honesty audit before publish: bloud itself is currently closed source

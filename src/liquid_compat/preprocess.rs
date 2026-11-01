@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Source-level preprocessing for constructs liquid-rs cannot parse:
 //! `{% template %}` partial definitions and `{% liquid %}` statement blocks.
 

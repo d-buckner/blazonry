@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Spec conformance suite: one test per contract line from the TRMNL BYOS
 //! wire spec. Ground truth (fetched 2026-10-29, vendored in tests/spec/):
 //!   - docs.trmnl.com/go/diy/byos.md            (setup/display contract)

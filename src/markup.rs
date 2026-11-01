@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! TRMNL markup front-end: HTML + Liquid -> Screen IR.
 //!
 //! The authoring surface is the same one TRMNL plugins use — real HTML with

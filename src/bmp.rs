@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! 2-bit BMP writer — TRMNL devices want an 800x480 2-bit (4 greyscale
 //! levels) bottom-up BMP, base64'd into the /api/display JSON response.
 

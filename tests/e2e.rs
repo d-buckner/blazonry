@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Integration tests: spin the server on an ephemeral port, drive it over
 //! HTTP exactly like a device + admin client would.
 

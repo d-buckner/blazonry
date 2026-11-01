@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Weather extension — TRMNL's #1 plugin rebuilt: big current temp + label,
 //! a row of day cards (hi/lo/precip), from merged WeatherSource snapshots.
 //!

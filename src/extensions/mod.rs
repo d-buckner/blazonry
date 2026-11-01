@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Extensions: consumers of provider shapes. One module per extension under
 //! `extensions/` (today: `calendar`). Each extension declares its
 //! required shape + cardinality and turns merged snapshots into a screen.

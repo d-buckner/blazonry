@@ -281,5 +281,10 @@ screens are Liquid you control.
 
 ## License
 
-TBD — see `LICENSE` once chosen (AGPL-3.0 + commercial dual-license is the
-current direction).
+mntr is licensed under the **GNU AGPL v3** (see `LICENSE`).
+
+The AGPL is the whole point: mntr stays free and open, and anyone who runs a
+modified version as a network service has to give the source back. If you
+want to embed mntr in something that can't carry AGPL (a commercial product,
+a closed appliance), commercial dual-licensing is available — open an issue
+and ask.

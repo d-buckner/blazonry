@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Render cache + job loop.
 //!
 //! Devices poll every ~15 min; rendering on every poll is waste. The job loop

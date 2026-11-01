@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `{% render %}` with TRMNL cloud (Ruby Liquid) semantics.
 //!
 //! liquid-rs's stdlib `render` is *isolated*: the partial sees only the

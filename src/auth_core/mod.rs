@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Pluggable admin auth modes: local (argon2), ldap, oidc, none.
 //!
 //! Selected at startup via `MNTR_AUTH` (default `local`). The device plane is

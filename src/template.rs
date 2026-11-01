@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Liquid -> Screen: a Liquid template renders a JSON screen tree, which
 //! deserializes into the screen vocabulary. Liquid stays the authoring surface
 //! (TRMNL community muscle memory); JSON is the compile target the renderer eats.

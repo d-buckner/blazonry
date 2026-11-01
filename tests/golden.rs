@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Golden-image regression over a screen corpus.
 //!
 //! Issue #4: these are the contract for the taffy migration. Each screen in

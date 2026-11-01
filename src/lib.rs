@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! mntr: TRMNL-compatible BYOS server, no premium tiers, no Chrome.
 //!
 //! Render pipeline: Liquid template -> Screen tree (serde JSON) -> tiny-skia

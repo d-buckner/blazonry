@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Calendar extension — TRMNL's most popular calendar plugin's
 //! "Default" layout, rebuilt: upcoming events grouped by day, merged from
 //! all picked calendar providers, sorted by start.

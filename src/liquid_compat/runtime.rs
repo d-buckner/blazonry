@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Rendering runtime with Ruby-Liquid nil semantics.
 //!
 //! liquid-rs raises `Unknown variable` on any unresolved path; Ruby Liquid

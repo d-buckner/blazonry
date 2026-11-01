@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! LDAP protocol: verify a username/password by simple bind.
 //!
 //! Two DN resolution modes (exactly one is configured; enforced at startup):

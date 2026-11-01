@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Software renderer: Screen tree -> greyscale pixmap.
 //!
 //! Geometry is taffy 0.15 (CSS flexbox): the screen vocabulary maps onto taffy

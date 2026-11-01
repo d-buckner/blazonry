@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Layout regression tests for the hand-rolled measure/paint pass.
 //!
 //! These assert on where ink actually lands in the rendered 800x480 buffer —

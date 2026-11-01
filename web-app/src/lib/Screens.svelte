@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <script>
 import { onMount } from 'svelte';
 import { api } from './api.js';

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! mntr server: one binary, SQLite, device plane + admin API.
 //! `mntr serve [--db path] [--addr 0.0.0.0:2301] [--job-secs 300]`
 

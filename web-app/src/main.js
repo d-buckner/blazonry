@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
 import { mount, hydrate } from 'svelte';
 import App from './App.svelte';
 

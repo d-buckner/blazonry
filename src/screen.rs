@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! The screen tree: what a Liquid template compiles to, and what the
 //! renderer consumes. ~15 primitives cover every TRMNL screen family.
 

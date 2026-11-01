@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Admin auth: argon2id password hashing + opaque session tokens.
 //! First registered user becomes admin (Terminus parity); everyone after is
 //! unverified until an admin verifies them. Sessions are DB rows so a restart

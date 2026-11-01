@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Admin CRUD for providers and extensions (the data-plane registry).
 //!
 //!   providers   GET|POST /providers, GET|PATCH|DELETE /providers/:id,

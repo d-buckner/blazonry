@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
 import { app, toast } from './store.svelte.js';
 
 export async function api(method, path, body) {

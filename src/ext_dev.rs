@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `mntr ext` — the extension-authoring dev loop.
 //!
 //! An extension's authoring surface is a directory:
