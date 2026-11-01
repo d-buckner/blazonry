@@ -35,14 +35,12 @@ try:
         pg.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
         pg.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
         pg.goto(f"http://127.0.0.1:{port}/", wait_until="networkidle")
-        pg.click("text=register")
+        # first-run: the register form is the landing state and the first
+        # account auto-logs in (issue #23)
+        pg.wait_for_selector("#reg input[type=email]")
         pg.fill("#reg input[type=email]", "admin@home.lan")
         pg.fill("#reg input[type=password]", "longenough9")
         pg.click("#reg button.pri")
-        pg.wait_for_selector("#login:not([hidden])")
-        pg.fill("#login input[type=email]", "admin@home.lan")
-        pg.fill("#login input[type=password]", "longenough9")
-        pg.click("#login button.pri")
         pg.wait_for_selector("header nav")
         pg.wait_for_timeout(400)
         pg.screenshot(path=os.path.join(ROOT, "ui_devices.png"))
@@ -73,6 +71,23 @@ try:
         pg.click("nav >> text=Users")
         pg.wait_for_timeout(300)
         pg.screenshot(path=os.path.join(ROOT, "ui_users.png"))
+
+        # 390px sweep (issue #24): every tab must fit with no horizontal
+        # overflow and every nav tab must be reachable.
+        pg.set_viewport_size({"width": 390, "height": 800})
+        pg.wait_for_timeout(300)
+        for tab in ["Devices", "Screens", "Playlists", "Connections", "Firmware", "Models", "Users"]:
+            link = pg.locator(f"header nav a:has-text('{tab}')")
+            box = link.bounding_box()
+            if box is None or box["x"] + box["width"] > 390 + 1:
+                errors.append(f"mobile: nav tab {tab} unreachable at 390px")
+            link.click()
+            pg.wait_for_timeout(250)
+            sw = pg.evaluate("document.documentElement.scrollWidth")
+            cw = pg.evaluate("document.documentElement.clientWidth")
+            if sw > cw + 1:
+                errors.append(f"mobile: {tab} overflows at 390px (scrollWidth {sw} > clientWidth {cw})")
+        pg.screenshot(path=os.path.join(ROOT, "ui_mobile_users.png"))
         b.close()
 finally:
     srv.terminate()
