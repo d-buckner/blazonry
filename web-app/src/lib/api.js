@@ -46,9 +46,13 @@ export async function doLogin(email, password) {
 
 export async function doRegister(email, password) {
   const r = await api('POST', '/admin/register', { email, password });
-  // The first account IS the admin — telling them to wait for verification
-  // would be a lie (issue #20).
-  toast(r.role === 'admin'
-    ? "You're the admin — sign in to get started."
-    : 'Account created — an admin needs to approve it before you can sign in.');
+  // The first account IS the admin — it gets a session token back, so
+  // sign them straight in instead of bouncing to the login form (#20/#23).
+  if (r.role === 'admin') {
+    sessionStorage.setItem('tr-token', r.token);
+    app.token = r.token; app.email = email; app.role = 'admin';
+    toast("You're the admin — welcome to mntr.");
+    return;
+  }
+  toast('Account created — an admin needs to approve it before you can sign in.');
 }

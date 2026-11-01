@@ -13,6 +13,7 @@ import Users from './lib/Users.svelte';
 const TABS = ['devices', 'screens', 'playlists', 'connections', 'firmware', 'models', 'users'];
 let authTab = $state('login');
 let authMode = $state('local');
+let firstRun = $state(false);
 let li = $state({ email: '', pass: '' });
 let rg = $state({ email: '', pass: '' });
 
@@ -23,7 +24,12 @@ onMount(async () => {
     sessionStorage.setItem('tr-token', m[1]);
     history.replaceState(null, '', '/');
   }
-  try { authMode = (await api('GET', '/admin/auth/mode')).mode; } catch {}
+  try {
+    const am = await api('GET', '/admin/auth/mode');
+    authMode = am.mode;
+    firstRun = !!am.first_run;
+    if (firstRun) authTab = 'register';
+  } catch {}
   const t = sessionStorage.getItem('tr-token');
   if (t) {
     app.token = t;
@@ -95,42 +101,48 @@ async function register(e) {
     {/if}
   </main>
 {:else}
+<div id="auth">
+  <div class="auth-brand">
+    <h1>mntr</h1>
+    <p class="tag">your displays, your server</p>
+  </div>
   {#if authMode === 'oidc'}
-  <div id="login" class="card">
-    <h2 style="margin-bottom:12px">Sign in</h2>
-    <p class="mut" style="margin-bottom:12px">This server uses single sign-on.</p>
-    <a class="pri" href="/auth/oidc/login" style="display:inline-block;text-decoration:none">Sign in with SSO</a>
+  <div id="login" class="card auth-card">
+    <h2>Sign in</h2>
+    <p class="mut" style="margin-bottom:16px">This server uses single sign-on.</p>
+    <a class="pri auth-cta" href="/auth/oidc/login">Sign in with SSO</a>
+  </div>
+  {:else if authTab === 'register'}
+  <div id="reg" class="card auth-card">
+    <h2>{firstRun ? 'Create your account' : 'Create an account'}</h2>
+    {#if firstRun}<p class="mut auth-note">You're the first account on this server — it becomes the admin that manages everything.</p>{/if}
+    <form onsubmit={register}>
+      <label class="field"><span>Email</span><input type="email" bind:value={rg.email} required autocomplete="username"></label>
+      <label class="field"><span>Password</span><input type="password" bind:value={rg.pass} required minlength="9" autocomplete="new-password"></label>
+      <button class="pri auth-cta">{firstRun ? 'Create admin account' : 'Create account'}</button>
+    </form>
+    <p class="auth-alt">Already have an account?
+      <a href="#" onclick={(e) => { e.preventDefault(); authTab = 'login'; }}>Sign in</a></p>
   </div>
   {:else}
-  <div id="login" class="card" hidden={authTab !== 'login'}>
-    <h2 style="margin-bottom:12px">Sign in</h2>
+  <div id="login" class="card auth-card">
+    <h2>Sign in</h2>
     <form onsubmit={login}>
       {#if authMode === 'ldap'}
-      <div class="row"><label>Username</label><input type="text" bind:value={li.email} required></div>
+      <label class="field"><span>Username</span><input type="text" bind:value={li.email} required autocomplete="username"></label>
       {:else}
-      <div class="row"><label>Email</label><input type="email" bind:value={li.email} required></div>
+      <label class="field"><span>Email</span><input type="email" bind:value={li.email} required autocomplete="username"></label>
       {/if}
-      <div class="row"><label>Password</label><input type="password" bind:value={li.pass} required></div>
-      <button class="pri">Sign in</button>
-      {#if authMode === 'local'}
-      <p class="mut" style="margin-top:10px">First account registered becomes admin:
-        <a href="#" onclick={(e) => { e.preventDefault(); authTab = 'register'; }}>register</a></p>
-      {/if}
+      <label class="field"><span>Password</span><input type="password" bind:value={li.pass} required autocomplete="current-password"></label>
+      <button class="pri auth-cta">Sign in</button>
     </form>
+    {#if authMode === 'local'}
+    <p class="auth-alt">New here?
+      <a href="#" onclick={(e) => { e.preventDefault(); authTab = 'register'; }}>Create an account</a></p>
+    {/if}
   </div>
   {/if}
-  {#if authMode === 'local'}
-  <div id="reg" class="card" hidden={authTab !== 'register'}>
-    <h2 style="margin-bottom:12px">Register</h2>
-    <form onsubmit={register}>
-      <div class="row"><label>Email</label><input type="email" bind:value={rg.email} required></div>
-      <div class="row"><label>Password</label><input type="password" bind:value={rg.pass} required minlength="9"></div>
-      <button class="pri">Register</button>
-      <p class="mut" style="margin-top:10px">An admin must verify new accounts:
-        <a href="#" onclick={(e) => { e.preventDefault(); authTab = 'login'; }}>sign in</a></p>
-    </form>
-  </div>
-  {/if}
+</div>
 {/if}
 
 <div id="toasts">
