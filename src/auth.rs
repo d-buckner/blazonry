@@ -13,8 +13,6 @@ use axum::response::Response;
 use axum::Json;
 use axum::response::IntoResponse;
 use sqlx::SqlitePool;
-use std::io::Read;
-use std::sync::Arc;
 
 use crate::api::SharedState;
 use crate::auth_core::AuthMode;
@@ -64,16 +62,8 @@ pub fn verify_password(pw: &str, hash: &str) -> bool {
     }
 }
 
-fn random_token() -> String {
-    let mut bytes = [0u8; 32];
-    // /dev/urandom is the zero-dependency CSPRNG on Linux; this targets LAN boxes.
-    std::fs::File::open("/dev/urandom").expect("/dev/urandom")
-        .read_exact(&mut bytes).expect("urandom read");
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 async fn insert_session(pool: &SqlitePool, user_id: i64) -> anyhow::Result<String> {
-    let token = random_token();
+    let token = crate::auth_core::random_hex(32);
     sqlx::query("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+30 days'))")
         .bind(&token).bind(user_id)
         .execute(pool).await?;
@@ -152,28 +142,18 @@ async fn ldap_login(st: &SharedState, body: &serde_json::Value) -> Result<Json<s
 /// nonce, remember them, and redirect the user to the provider.
 pub async fn oidc_login(State(st): State<SharedState>) -> Result<axum::response::Response, (StatusCode, String)> {
     let cfg = st.auth.oidc.as_ref().ok_or((StatusCode::INTERNAL_SERVER_ERROR, "oidc not configured".into()))?;
-    let disc = crate::auth_core::oidc_discover(cfg).await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let state = crate::auth_core::random_b64url(24);
-    let nonce = crate::auth_core::random_b64url(24);
-    let verifier = crate::auth_core::random_b64url(32);
-    let challenge = crate::auth_core::pkce_challenge(&verifier);
-    st.pending_oidc.insert(state.clone(), nonce.clone(), verifier);
-    let url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256",
-        disc.authorization_endpoint,
-        urlencoding(&cfg.client_id), urlencoding(&cfg.redirect_uri),
-        urlencoding(&cfg.scopes), urlencoding(&state), urlencoding(&nonce),
-        urlencoding(&challenge),
-    );
+    let url = crate::auth_core::start_login(cfg, &st.pending_oidc).await
+        .map_err(|e| oidc_err(e))?;
     Ok(axum::response::Redirect::to(&url).into_response())
 }
 
-fn urlencoding(s: &str) -> String {
-    s.bytes().map(|b| match b {
-        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
-        _ => format!("%{b:02X}"),
-    }).collect()
+fn oidc_err(e: crate::auth_core::OidcError) -> (StatusCode, String) {
+    use crate::auth_core::OidcError as E;
+    match e {
+        E::Upstream(m) => (StatusCode::BAD_GATEWAY, m),
+        E::Auth(m) => (StatusCode::UNAUTHORIZED, m),
+        E::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+    }
 }
 
 /// Provider redirects back here with ?code&state. Verify state, exchange the
@@ -187,33 +167,11 @@ pub async fn oidc_callback(
         (code, msg).into_response()
     };
     let cfg = match &st.auth.oidc { Some(c) => c, None => return fail(StatusCode::INTERNAL_SERVER_ERROR, "oidc not configured".into()) };
-    if let Some(err) = q.get("error") {
-        return fail(StatusCode::UNAUTHORIZED, format!("oidc provider error: {err} {}", q.get("error_description").cloned().unwrap_or_default()));
-    }
-    let (Some(code), Some(state)) = (q.get("code"), q.get("state")) else {
-        return fail(StatusCode::BAD_REQUEST, "missing code or state".into());
+    let ident = match crate::auth_core::finish_login(cfg, &st.pending_oidc, &q).await {
+        Ok(i) => i,
+        Err(e) => return oidc_err(e).into_response(),
     };
-    let Some((nonce, verifier)) = st.pending_oidc.take(state) else {
-        return fail(StatusCode::UNAUTHORIZED, "unknown or expired state".into());
-    };
-    let disc = match crate::auth_core::oidc_discover(cfg).await { Ok(d) => d, Err(e) => return fail(StatusCode::BAD_GATEWAY, e.to_string()) };
-    let tokens = match crate::auth_core::oidc_exchange(cfg, &disc, code, &verifier).await {
-        Ok(t) => t,
-        Err(e) => return fail(StatusCode::UNAUTHORIZED, e.to_string()),
-    };
-    let id_token = tokens.get("id_token").and_then(|v| v.as_str()).unwrap_or("");
-    let jwks = match crate::auth_core::oidc_jwks(cfg, &disc).await { Ok(j) => j, Err(e) => return fail(StatusCode::BAD_GATEWAY, e.to_string()) };
-    let claims = match crate::auth_core::oidc_verify_idtoken(id_token, &jwks, cfg, &nonce, chrono::Utc::now().timestamp()) {
-        Ok(c) => c,
-        Err(e) => return fail(StatusCode::UNAUTHORIZED, e.to_string()),
-    };
-    // OIDC core: email may only be trusted when verified (or unverified-but-configured)
-    let email = match (&claims.email, claims.email_verified) {
-        (Some(e), Some(true)) | (Some(e), None) => e.clone(),
-        _ => return fail(StatusCode::UNAUTHORIZED, "id_token has no verified email".into()),
-    };
-    let force_admin = cfg.admin_emails.contains(&email.to_ascii_lowercase());
-    let (id, role) = match upsert_external_user(&st.pool, &email, force_admin).await {
+    let (id, role) = match upsert_external_user(&st.pool, &ident.email, ident.force_admin).await {
         Ok(v) => v,
         Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     };
@@ -221,7 +179,7 @@ pub async fn oidc_callback(
         Ok(t) => t,
         Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     };
-    tracing::info!(%email, %role, sub = %claims.sub, "oidc login");
+    tracing::info!(email = %ident.email, %role, sub = %ident.sub, "oidc login");
     // SPA picks up #mntr_token=... and stores it in sessionStorage
     axum::response::Redirect::to(&format!("/#mntr_token={token}")).into_response()
 }
@@ -284,7 +242,3 @@ pub async fn require_admin(State(st): State<SharedState>, req: Request, next: Ne
         None => Err((StatusCode::UNAUTHORIZED, "invalid or expired session".into())),
     }
 }
-
-/// One-time bootstrap helper used by tests/CLI: create admin directly.
-pub struct AuthBootstrap;
-pub type Shared = Arc<AuthBootstrap>;
