@@ -168,6 +168,13 @@ img.prev { max-width:200px; border:1px solid var(--ln2); border-radius:0; displa
 }
 @media (max-width:680px) {
   header { padding:12px 16px; height:auto; gap:10px 16px }
+  header nav { flex-wrap:wrap; gap:2px 18px; width:100% }
+  header nav a { padding:11px 0; min-height:44px; display:inline-flex; align-items:center }
+  header nav a.on::after { bottom:-2px }
   main { padding:0 16px; margin:20px auto }
   .ov-displays { grid-template-columns:1fr }
+  td, th { overflow-wrap:anywhere }
+  .acts { flex-wrap:wrap; white-space:normal }
+  button.act, button.pri { min-height:40px }
+  table { display:block; overflow-x:auto }
 }
