@@ -319,10 +319,45 @@ pub async fn create_screen(
     };
     serde_json::from_str::<serde_json::Value>(&vars)
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("vars must be valid JSON: {e}")))?;
+    // Compile the screen now — a saved screen must always render (#21).
+    validate_screen(template, &vars)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let id = crate::screens::create(&st.pool, name, template, &vars).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     cache::invalidate(&st.cache, id).await;
     Ok(axum::Json(serde_json::json!({ "id": id })))
+}
+
+/// Compile a screen (Liquid template + vars JSON text) without persisting.
+/// Returns the human-readable error on failure; bad state must not be
+/// storable (#21 — APoSD: define errors out of existence downstream).
+pub fn validate_screen(template: &str, vars: &str) -> Result<(), String> {
+    let vars: serde_json::Value = serde_json::from_str(vars)
+        .map_err(|e| format!("vars must be valid JSON: {e}"))?;
+    crate::template::render_screen(template, &vars)
+        .map(|_| ())
+        .map_err(|e| format!("template does not compile: {e}"))
+}
+
+/// Draft preview: render a screen from the request body without saving it.
+/// Same body shape as POST /admin/screens. Returns PNG (issue #21).
+pub async fn preview_draft(
+    State(st): State<SharedState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    let template = body.get("template").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "template required".into()))?;
+    let vars = match body.get("vars") {
+        Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+        Some(v) => v.to_string(),
+        None => "{}".into(),
+    };
+    validate_screen(template, &vars).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let pref = body.get("render_backend").and_then(|v| v.as_str()).unwrap_or("");
+    let backend = st.backends.for_pref(pref);
+    let bmp = cache::render_bmp(backend.as_ref(), template, &vars, 2).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let png = bmp_to_png(&bmp).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], png).into_response())
 }
 
 /// Render a screen by id and return it as a PNG (browser-viewable preview).
