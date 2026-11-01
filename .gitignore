@@ -20,3 +20,6 @@ web-app/node_modules/
 # impeccable / design tooling scratch
 .impeccable/
 .taste-skill/
+
+# vendored framework assets are tracked even when raw (brotli only when it shrinks)
+!assets/framework/**

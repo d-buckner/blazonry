@@ -68,9 +68,24 @@ pub fn parse_dt(input: &dyn ValueView) -> Option<DateTime<FixedOffset>> {
     }
 }
 
-fn strftime(dt: &DateTime<FixedOffset>, format: &str) -> String {
-    // Ruby's %s is epoch seconds; chrono agrees. %-d/%-m/%-H are supported.
-    dt.format(format).to_string()
+fn strftime(dt: &DateTime<FixedOffset>, format: &str) -> Result<String, Error> {
+    // Ruby's %s is epoch seconds; chrono's strftime does not support it, so
+    // substitute the value first, then format the rest.
+    // chrono's Display-on-format panics on invalid specifiers; pre-validate
+    // with StrftimeItems (yields Item::Error) and fail as Liquid instead of
+    // crashing the render loop.
+    use chrono::format::{Item, StrftimeItems};
+    let owned;
+    let format = if format.contains("%s") {
+        owned = format.replace("%s", &dt.timestamp().to_string());
+        owned.as_str()
+    } else {
+        format
+    };
+    if StrftimeItems::new(format).any(|item| matches!(item, Item::Error)) {
+        return Err(Error::with_msg(format!("date: invalid strftime format `{format}`")));
+    }
+    Ok(dt.format(format).to_string())
 }
 
 fn date_error(input: &dyn ValueView) -> Error {
@@ -104,7 +119,7 @@ impl Filter for DateFilter {
     fn evaluate(&self, input: &dyn ValueView, runtime: &dyn Runtime) -> Result<Value> {
         let args = self.args.evaluate(runtime)?;
         let dt = parse_dt(input).ok_or_else(|| date_error(input))?;
-        Ok(Value::scalar(strftime(&dt, args.format.as_str())))
+        Ok(Value::scalar(strftime(&dt, args.format.as_str())?))
     }
 }
 
@@ -141,7 +156,7 @@ impl Filter for LDateFilter {
     fn evaluate(&self, input: &dyn ValueView, runtime: &dyn Runtime) -> Result<Value> {
         let args = self.args.evaluate(runtime)?;
         let dt = parse_dt(input).ok_or_else(|| date_error(input))?;
-        Ok(Value::scalar(strftime(&dt, args.format.as_str())))
+        Ok(Value::scalar(strftime(&dt, args.format.as_str())?))
     }
 }
 
@@ -175,7 +190,7 @@ impl Filter for LocalTimeFilter {
         let dt = parse_dt(input).ok_or_else(|| date_error(input))?;
         let offset = args.offset.unwrap_or(0.0);
         let offset = FixedOffset::east_opt(offset as i32).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
-        Ok(Value::scalar(strftime(&dt.with_timezone(&offset), args.format.as_str())))
+        Ok(Value::scalar(strftime(&dt.with_timezone(&offset), args.format.as_str())?))
     }
 }
 
