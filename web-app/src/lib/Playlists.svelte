@@ -14,6 +14,9 @@ let sel = $state({});
 async function load() {
   try {
     [pls, screens] = await Promise.all([api('GET', '/admin/playlists'), api('GET', '/admin/screens')]);
+    // json_group_array does not guarantee ORDER BY order — sort client-side
+    // so display order always equals position order (#22).
+    for (const p of pls) p.items = (p.items || []).sort((a, b) => a.position - b.position);
   } catch (err) { toast(err.message, true); }
 }
 onMount(load);
@@ -50,6 +53,16 @@ async function delItem(p, it) {
   try { await api('DELETE', `/admin/playlists/${p.id}/items/${it.screen_id}`); load(); }
   catch (err) { toast(err.message, true); }
 }
+// Reorder via the full-replace endpoint: positions are reassigned 0..n in
+// order, which also heals any legacy duplicate-position rows (#22).
+async function move(p, idx, dir) {
+  const ids = p.items.map((i) => i.screen_id);
+  const j = idx + dir;
+  if (j < 0 || j >= ids.length) return;
+  [ids[idx], ids[j]] = [ids[j], ids[idx]];
+  try { await api('PATCH', '/admin/playlists/' + p.id, { screen_ids: ids }); load(); }
+  catch (err) { toast(err.message, true); }
+}
 </script>
 
 <div class="card">
@@ -67,12 +80,14 @@ async function delItem(p, it) {
       <table style="margin-top:8px">
         <thead><tr><th>#</th><th>Screen</th><th>Visible</th><th></th></tr></thead>
         <tbody>
-        {#each p.items || [] as i (i.screen_id)}
+        {#each p.items || [] as i, idx (i.screen_id)}
           <tr>
-            <td>{i.position}</td>
+            <td>{idx + 1}</td>
             <td>{i.name} <span class="mut">#{i.screen_id}</span></td>
             <td><span class="pill {i.visible ? 'ok' : 'warn'}">{i.visible ? 'on' : 'off'}</span></td>
             <td class="acts">
+              <button class="act" disabled={idx === 0} onclick={() => move(p, idx, -1)} title="Move up">↑</button>
+              <button class="act" disabled={idx === (p.items?.length ?? 0) - 1} onclick={() => move(p, idx, 1)} title="Move down">↓</button>
               <button class="act" onclick={() => toggleItem(p, i)}>{i.visible ? 'Hide' : 'Show'}</button>
               <button class="act danger" onclick={() => delItem(p, i)}>Remove</button>
             </td>

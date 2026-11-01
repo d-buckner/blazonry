@@ -61,15 +61,17 @@ pub async fn set_name(pool: &SqlitePool, id: i64, name: &str) -> Result<u64, sql
 }
 
 /// Replace the full screen id list (positions reassigned in order).
+/// One transaction: a mid-list failure can't leave the playlist emptied.
 pub async fn set_screen_ids(pool: &SqlitePool, id: i64, ids: &[i64]) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM playlist_screens WHERE playlist_id = ?").bind(id)
-        .execute(pool).await?;
+        .execute(&mut *tx).await?;
     for (pos, sid) in ids.iter().enumerate() {
         sqlx::query("INSERT OR IGNORE INTO playlist_screens (playlist_id, screen_id, position) VALUES (?, ?, ?)")
             .bind(id).bind(*sid).bind(pos as i64)
-            .execute(pool).await?;
+            .execute(&mut *tx).await?;
     }
-    Ok(())
+    tx.commit().await
 }
 
 /// Delete a playlist, its item rows, and device assignments.
@@ -96,12 +98,17 @@ pub async fn delete_screen_refs(pool: &SqlitePool, screen_id: i64) -> Result<(),
 }
 
 /// Append an item at the end; returns its position.
+/// Single statement (INSERT ... SELECT MAX+1) so concurrent appends can
+/// never read the same max and collide on a duplicate position (#22).
 pub async fn add_item(pool: &SqlitePool, playlist_id: i64, screen_id: i64) -> Result<i64, sqlx::Error> {
-    let pos: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_screens WHERE playlist_id = ?")
-        .bind(playlist_id).fetch_one(pool).await.unwrap_or(0);
-    sqlx::query("INSERT OR REPLACE INTO playlist_screens (playlist_id, screen_id, position) VALUES (?, ?, ?)")
-        .bind(playlist_id).bind(screen_id).bind(pos)
-        .execute(pool).await?;
+    sqlx::query(
+        "INSERT OR REPLACE INTO playlist_screens (playlist_id, screen_id, position) \
+         SELECT ?, ?, COALESCE(MAX(position) + 1, 0) FROM playlist_screens WHERE playlist_id = ?",
+    )
+    .bind(playlist_id).bind(screen_id).bind(playlist_id)
+    .execute(pool).await?;
+    let pos: i64 = sqlx::query_scalar("SELECT position FROM playlist_screens WHERE playlist_id = ? AND screen_id = ?")
+        .bind(playlist_id).bind(screen_id).fetch_one(pool).await?;
     Ok(pos)
 }
 
