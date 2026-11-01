@@ -64,9 +64,19 @@ dialog { border:1px solid var(--ln2); border-radius:0; padding:22px 24px; width:
   background:var(--paper); color:var(--ink1); box-shadow:6px 6px 0 rgba(28,26,22,.12) }
 dialog h3 { font-size:15px; font-weight:700; text-transform:uppercase; letter-spacing:.01em }
 dialog::backdrop { background:rgba(28,26,22,.42) }
-#login { max-width:360px; margin:12vh auto }
-#login a, #reg a { color:var(--ink1); text-underline-offset:2px }
-#login h2 { font-size:22px; font-weight:700; margin-bottom:16px }
+#auth { min-height:88vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:24px 0 }
+.auth-brand { text-align:center }
+.auth-brand h1 { font-family:var(--display); font-weight:700; font-size:34px; letter-spacing:.01em; line-height:1 }
+.auth-brand .tag { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.14em; color:var(--ink2); margin-top:8px }
+.auth-card { width:min(380px,92vw); padding:26px 28px }
+.auth-card h2 { font-size:19px; font-weight:700; margin-bottom:16px }
+.auth-note { margin:-6px 0 14px; font-size:13px; line-height:1.45 }
+.auth-card .field { display:block; margin-bottom:14px }
+.auth-card .field span { display:block; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink2); margin-bottom:6px }
+.auth-card .field input { width:100% }
+.auth-cta { display:block; width:100%; text-align:center; text-decoration:none; min-height:44px; box-sizing:border-box }
+.auth-alt { margin-top:16px; font-size:13px; color:var(--ink2) }
+.auth-alt a { color:var(--ink1); font-weight:600; text-underline-offset:2px }
 #toasts { position:fixed; bottom:16px; right:16px; display:flex; flex-direction:column; gap:8px }
 #offline-banner { background:var(--paper2); color:var(--ink1); text-align:center; padding:8px 12px; font-size:13px; border-bottom:1px solid var(--ln2) }
 #update-banner { background:var(--ink1); color:var(--paper); text-align:center; padding:8px 12px; font-size:13px; border-bottom:1px solid var(--ink1) }

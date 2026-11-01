@@ -18,8 +18,14 @@ use crate::api::SharedState;
 use crate::auth_core::AuthMode;
 
 /// Public: which auth mode is this server in (SPA adapts its login screen).
+/// `first_run` = no local users yet: the SPA leads with account creation.
 pub async fn auth_mode(State(st): State<SharedState>) -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({ "mode": st.auth.mode_str() }))
+    let first_run = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+        .fetch_one(&st.pool)
+        .await
+        .map(|n| n == 0)
+        .unwrap_or(false);
+    axum::Json(serde_json::json!({ "mode": st.auth.mode_str(), "first_run": first_run }))
 }
 
 /// Find or provision a user row for an externally-authenticated identity
