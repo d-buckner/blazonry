@@ -72,6 +72,8 @@ form select.ctl { min-height:40px }
 .pill.ok { color:var(--ink1) } .pill.ok::before { background:var(--ink1) }
 .pill.warn { color:var(--red); border-color:var(--red) } .pill.warn::before { background:var(--red) }
 dialog { border:1px solid var(--ln2); border-radius:0; padding:22px 24px; width:min(680px,92vw);
+  margin:auto; /* the * { margin:0 } reset kills the UA margin:auto — without this the dialog pins top-left */
+  max-height:calc(100vh - 48px); overflow:auto;
   background:var(--paper); color:var(--ink1); box-shadow:6px 6px 0 rgba(28,26,22,.12) }
 dialog h3 { font-size:15px; font-weight:700; text-transform:uppercase; letter-spacing:.01em }
 dialog::backdrop { background:rgba(28,26,22,.42) }
