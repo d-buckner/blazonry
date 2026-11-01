@@ -15,9 +15,11 @@
 //! a ceiling on *layout* gaps, not antialiasing noise: a wrong/missing block
 //! spikes MAD, font jitter does not.
 
-use mntr::backend::{NativeBackend, RenderBackend};
+#[cfg(feature = "browser")]
+use mntr::backend::RenderBackend;
 
 /// Probe vars (same shape as the corpus probe test).
+#[cfg(feature = "browser")]
 fn probe_vars() -> serde_json::Value {
     serde_json::json!({
         "title": "Title", "name": "Name", "value": "42", "label": "Label",
@@ -29,6 +31,7 @@ fn probe_vars() -> serde_json::Value {
 
 /// Decode BMP bytes (either backend) to a 4-level grey grid (0..=3) by
 /// loading through `image` and quantizing.
+#[cfg(feature = "browser")]
 fn bmp_to_levels(bytes: &[u8]) -> Vec<u8> {
     let img = image::load_from_memory(bytes).expect("decode bmp").to_luma8();
     img.pixels()
@@ -42,6 +45,7 @@ fn bmp_to_levels(bytes: &[u8]) -> Vec<u8> {
 }
 
 /// Mean absolute difference on the 0..=3 scale, normalized to 0..=1.
+#[cfg(feature = "browser")]
 fn mad(a: &[u8], b: &[u8]) -> f64 {
     let n = a.len().min(b.len());
     let sum: u32 = a[..n].iter().zip(&b[..n]).map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs()).sum();

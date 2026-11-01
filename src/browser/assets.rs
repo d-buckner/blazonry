@@ -14,9 +14,6 @@ use crate::browser::assets_data::ASSETS;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-
-
 
 /// Content types for the loopback asset server.
 pub fn content_type(path: &str) -> &'static str {
@@ -49,44 +46,6 @@ pub fn decompress(key: &str) -> Result<Vec<u8>> {
     } else {
         Ok(raw.to_vec())
     }
-}
-
-/// Materialize the framework tree into `dir` (idempotent: skips files that
-/// already exist with the right size). Returns the directory.
-pub fn materialize(dir: &Path) -> Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
-    for (key, _) in ASSETS {
-        // strip the .br suffix on disk so URLs match the framework's own paths
-        let rel = key.strip_suffix(".br").unwrap_or(key);
-        let out = dir.join(rel);
-        if out.exists() {
-            continue;
-        }
-        if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&out, decompress(key)?)?;
-    }
-    Ok(dir.to_path_buf())
-}
-
-/// Default cache dir for the materialized framework: $MNTR_DATA_DIR or
-/// `~/.cache/mntr/framework`.
-pub fn default_cache_dir() -> PathBuf {
-    if let Ok(d) = std::env::var("MNTR_DATA_DIR") {
-        return PathBuf::from(d).join("framework");
-    }
-    dirs_cache().join("mntr").join("framework")
-}
-
-fn dirs_cache() -> PathBuf {
-    std::env::var("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::var("HOME")
-                .map(|h| PathBuf::from(h).join(".cache"))
-                .unwrap_or_else(|_| PathBuf::from("/tmp"))
-        })
 }
 
 /// The page shell that wraps recipe markup exactly like the TRMNL cloud does
