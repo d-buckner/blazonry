@@ -1,4 +1,4 @@
-// mntr admin PWA service worker. Emitted by web-app/build.js with 20261101021229
+// mntr admin PWA service worker. Emitted by web-app/build.js with 20261101022231
 // replaced by a build stamp, so every deploy produces new bytes and browsers
 // pick up the update. Strategy:
 //   - app shell ('/', manifest, icons): cache-first (it is one inlined file)
