@@ -148,21 +148,46 @@ tens of megabytes.
 ```
 src/screen.rs    screen vocabulary (~15 primitives)
 src/template.rs  Liquid → JSON screen tree
+src/markup.rs    HTML+Liquid recipe markup → screen IR (TRMNL class vocabulary)
+src/ext_dev.rs   `mntr ext new|check|render` — offline extension dev loop
+src/liquid_compat/ Shopify-Liquid-compatible engine (filters, tags)
 src/render.rs    measure/paint software renderer (tiny-skia + fontdue)
 src/dither.rs    greyscale → 4-level Floyd–Steinberg dither
 src/bmp.rs       2-bit bottom-up BMP writer (device wire format)
+src/backend.rs   render backend trait (native; browser behind `browser` feature)
+src/browser/     headless-Chromium backend + embedded framework assets
 src/api.rs       device plane (TRMNL wire contract)
 src/admin.rs     admin API (Terminus parity)
 src/auth.rs      argon2 accounts, bearer sessions
 web-app/         Svelte 5 source → node build.js → web/index.html
 ```
 
+## Authoring extensions
+
+Screens are HTML + Liquid using the TRMNL framework class vocabulary
+(`layout--col`, `flex--row`, `gap--large`, `title--small`, …) — existing
+TRMNL recipes import unchanged. The dev loop is offline: no server, no DB.
+
+```
+mntr ext new weather        # scaffold ext/weather/ (template + vars)
+mntr ext check ext/weather  # validate; JSON diagnostics on stdout, exit code
+mntr ext render ext/weather # write the 800x480 2-bit BMP + PNG preview
+```
+
+`check` runs the full pipeline (vars → Liquid → front-end detect → IR →
+pixel render) and names the failing stage (`vars|liquid|json|schema|markup|render`),
+so agents can iterate headlessly. `tests/markup_corpus.rs` sweeps the
+published-recipe corpus for parse coverage; `tests/markup_parity.rs`
+(`--features browser` + a Chromium via `MNTR_BROWSER_PATH`) asserts the
+native renderer matches headless Chromium on the framework CSS
+(median MAD < 0.15 over 4-level greys).
+
 ## Testing
 
 Everything below is reproducible from a clean checkout with `cargo test`
 plus two Python scripts; no physical hardware required.
 
-### 1. Unit + end-to-end (`cargo test`, 23 tests)
+### 1. Unit + end-to-end (`cargo test`)
 
 - **Unit** — BMP header/bit-packing, dither output.
 - **e2e** — spawns the real binary on an ephemeral port with a temp DB and
@@ -171,7 +196,7 @@ plus two Python scripts; no physical hardware required.
   create screen/playlist → device pair/assign/poll → decodes the returned
   BMP and asserts a valid 800×480 2-bit image, playlist rotation, and the
   wrong-token `reset_firmware` path → PNG preview.
-- **spec_conformance (13 tests)** — one test per contract line against
+- **spec_conformance** — one test per contract line against
   ground truth vendored in `tests/spec/`: TRMNL BYOS docs, the private
   Display API docs, and Terminus `config/routes.rb` + the actual
   `app/actions/api/{display,setup,log}` sources.
