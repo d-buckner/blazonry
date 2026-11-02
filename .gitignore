@@ -13,6 +13,7 @@ fixtures/
 fwassets
 web-app/node_modules/
 !docs/screens/*.png
+!docs/img/*.png
 .site/
 
 .DS_Store
