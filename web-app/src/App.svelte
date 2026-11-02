@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { app, toasts, toast } from './lib/store.svelte.js';
 import { api, doLogin, doRegister, logout } from './lib/api.js';
 import Devices from './lib/Devices.svelte';
+import Welcome from './lib/Welcome.svelte';
 import Screens from './lib/Screens.svelte';
 import Playlists from './lib/Playlists.svelte';
 import Connections from './lib/Connections.svelte';
@@ -92,6 +93,7 @@ async function register(e) {
     <button class="act" onclick={logout}>Sign out</button>
   </header>
   <main>
+    {#if app.tab === 'devices' && app.role === 'admin'}<Welcome />{/if}
     {#if app.tab === 'devices'}<Devices />
     {:else if app.tab === 'screens'}<Screens />
     {:else if app.tab === 'playlists'}<Playlists />

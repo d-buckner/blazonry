@@ -44,6 +44,8 @@ try:
         pg.click("#reg button.pri")
         pg.wait_for_selector("header nav")
         pg.wait_for_timeout(400)
+        # first-run guided setup (#39): fresh DB must show the 3-step panel
+        assert pg.locator(".welcome .wstep").count() == 3, "guided state missing on fresh DB"
         pg.screenshot(path=os.path.join(ROOT, "ui_devices.png"))
         pg.click("nav >> text=Screens")
         pg.wait_for_timeout(300)
