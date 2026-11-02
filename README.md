@@ -1,5 +1,9 @@
 # blazonry
 
+<p align="center">
+  <img src="docs/img/social-card.png" alt="blazonry — a TRMNL BYOS server in Rust" width="860">
+</p>
+
 **A TRMNL BYOS server in Rust. One 13 MB binary, zero containers, no Chrome.**
 
 Point your [TRMNL](https://trmnl.com) (or any TRMNL-compatible ESP32 e-ink
@@ -227,12 +231,14 @@ the BMP, and decodes it. This pass caught bugs no doc review would:
 
 The device's decoded screen, captured from the simulator:
 
-![Screen rendered by real firmware in QEMU](docs/img/firmware-sim.png)
+<p align="center"><img src="docs/img/firmware-sim.png" width="720" alt="Screen rendered by real firmware in QEMU"></p>
+<p align="center"><sub>Real firmware in QEMU: the device decoded the BMP blazonry served.</sub></p>
 
 A native render of a full dashboard (header, key/value rows, progress bar,
 7-bar week chart) at 800×480:
 
-![Native screen render](docs/img/screen-render.png)
+<p align="center"><img src="docs/img/screen-render.png" width="720" alt="Native screen render"></p>
+<p align="center"><sub>Native render, 800×480: Liquid → screen tree → tiny-skia → 4-level dither.</sub></p>
 
 ### 3. UI end-to-end (`scripts/ui_check.py`)
 
@@ -241,13 +247,17 @@ headless Chromium: register → login → create screen with Liquid + vars →
 walk every tab → assert **zero JS console errors** (the pre-login
 `/admin/me` 401 is expected and filtered). Exits nonzero on any error.
 
-![Devices tab](docs/img/ui_devices.png)
+<p align="center"><img src="docs/img/ui_devices.png" width="960" alt="Devices tab"></p>
+<p align="center"><sub>Devices: every paired display, live state derived from polls — never fabricated.</sub></p>
 
-![Screens tab with live preview](docs/img/ui_screens.png)
+<p align="center"><img src="docs/img/ui_screens.png" width="960" alt="Screens tab with live preview"></p>
+<p align="center"><sub>Screens: Liquid + vars on the left, the real native render on the right.</sub></p>
 
-![Playlists tab](docs/img/ui_playlists.png)
+<p align="center"><img src="docs/img/ui_playlists.png" width="960" alt="Playlists tab"></p>
+<p align="center"><sub>Playlists: order screens, assign to devices.</sub></p>
 
-![Users tab](docs/img/ui_users.png)
+<p align="center"><img src="docs/img/ui_users.png" width="960" alt="Users tab"></p>
+<p align="center"><sub>Users: self-registration, admin verification, argon2 passwords.</sub></p>
 
 ## Design notes
 
