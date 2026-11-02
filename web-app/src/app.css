@@ -83,6 +83,8 @@ dialog::backdrop { background:rgba(28,26,22,.42) }
 .auth-cta { display:block; width:100%; text-align:center; text-decoration:none; min-height:44px; box-sizing:border-box }
 .auth-alt { margin-top:16px; font-size:13px; color:var(--ink2) }
 .auth-alt a { color:var(--ink1); font-weight:600; text-underline-offset:2px }
+.auth-spec { font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--ink3);
+  border-top:1px solid var(--ln); padding-top:10px; margin-top:2px }
 #toasts { position:fixed; bottom:16px; right:16px; display:flex; flex-direction:column; gap:8px }
 #offline-banner { background:var(--paper2); color:var(--ink1); text-align:center; padding:8px 12px; font-size:13px; border-bottom:1px solid var(--ln2) }
 #update-banner { background:var(--ink1); color:var(--paper); text-align:center; padding:8px 12px; font-size:13px; border-bottom:1px solid var(--ink1) }
