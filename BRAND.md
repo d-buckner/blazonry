@@ -102,24 +102,28 @@ A future third product picks its own accent under the same rule.
 
 Brand-visible items only; the git/container mechanics live elsewhere.
 
-- [ ] Org profile: name "Bloud OS", description "your friendly personal
-      cloud" (already set). Add a pinned repo or org README that states the
-      house position in §1's voice.
-- [ ] Repo name `blazonry` (lowercase), description in house voice, one line, no
-      hype. Suggested: *"a TRMNL BYOS server in Rust — one 13 MB binary, your
-      LAN, your screens."*
+- [x] Org profile: name "Bloud OS", description "your friendly personal
+      cloud" (already set). Org README drafted in
+      [`docs/org-readme.md`](docs/org-readme.md) — publish it as the
+      `bloud-os/.github` profile repo (house position in §1's voice, voice
+      rules §2, token spec, one-accent rule §5).
+- [x] Repo name `blazonry` (lowercase), description in house voice, one line,
+      no hype: *"a TRMNL BYOS server in Rust — one 13 MB binary, your LAN,
+      your screens."* (set on Forgejo; mirror on the GitHub org repo).
 - [ ] Topics: `self-hosted`, `e-ink`, `trmnl`, `rust`, `dashboard` (+
-      `bloud-os` if the org adopts a family topic).
+      `bloud-os` if the org adopts a family topic). Not settable via the `fj`
+      CLI — set in the repo settings UI or via API token.
 - [x] README: keep as-is except (a) container image path
       `ghcr.io/bloud-os/blazonry` → the bloud-os registry path once the
       image moves; (b) License section now states AGPL-3.0 + dual-licensing
       (decided Nov 2026) — keep it in sync with `LICENSE`.
 - [ ] Org avatar and blazonry icon: both already conform to §3's mark grammar;
       no redraw needed.
-- [ ] Honesty audit before publish: bloud itself is currently closed source
+- [x] Honesty audit before publish: bloud itself is currently closed source
       while blazonry ships open (direction: AGPL-3.0 + commercial dual-license).
-      That's a legitimate mix, but say it plainly if asked — the house brand
-      survives on exactly this kind of answer.
+      That's a legitimate mix, and the org README says it plainly under
+      "Licensing stance" — the house brand survives on exactly this kind of
+      answer.
 
 ## 7. What must never happen
 
