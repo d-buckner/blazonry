@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { api } from './api.js';
 import { app, toast } from './store.svelte.js';
 import Dialog from './Dialog.svelte';
+import Empty from './Empty.svelte';
 
 let providers = $state([]);
 let extensions = $state([]);
@@ -126,7 +127,9 @@ function ago(iso) {
     <button class="pri" onclick={openP}>Add source</button>
   </div>
   {#if providers.length === 0}
-    <p class="mut">No sources connected yet. A source pulls live information — your calendar or the weather — and feeds the extension screens below.</p>
+    <Empty title="No sources connected"
+      blurb="A source pulls live information — your calendar or the weather — and feeds the extension screens below."
+      action="Add source" onaction={openP} />
   {:else}
     <table>
       <thead><tr><th>Name</th><th>Kind</th><th>Last fetch</th><th>Status</th><th></th></tr></thead>

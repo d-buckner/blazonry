@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { api } from './api.js';
 import { app, toast } from './store.svelte.js';
 import Dialog from './Dialog.svelte';
+import Empty from './Empty.svelte';
 
 let pls = $state([]);
 let screens = $state([]);
@@ -78,26 +79,29 @@ async function move(p, idx, dir) {
         <button class="act" onclick={() => open(p.id)}>Rename</button>
         <button class="act danger" onclick={() => del(p.id)}>Delete</button>
       </div>
+      {#if p.items?.length}
       <table style="margin-top:8px">
         <thead><tr><th>#</th><th>Screen</th><th>Visible</th><th></th></tr></thead>
         <tbody>
-        {#each p.items || [] as i, idx (i.screen_id)}
+        {#each p.items as i, idx (i.screen_id)}
           <tr>
             <td>{idx + 1}</td>
             <td>{i.name} <span class="mut">#{i.screen_id}</span></td>
             <td><span class="pill {i.visible ? 'ok' : 'warn'}">{i.visible ? 'on' : 'off'}</span></td>
             <td class="acts">
               <button class="act" disabled={idx === 0} onclick={() => move(p, idx, -1)} title="Move up">↑</button>
-              <button class="act" disabled={idx === (p.items?.length ?? 0) - 1} onclick={() => move(p, idx, 1)} title="Move down">↓</button>
+              <button class="act" disabled={idx === p.items.length - 1} onclick={() => move(p, idx, 1)} title="Move down">↓</button>
               <button class="act" onclick={() => toggleItem(p, i)}>{i.visible ? 'Hide' : 'Show'}</button>
               <button class="act danger" onclick={() => delItem(p, i)}>Remove</button>
             </td>
           </tr>
-        {:else}
-          <tr><td colspan="4" class="mut">Empty — add a screen below.</td></tr>
         {/each}
         </tbody>
       </table>
+      {:else}
+        <Empty compact title="Nothing queued"
+          blurb="Add a screen below and it joins the rotation." />
+      {/if}
       <div style="margin-top:8px;display:flex;gap:8px">
         <select style="max-width:260px" bind:value={sel[p.id]}>
           {#each screens as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
@@ -106,7 +110,9 @@ async function move(p, idx, dir) {
       </div>
     </div>
   {:else}
-    <p class="mut">No playlists yet.</p>
+    <Empty title="No playlists yet"
+      blurb="A playlist is the rotation one display cycles through. Make one, add screens to it, then point a display at it."
+      action="New playlist" onaction={() => open(null)} />
   {/each}
 </div>
 
