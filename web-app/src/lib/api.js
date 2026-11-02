@@ -32,13 +32,13 @@ export async function authedBlobUrl(path) {
 
 export function logout() {
   app.token = ''; app.email = ''; app.role = '';
-  sessionStorage.removeItem('tr-token');
+  sessionStorage.removeItem('bz-token');
 }
 
 export async function doLogin(email, password) {
   const r = await api('POST', '/admin/login', { email, password });
   app.token = r.token; app.email = r.email || email; app.role = r.role;
-  sessionStorage.setItem('tr-token', r.token);
+  sessionStorage.setItem('bz-token', r.token);
   try {
     const me = await api('GET', '/admin/me');
     app.email = me.email; app.role = me.role;
@@ -50,7 +50,7 @@ export async function doRegister(email, password) {
   // The first account IS the admin — it gets a session token back, so
   // sign them straight in instead of bouncing to the login form (#20/#23).
   if (r.role === 'admin') {
-    sessionStorage.setItem('tr-token', r.token);
+    sessionStorage.setItem('bz-token', r.token);
     app.token = r.token; app.email = email; app.role = 'admin';
     toast("You're the admin — welcome to blazonry.");
     return;

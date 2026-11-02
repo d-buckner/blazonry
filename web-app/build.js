@@ -97,14 +97,22 @@ const swSrc = fs.readFileSync(path.join(SRC, 'sw.js'), 'utf8');
 fs.writeFileSync(path.join(OUT, 'sw.js'), swSrc.replace('__BUILD__', stamp));
 
 // 4. assemble the single-file page
-// Self-host the device font (TRMNL) as a base64 @font-face so the UI stays
-// fully offline — blazonry never makes a cloud round-trip for core function.
-const fontB64 = fs
+// Self-host fonts as base64 @font-face so the UI stays fully offline —
+// blazonry never makes a cloud round-trip for core function.
+// Two faces, two jobs (BRAND.md §4): TRMNL16 is the DEVICE font (e-ink preview
+// content only); Space Grotesk Bold is the BRAND face (wordmark). The device
+// font depicts the device; it is not the brand.
+const devFontB64 = fs
   .readFileSync(path.join(HERE, '..', 'assets', 'framework', 'fonts', 'TRMNL16-Bold.woff2'))
+  .toString('base64');
+const brandFontB64 = fs
+  .readFileSync(path.join(HERE, '..', 'assets', 'brand', 'SpaceGrotesk-Bold.woff2'))
   .toString('base64');
 const fontFace =
   `@font-face{font-family:'TRMNL';font-style:normal;font-weight:700;font-display:swap;` +
-  `src:url(data:font/woff2;base64,${fontB64}) format('woff2')}`;
+  `src:url(data:font/woff2;base64,${devFontB64}) format('woff2')}\n` +
+  `@font-face{font-family:'SpaceGrotesk';font-style:normal;font-weight:700;font-display:swap;` +
+  `src:url(data:font/woff2;base64,${brandFontB64}) format('woff2')}`;
 const css = fontFace + '\n' + fs.readFileSync(path.join(SRC, 'app.css'), 'utf8');
 const html = `<!doctype html>
 <html lang="en">

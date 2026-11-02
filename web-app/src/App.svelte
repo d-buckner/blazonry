@@ -22,7 +22,7 @@ onMount(async () => {
   // OIDC callback lands here as /#blazonry_token=... — adopt and scrub the URL.
   const m = location.hash.match(/blazonry_token=([0-9a-f]+)/);
   if (m) {
-    sessionStorage.setItem('tr-token', m[1]);
+    sessionStorage.setItem('bz-token', m[1]);
     history.replaceState(null, '', '/');
   }
   try {
@@ -31,7 +31,7 @@ onMount(async () => {
     firstRun = !!am.first_run;
     if (firstRun) authTab = 'register';
   } catch {}
-  const t = sessionStorage.getItem('tr-token');
+  const t = sessionStorage.getItem('bz-token');
   if (t) {
     app.token = t;
     try {
