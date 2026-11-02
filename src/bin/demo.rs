@@ -24,7 +24,7 @@ const TEMPLATE: &str = r##"{
 
 fn main() -> anyhow::Result<()> {
     let vars = json!({
-        "header": "Home HQ — Thursday",
+        "header": "Seattle — Thursday",
         "temp": 61,
         "condition": "drizzle",
         "sleep": "6h 12m",
