@@ -38,9 +38,10 @@ The cream ground is **intentional** — it is the e-ink material, not a default 
 
 Three faces, strict roles:
 
-- **`--display` — Pixelify Sans (bitmap).** Only for: the `blazonry` wordmark, and text *inside e-ink screen previews* (the clock, "Good morning", "7:40", "21°", "Today", recently-shown words). Never on admin chrome.
-- **`--body` — Hanken Grotesk.** All admin chrome: nav, buttons, card titles, section labels, body copy, event names.
-- **`--mono` — JetBrains Mono.** Data and tracked micro-labels: status keys, timecodes, measurements, ids, footer.
+- **`--brand` — Space Grotesk Bold (700).** The wordmark face (header, login), with the ink-dot accent (`h1::after`). Chosen in #35: a real word deserves a real grotesque, and the brand face must not be the vendor's typeface. Self-hosted (OFL, `assets/brand/`), inlined at build like every font.
+- **`--display` — TRMNL16-Bold (the device font).** Only for text *inside e-ink screen previews* (the clock, "Good morning", "7:40", "21°", "Today", preview placeholders). The device font depicts the device; it is not the brand. Never on admin chrome, never the wordmark.
+- **`--body` — system-ui grotesque.** All admin chrome: nav, buttons, card titles, section labels, body copy, event names.
+- **`--mono` — ui-monospace.** Data and tracked micro-labels: status keys, timecodes, measurements, ids, footer.
 
 Scale (functional-text floor is **11px** — this is a family surface read across a room):
 
@@ -114,7 +115,7 @@ The primary button is **ink**, not red. Selection is ink (border + subtle offset
 
 The overview is ported and verified against the real backend with seeded data. Deltas from the prototype, all deliberate:
 
-- **Fonts are self-hosted, no Google Fonts.** blazonry is offline-first / no cloud round-trip, so the UI must not fetch fonts. The wordmark uses the **real device font TRMNL16-Bold** (vendored in `assets/framework/fonts/`, inlined as base64 `@font-face` at build time in `build.js`). Body = system-ui stack; data = ui-monospace. The prototype's Pixelify/Hanken/JetBrains were demo-only.
+- **Fonts are self-hosted, no Google Fonts.** blazonry is offline-first / no cloud round-trip, so the UI must not fetch fonts. The wordmark uses **Space Grotesk Bold** (OFL, `assets/brand/SpaceGrotesk-Bold.woff2`, inlined as base64 `@font-face` at build time in `build.js`) — #35 replaced the earlier TRMNL16-Bold wordmark: the vendor's device font is no longer the brand face. TRMNL16 remains only inside e-ink preview content. Body = system-ui stack; data = ui-monospace.
 - **Screen previews are real rendered images**, fetched authed from `/admin/screens/:id/preview` (native renderer output) — the e-ink look is authentic automatically; the dot-field is only the placeholder when a device has no current screen. Required a one-line backend change: `current_screen_id` + `refresh_interval` added to `device_list_json`.
 - **The fictional "Today" calendar and "Recently shown" strip are dropped** — there is no calendar or per-display history in the data model, so inventing them would be dishonest. The right rail is now an **Attention** panel listing offline / low-battery devices (the real "needs attention" items), with a calm "All displays healthy" empty state.
 - **Live state is derived, never fabricated:** online = last poll within `max(2×refresh_interval, 30 min)`; low battery = `voltage < 3.3 V`; needs-attention = offline + low-battery count. Battery shows voltage, not a fake percentage.
@@ -127,4 +128,4 @@ The overview is ported and verified against the real backend with seeded data. D
 - Build a `<ScreenPreview>` component (the `.screen` dot-field wrapper) reused by hero, cards, and recently-shown — it is the single home of the dither.
 - Build `<StatusRow>`, `<DisplayCard>` (with `status` + `selected` props), `<EventRow>` (with `next` prop).
 - Red is a prop/state semantic (`needsAttention`, `next`, `offline`), never a style default.
-- The bitmap face must stay scoped to `ScreenPreview` content + wordmark; treat any use outside that as a bug.
+- The device font (`--display`) must stay scoped to `ScreenPreview` content; treat any use outside that — wordmark included — as a bug (#35).

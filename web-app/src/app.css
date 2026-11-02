@@ -7,6 +7,7 @@
   --ln:#E0DBCF; --ln2:#C9C3B4;
   --red:#B23A2E; --dot:#D9D3C5;
   --display:'TRMNL', ui-monospace, monospace;
+  --brand:'SpaceGrotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --body:system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono:ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
@@ -15,7 +16,8 @@ body { font:15px/1.5 var(--body); background:var(--paper); color:var(--ink1); -w
 header { display:flex; align-items:center; gap:22px; flex-wrap:wrap; background:var(--paper);
   border-bottom:1px solid var(--ln); padding:0 26px; height:62px; position:sticky; top:0; z-index:20 }
 header .brand { display:flex; align-items:baseline; gap:11px }
-header h1 { font-family:var(--display); font-weight:700; font-size:25px; letter-spacing:.01em; line-height:1 }
+header h1 { font-family:var(--brand); font-weight:700; font-size:25px; letter-spacing:-.01em; line-height:1 }
+header h1::after { content:""; display:inline-block; width:8px; height:8px; background:var(--ink1); margin-left:7px; transform:translateY(-1px) }
 header nav { display:flex; gap:22px; margin-left:6px }
 header nav a { border:0; background:none; padding:4px 0; font:inherit; font-size:14px; font-weight:500;
   color:var(--ink2); text-decoration:none; position:relative; cursor:pointer }
@@ -69,7 +71,8 @@ dialog h3 { font-size:15px; font-weight:700; text-transform:uppercase; letter-sp
 dialog::backdrop { background:rgba(28,26,22,.42) }
 #auth { min-height:88vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:24px 0 }
 .auth-brand { text-align:center }
-.auth-brand h1 { font-family:var(--display); font-weight:700; font-size:34px; letter-spacing:.01em; line-height:1 }
+.auth-brand h1 { font-family:var(--brand); font-weight:700; font-size:34px; letter-spacing:-.015em; line-height:1 }
+.auth-brand h1::after { content:""; display:inline-block; width:11px; height:11px; background:var(--ink1); margin-left:9px; transform:translateY(-1px) }
 .auth-brand .tag { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.14em; color:var(--ink2); margin-top:8px }
 .auth-card { width:min(380px,92vw); padding:26px 28px }
 .auth-card h2 { font-size:19px; font-weight:700; margin-bottom:16px }
