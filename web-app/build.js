@@ -120,9 +120,10 @@ const html = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>blazonry</title>
-<meta name="theme-color" content="#1a1a1a">
+<meta name="theme-color" content="#1C1A16">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link rel="alternate icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <style>${css}</style>
 </head>

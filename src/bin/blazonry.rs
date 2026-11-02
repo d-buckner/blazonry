@@ -135,17 +135,25 @@ async fn main() -> anyhow::Result<()> {
               (axum::http::header::CACHE_CONTROL, "no-cache")],
              include_str!("../../web/manifest.webmanifest"))
         }))
-        .route("/icons/icon.svg", get(|| async {
-            ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
-             &include_bytes!("../../web/icons/icon.svg")[..])
-        }))
-        .route("/icons/icon-192.png", get(|| async {
-            ([(axum::http::header::CONTENT_TYPE, "image/png")],
-             &include_bytes!("../../web/icons/icon-192.png")[..])
-        }))
-        .route("/icons/icon-512.png", get(|| async {
-            ([(axum::http::header::CONTENT_TYPE, "image/png")],
-             &include_bytes!("../../web/icons/icon-512.png")[..])
+        .route("/icons/{name}", get(|axum::extract::Path(name): axum::extract::Path<String>| async move {
+            use axum::response::IntoResponse;
+            match name.as_str() {
+                "icon.svg" => ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+                    &include_bytes!("../../web/icons/icon.svg")[..]).into_response(),
+                "icon-192.png" => ([(axum::http::header::CONTENT_TYPE, "image/png")],
+                    &include_bytes!("../../web/icons/icon-192.png")[..]).into_response(),
+                "icon-512.png" => ([(axum::http::header::CONTENT_TYPE, "image/png")],
+                    &include_bytes!("../../web/icons/icon-512.png")[..]).into_response(),
+                "icon-192-maskable.png" => ([(axum::http::header::CONTENT_TYPE, "image/png")],
+                    &include_bytes!("../../web/icons/icon-192-maskable.png")[..]).into_response(),
+                "icon-512-maskable.png" => ([(axum::http::header::CONTENT_TYPE, "image/png")],
+                    &include_bytes!("../../web/icons/icon-512-maskable.png")[..]).into_response(),
+                "favicon-16.png" => ([(axum::http::header::CONTENT_TYPE, "image/png")],
+                    &include_bytes!("../../web/icons/favicon-16.png")[..]).into_response(),
+                "favicon-32.png" => ([(axum::http::header::CONTENT_TYPE, "image/png")],
+                    &include_bytes!("../../web/icons/favicon-32.png")[..]).into_response(),
+                _ => (axum::http::StatusCode::NOT_FOUND, "unknown icon").into_response(),
+            }
         }))
         // device plane (TRMNL firmware wire contract)
         .route("/api/display", get(blazonry::api::display))

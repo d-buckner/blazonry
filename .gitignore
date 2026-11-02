@@ -14,6 +14,8 @@ fwassets
 web-app/node_modules/
 !docs/screens/*.png
 !docs/img/*.png
+!web-app/src/icons/*.png
+!web/icons/*.png
 .site/
 
 .DS_Store
