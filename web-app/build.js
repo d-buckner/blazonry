@@ -98,7 +98,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), swSrc.replace('__BUILD__', stamp));
 
 // 4. assemble the single-file page
 // Self-host the device font (TRMNL) as a base64 @font-face so the UI stays
-// fully offline — mntr never makes a cloud round-trip for core function.
+// fully offline — blazonry never makes a cloud round-trip for core function.
 const fontB64 = fs
   .readFileSync(path.join(HERE, '..', 'assets', 'framework', 'fonts', 'TRMNL16-Bold.woff2'))
   .toString('base64');
@@ -111,7 +111,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mntr</title>
+<title>blazonry</title>
 <meta name="theme-color" content="#1a1a1a">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
@@ -128,14 +128,14 @@ if ('serviceWorker' in navigator) {
       const nw = reg.installing;
       nw && nw.addEventListener('statechange', () => {
         if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-          window.dispatchEvent(new CustomEvent('mntr-update'));
+          window.dispatchEvent(new CustomEvent('blazonry-update'));
         }
       });
     });
   }).catch(() => {});
   navigator.serviceWorker.addEventListener('message', (e) => {
     if (e.data === 'online' || e.data === 'offline') {
-      window.dispatchEvent(new CustomEvent('mntr-net', { detail: e.data }));
+      window.dispatchEvent(new CustomEvent('blazonry-net', { detail: e.data }));
     }
   });
 }

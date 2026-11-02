@@ -2,21 +2,21 @@
 //! PoC driver for issue #14: render a JS-dependent recipe HTML through
 //! headless Chromium, dither, and emit the panel BMPs.
 //!
-//!   MNTR_BROWSER_PATH=/path/to/chrome cargo run --features browser --bin browser_demo -- recipe.html out_prefix
+//!   BLAZONRY_BROWSER_PATH=/path/to/chrome cargo run --features browser --bin browser_demo -- recipe.html out_prefix
 
 use anyhow::{Context, Result};
-use mntr::browser::CdpRenderer;
-use mntr::dither::floyd_steinberg_4;
-use mntr::{bmp, HEIGHT, WIDTH};
+use blazonry::browser::CdpRenderer;
+use blazonry::dither::floyd_steinberg_4;
+use blazonry::{bmp, HEIGHT, WIDTH};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let html_path = args.next().context("usage: browser_demo <recipe.html> <out_prefix>")?;
     let prefix = args.next().unwrap_or_else(|| "browser_out".into());
-    let chrome = std::env::var("MNTR_BROWSER_PATH")
+    let chrome = std::env::var("BLAZONRY_BROWSER_PATH")
         .or_else(|_| std::env::var("CHROME_PATH"))
-        .context("set MNTR_BROWSER_PATH to a headless-capable chrome/chromium binary")?;
+        .context("set BLAZONRY_BROWSER_PATH to a headless-capable chrome/chromium binary")?;
 
     let html = if html_path.starts_with("http") {
         String::new()

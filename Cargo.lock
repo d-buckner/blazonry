@@ -346,6 +346,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "blazonry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "brotli",
+ "chromiumoxide",
+ "chrono",
+ "chrono-tz",
+ "fontdue",
+ "futures-util",
+ "http-body-util",
+ "icalendar",
+ "image",
+ "jsonwebtoken",
+ "ldap3",
+ "liquid",
+ "liquid-core",
+ "liquid-lib",
+ "password-hash",
+ "qrcode",
+ "regex-lite",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "taffy",
+ "tiny-skia",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2020,45 +2059,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mntr"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "async-trait",
- "axum",
- "base64 0.23.1",
- "brotli",
- "chromiumoxide",
- "chrono",
- "chrono-tz",
- "fontdue",
- "futures-util",
- "http-body-util",
- "icalendar",
- "image",
- "jsonwebtoken",
- "ldap3",
- "liquid",
- "liquid-core",
- "liquid-lib",
- "password-hash",
- "qrcode",
- "regex-lite",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "sqlx",
- "taffy",
- "tiny-skia",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

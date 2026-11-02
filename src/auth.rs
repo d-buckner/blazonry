@@ -165,7 +165,7 @@ fn oidc_err(e: crate::auth_core::OidcError) -> (StatusCode, String) {
 
 /// Provider redirects back here with ?code&state. Verify state, exchange the
 /// code, verify the ID token (sig/iss/aud/exp/nonce), provision the user,
-/// then hand the SPA a mntr session token via URL fragment.
+/// then hand the SPA a blazonry session token via URL fragment.
 pub async fn oidc_callback(
     State(st): State<SharedState>,
     axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
@@ -187,8 +187,8 @@ pub async fn oidc_callback(
         Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     };
     tracing::info!(email = %ident.email, %role, sub = %ident.sub, "oidc login");
-    // SPA picks up #mntr_token=... and stores it in sessionStorage
-    axum::response::Redirect::to(&format!("/#mntr_token={token}")).into_response()
+    // SPA picks up #blazonry_token=... and stores it in sessionStorage
+    axum::response::Redirect::to(&format!("/#blazonry_token={token}")).into_response()
 }
 
 pub async fn verify_user(State(st): State<SharedState>, Json(body): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {

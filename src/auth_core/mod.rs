@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Pluggable admin auth modes: local (argon2), ldap, oidc, none.
 //!
-//! Selected at startup via `MNTR_AUTH` (default `local`). The device plane is
+//! Selected at startup via `BLAZONRY_AUTH` (default `local`). The device plane is
 //! unaffected by auth mode — device auth is the per-device Access-Token.
 //!
 //! - `local`: existing argon2 accounts + registration (unchanged).
@@ -55,12 +55,12 @@ fn env_set(key: &str) -> Option<String> {
 
 impl AuthConfig {
     pub fn from_env() -> anyhow::Result<Self> {
-        let mode = match env_or("MNTR_AUTH", "local").to_ascii_lowercase().as_str() {
+        let mode = match env_or("BLAZONRY_AUTH", "local").to_ascii_lowercase().as_str() {
             "local" => AuthMode::Local,
             "ldap" => AuthMode::Ldap,
             "oidc" => AuthMode::Oidc,
             "none" => AuthMode::None,
-            other => anyhow::bail!("MNTR_AUTH must be local|ldap|oidc|none, got '{other}'"),
+            other => anyhow::bail!("BLAZONRY_AUTH must be local|ldap|oidc|none, got '{other}'"),
         };
         let ldap = if mode == AuthMode::Ldap { Some(LdapCfg::from_env()?) } else { None };
         let oidc = if mode == AuthMode::Oidc { Some(OidcCfg::from_env()?) } else { None };
@@ -80,7 +80,7 @@ impl AuthConfig {
 // ------------------------------------------------------------ randomness ----
 
 /// n cryptographically random bytes. /dev/urandom is the zero-dependency
-/// CSPRNG on Linux; mntr targets LAN boxes, so no getrandom crate.
+/// CSPRNG on Linux; blazonry targets LAN boxes, so no getrandom crate.
 pub fn rand_bytes(n: usize) -> Vec<u8> {
     let mut bytes = vec![0u8; n];
     std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom").expect("/dev/urandom"), &mut bytes)

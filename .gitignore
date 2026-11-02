@@ -1,7 +1,7 @@
 target/
 terminus.db*
-mntr.db*
-/mntr
+blazonry.db*
+/blazonry
 *.bmp
 *.png
 server.log

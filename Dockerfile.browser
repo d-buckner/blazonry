@@ -1,4 +1,4 @@
-# mntr — browser render backend variant (issue #14)
+# blazonry — browser render backend variant (issue #14)
 #
 # Same static musl binary as the core image, but compiled with the `browser`
 # Cargo feature (chromiumoxide CDP client) and shipped on a Debian runtime that
@@ -7,12 +7,12 @@
 # exists to refuse, so it lives in its own image tag (`:browser`).
 #
 # Build (plain docker):
-#   docker build -f Dockerfile.browser -t mntr:browser .
+#   docker build -f Dockerfile.browser -t blazonry:browser .
 # Multi-arch:
-#   docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.browser -t mntr:browser .
+#   docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.browser -t blazonry:browser .
 #
 # Run:
-#   docker run -d --name mntr -p 2301:2301 -v mntr-data:/data mntr:browser
+#   docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data blazonry:browser
 #   # admin UI: http://localhost:2301/  (device API on the same port)
 
 FROM --platform=$BUILDPLATFORM rust:1.99.1-bookworm AS builder
@@ -42,21 +42,21 @@ RUN set -e; \
       *) echo "unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
     esac; \
     cargo build --release --features browser --target "$T"; \
-    cp "target/$T/release/mntr" /mntr
+    cp "target/$T/release/blazonry" /blazonry
 
 # Runtime: a real Chromium (found at /usr/bin/chromium by find_browser) plus its
-# shared libraries and some fallback fonts. The mntr binary is static musl, so it
+# shared libraries and some fallback fonts. The blazonry binary is static musl, so it
 # runs here unchanged and simply launches the system Chromium over CDP.
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium ca-certificates \
       fonts-dejavu-core fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /mntr /mntr
+COPY --from=builder /blazonry /blazonry
 # SQLite DB + rendered screens live here — mount a volume at /data
 VOLUME /data
 ENV RUST_LOG=info
 EXPOSE 2301
 # Browser is the default backend in this image; a per-screen render_backend
-# still wins, and mntr falls back to native if Chromium ever fails to launch.
-ENTRYPOINT ["/mntr", "serve", "--db", "/data/mntr.db", "--addr", "0.0.0.0:2301", "--render-backend", "browser"]
+# still wins, and blazonry falls back to native if Chromium ever fails to launch.
+ENTRYPOINT ["/blazonry", "serve", "--db", "/data/blazonry.db", "--addr", "0.0.0.0:2301", "--render-backend", "browser"]

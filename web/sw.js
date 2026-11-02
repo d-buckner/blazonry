@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
-// mntr admin PWA service worker. Emitted by web-app/build.js with 20261101230922
+// blazonry admin PWA service worker. Emitted by web-app/build.js with 20261102001244
 // replaced by a build stamp, so every deploy produces new bytes and browsers
 // pick up the update. Strategy:
 //   - app shell ('/', manifest, icons): cache-first (it is one inlined file)
@@ -9,7 +9,7 @@
 //   - everything else: network-first with shell fallback for navigations.
 
 const VERSION = '__BUILD__';
-const SHELL = 'mntr-shell-' + VERSION;
+const SHELL = 'blazonry-shell-' + VERSION;
 const SHELL_URLS = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -19,7 +19,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('mntr-shell-') && k !== SHELL).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('blazonry-shell-') && k !== SHELL).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

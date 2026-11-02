@@ -5,10 +5,10 @@
 use std::process::Stdio;
 
 async fn spawn_server(tag: &str) -> (tokio::process::Child, String) {
-    let dir = std::env::temp_dir().join(format!("mntr-test-{}-{}", std::process::id(), tag));
+    let dir = std::env::temp_dir().join(format!("blazonry-test-{}-{}", std::process::id(), tag));
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("t.db").to_str().unwrap().to_string();
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_mntr"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_blazonry"))
         .args(["serve", "--db", &db, "--addr", "127.0.0.1:0"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

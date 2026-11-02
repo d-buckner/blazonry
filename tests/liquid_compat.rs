@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! TRMNL Liquid compatibility test suite.
 //!
-//! Every test here encodes a specific, measured gap between mntr's bare
+//! Every test here encodes a specific, measured gap between blazonry's bare
 //! liquid-rs stdlib parser and what the TRMNL community corpus actually uses
 //! (measured against the public recipe corpus: `{% template %}` partials in
 //! ~35% of recipes, ISO-8601 `date` passthrough corruption, `{% liquid %}`,
@@ -199,7 +199,7 @@ fn echo_tag_standalone() {
 #[test]
 fn render_screen_injects_trmnl_defaults() {
     // render_screen (not bare render) is the path that injects the namespace.
-    let screen = mntr::template::render_screen(
+    let screen = blazonry::template::render_screen(
         r#"{"name":"t","parts":[{"type":"text","text":"{{ trmnl.user.utc_offset }}|{{ trmnl.device.width }}|{{ trmnl.user.locale }}"}]}"#,
         &json!({}),
     )
@@ -232,7 +232,7 @@ fn trmnl_nil_chains_never_crash() {
 
 // ---------------------------------------------------------------------------
 // Gap 5: the filter pack. Each of these was a verified `Unknown filter` parse
-// failure against mntr's bare stdlib parser.
+// failure against blazonry's bare stdlib parser.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -374,7 +374,7 @@ fn to_date_filter() {
 
 #[test]
 fn l_date_accepts_locale_argument() {
-    // TRMNL cloud localizes; mntr applies the strftime core and accepts the
+    // TRMNL cloud localizes; blazonry applies the strftime core and accepts the
     // locale arg without failing (documented approximation).
     let out = render(
         "{{ t | l_date: \"%Y-%m-%d\", \"de\" }}",
@@ -465,7 +465,7 @@ fn regression_raw_block_passes_through() {
 #[test]
 fn end_to_end_composite_screen() {
     let tmpl = r#"{"name":"agenda","parts":[{% for e in events %}{"type":"keyed_value","key":"{{ e.title }}","value":"{{ e.time | date: '%-l:%M%p' }}"}{% unless forloop.last %},{% endunless %}{% endfor %}]}"#;
-    let screen = mntr::template::render_screen(
+    let screen = blazonry::template::render_screen(
         tmpl,
         &json!({
             "events": [

@@ -155,7 +155,7 @@ pub async fn display(
             // Not registered to a playlist yet: firmware re-polls in seconds.
             return axum::Json(serde_json::json!({
                 "status": 202,
-                "message": "mntr: device paired, no screens yet",
+                "message": "blazonry: device paired, no screens yet",
                 "refresh_rate": refresh_interval,
                 "reset_firmware": false,
                 "update_firmware": false,
@@ -223,7 +223,7 @@ pub async fn serve_image(
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     if stem == "setup-logo" {
-        let tmpl = "{\"name\":\"setup\",\"parts\":[{\"type\":\"text\",\"text\":\"mntr\",\"style\":{\"font_px\":64,\"bold\":true},\"align\":\"center\",\"padding\":[180,200]}]}";
+        let tmpl = "{\"name\":\"setup\",\"parts\":[{\"type\":\"text\",\"text\":\"blazonry\",\"style\":{\"font_px\":64,\"bold\":true},\"align\":\"center\",\"padding\":[180,200]}]}";
         let native = st.backends.for_pref("native");
         return match native.render_bmp(tmpl, "{}", bpp).await {
             Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp).into_response(),
@@ -254,7 +254,7 @@ pub async fn setup(State(st): State<SharedState>, headers: HeaderMap) -> impl In
     tracing::info!(id, %mac, "device setup/pair");
     axum::Json(serde_json::json!({
         "status": 200,
-        "message": "Welcome to mntr!",
+        "message": "Welcome to blazonry!",
         "api_key": api_key,
         "friendly_id": format!("{:06}", id % 1_000_000),
         "image_url": format!("{}/images/setup-logo-{}.bmp", base_url(&headers), device_bpp(&headers)),

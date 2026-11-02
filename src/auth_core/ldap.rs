@@ -25,20 +25,20 @@ pub struct LdapCfg {
 
 impl LdapCfg {
     pub fn from_env() -> anyhow::Result<Self> {
-        let url = std::env::var("MNTR_LDAP_URL").context_env("MNTR_LDAP_URL")?;
-        let template = env_set("MNTR_LDAP_BIND_DN_TEMPLATE");
-        let search_base = env_set("MNTR_LDAP_SEARCH_BASE");
+        let url = std::env::var("BLAZONRY_LDAP_URL").context_env("BLAZONRY_LDAP_URL")?;
+        let template = env_set("BLAZONRY_LDAP_BIND_DN_TEMPLATE");
+        let search_base = env_set("BLAZONRY_LDAP_SEARCH_BASE");
         if template.is_none() && search_base.is_none() {
-            anyhow::bail!("ldap auth needs MNTR_LDAP_BIND_DN_TEMPLATE or MNTR_LDAP_SEARCH_BASE");
+            anyhow::bail!("ldap auth needs BLAZONRY_LDAP_BIND_DN_TEMPLATE or BLAZONRY_LDAP_SEARCH_BASE");
         }
         Ok(LdapCfg {
             url,
             bind_dn_template: template,
             search_base,
-            search_filter: env_or("MNTR_LDAP_SEARCH_FILTER", "(uid={username})"),
-            search_bind_dn: env_set("MNTR_LDAP_SEARCH_BIND_DN"),
-            search_bind_pw: env_set("MNTR_LDAP_SEARCH_BIND_PW"),
-            email_attr: env_or("MNTR_LDAP_EMAIL_ATTR", "mail"),
+            search_filter: env_or("BLAZONRY_LDAP_SEARCH_FILTER", "(uid={username})"),
+            search_bind_dn: env_set("BLAZONRY_LDAP_SEARCH_BIND_DN"),
+            search_bind_pw: env_set("BLAZONRY_LDAP_SEARCH_BIND_PW"),
+            email_attr: env_or("BLAZONRY_LDAP_EMAIL_ATTR", "mail"),
         })
     }
 }

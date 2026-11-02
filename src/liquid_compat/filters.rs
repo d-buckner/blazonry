@@ -5,7 +5,7 @@
 //!
 //! Approximations are deliberate and documented per filter: parse-level
 //! acceptance is what unblocks imports; where exact cloud semantics need data
-//! mntr does not model (locales, i18n dictionaries), the filter accepts the
+//! blazonry does not model (locales, i18n dictionaries), the filter accepts the
 //! arguments and renders the locale-independent core.
 
 use std::collections::hash_map::RandomState;
@@ -125,7 +125,7 @@ impl Filter for DateFilter {
 }
 
 // ---------------------------------------------------------------------------
-// l_date / date_with_local_time: locale-aware in TRMNL cloud; mntr renders the
+// l_date / date_with_local_time: locale-aware in TRMNL cloud; blazonry renders the
 // locale-independent strftime core and accepts (ignores) the locale argument.
 // ---------------------------------------------------------------------------
 
@@ -140,7 +140,7 @@ struct LDateArgs {
 #[derive(Clone, ParseFilter, FilterReflection)]
 #[filter(
     name = "l_date",
-    description = "Localized date; mntr applies the strftime format only.",
+    description = "Localized date; blazonry applies the strftime format only.",
     parameters(LDateArgs),
     parsed(LDateFilter)
 )]

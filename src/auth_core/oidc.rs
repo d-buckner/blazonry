@@ -29,12 +29,12 @@ pub struct OidcCfg {
 impl OidcCfg {
     pub fn from_env() -> anyhow::Result<Self> {
         Ok(OidcCfg {
-            issuer: std::env::var("MNTR_OIDC_ISSUER").context_env("MNTR_OIDC_ISSUER")?,
-            client_id: std::env::var("MNTR_OIDC_CLIENT_ID").context_env("MNTR_OIDC_CLIENT_ID")?,
-            client_secret: std::env::var("MNTR_OIDC_CLIENT_SECRET").context_env("MNTR_OIDC_CLIENT_SECRET")?,
-            redirect_uri: std::env::var("MNTR_OIDC_REDIRECT_URI").context_env("MNTR_OIDC_REDIRECT_URI")?,
-            scopes: env_or("MNTR_OIDC_SCOPES", "openid email profile"),
-            admin_emails: std::env::var("MNTR_OIDC_ADMIN_EMAILS").unwrap_or_default()
+            issuer: std::env::var("BLAZONRY_OIDC_ISSUER").context_env("BLAZONRY_OIDC_ISSUER")?,
+            client_id: std::env::var("BLAZONRY_OIDC_CLIENT_ID").context_env("BLAZONRY_OIDC_CLIENT_ID")?,
+            client_secret: std::env::var("BLAZONRY_OIDC_CLIENT_SECRET").context_env("BLAZONRY_OIDC_CLIENT_SECRET")?,
+            redirect_uri: std::env::var("BLAZONRY_OIDC_REDIRECT_URI").context_env("BLAZONRY_OIDC_REDIRECT_URI")?,
+            scopes: env_or("BLAZONRY_OIDC_SCOPES", "openid email profile"),
+            admin_emails: std::env::var("BLAZONRY_OIDC_ADMIN_EMAILS").unwrap_or_default()
                 .split(',').map(|s| s.trim().to_ascii_lowercase()).filter(|s| !s.is_empty()).collect(),
         })
     }
@@ -223,7 +223,7 @@ async fn fetch_jwks(cfg: &OidcCfg, disc: &OidcDiscovery) -> anyhow::Result<Jwks>
     Ok(j)
 }
 
-/// Claims mntr requires from a verified ID token.
+/// Claims blazonry requires from a verified ID token.
 #[derive(Debug, Deserialize)]
 struct IdClaims {
     #[allow(dead_code)] // validated by jsonwebtoken against Validation
