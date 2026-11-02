@@ -109,6 +109,25 @@ img.prev { max-width:200px; border:1px solid var(--ln2); border-radius:0; displa
 .ov-btn:active { transform:translate(1px,1px); box-shadow:0 0 0 var(--ln2) }
 
 /* e-ink screen preview — the single home of the dither */
+/* first-run guided setup (#39) */
+.welcome { margin-bottom:28px }
+.welcome-head { margin-bottom:18px }
+.welcome-head h2 { font-size:19px; letter-spacing:-.01em }
+.welcome-head p { font-size:13.5px; margin-top:4px }
+.welcome-steps { list-style:none; display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin:0; padding:0 }
+.wstep { border:1px solid var(--ln); background:var(--paper2); padding:16px 16px 18px; display:flex; flex-direction:column; gap:10px }
+.wstep.done { border-color:var(--ln2) }
+.wstep-top { display:flex; align-items:center; gap:10px }
+.wstep-top h3 { font-size:15px; flex:1 }
+.wbadge { width:24px; height:24px; border:1.5px solid var(--ink1); display:grid; place-items:center;
+  font-family:var(--mono); font-size:12px; font-weight:700; flex:none }
+.wstep.done .wbadge { background:var(--ink1); color:var(--paper) }
+.wstep.done .wbadge::before { content:"\2713" }
+.wstep-thumb { max-width:180px }
+.wstep p { font-size:13px; line-height:1.45; flex:1 }
+.wstep .act { align-self:flex-start }
+@media (max-width:1000px) { .welcome-steps { grid-template-columns:1fr } }
+
 .ov-screen { position:relative; background:var(--paper2); border:1px solid var(--ln2); overflow:hidden;
   background-image:radial-gradient(var(--dot) 1px, transparent 1.5px); background-size:5px 5px;
   display:grid; place-items:center; aspect-ratio:5/3 }
