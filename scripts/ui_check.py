@@ -52,7 +52,7 @@ try:
         pg.click("text=New screen")
         pg.wait_for_selector("dialog[open]")
         pg.fill("dialog input", "hello")
-        pg.fill("dialog textarea >> nth=1", '{"title":"Home HQ","body":"it works"}')
+        pg.fill("dialog textarea >> nth=1", '{"title":"Seattle","body":"it works"}')
         pg.click("dialog button.pri")
         pg.wait_for_timeout(1500)
         pg.screenshot(path=os.path.join(ROOT, "ui_screens.png"))
