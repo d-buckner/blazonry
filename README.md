@@ -6,7 +6,7 @@
 
 **A TRMNL BYOS server in Rust. One 13 MB binary, zero containers, no Chrome.**
 
-Point your [TRMNL](https://trmnl.com) (or any TRMNL-compatible ESP32 e-ink
+Point your TRMNL (or any TRMNL-compatible ESP32 e-ink
 display) at `http://your-server:2301` and you own the whole stack: screens,
 playlists, device pairing, firmware OTA, users, previews — served from a
 single static binary with an embedded web UI.
@@ -34,7 +34,7 @@ in milliseconds. blazonry renders natively: Liquid template → JSON screen tree
 → tiny-skia → Floyd–Steinberg dither → 2-bit BMP, verified against the
 real firmware's parser (see [Testing](#testing)).
 
-If you came here from "why can't I point my TRMNL at my own calendar":
+If you came here from "why can't I point my display at my own calendar":
 that's the whole reason. The antidote to a 790 MB container stack that
 still can't reach your LAN is a 13 MB binary that can.
 
@@ -96,7 +96,7 @@ blazonry serve                    # → http://0.0.0.0:2301
 
 1. Open `http://your-server:2301`, register. **The first account becomes
    admin** (subsequent ones wait for verification — same model as Terminus).
-2. On your TRMNL: Settings → Server URL → `http://your-server:2301`.
+2. On your display: Settings → Server URL → `http://your-server:2301`.
    The device pairs automatically and shows up on the Devices tab.
 3. Create a screen (Liquid template + JSON vars), a playlist, assign it.
    Done — the device polls and renders.
