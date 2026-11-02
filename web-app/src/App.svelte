@@ -145,6 +145,7 @@ async function register(e) {
     {/if}
   </div>
   {/if}
+  <p class="auth-spec">self-hosted · no cloud · your server</p>
 </div>
 {/if}
 
