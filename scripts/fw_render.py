@@ -42,7 +42,7 @@ def serve(directory, port):
 def render(markup, out, size=(800, 480), screen_classes="screen screen--fonts-trmnl", view="full"):
     # one origin for page + assets: @font-face is CORS-gated, cross-origin
     # font fetches fail silently (face enters 'error', glyphs fall back)
-    site = "/workspace/mntr/.fw_render/site"
+    site = "/workspace/blazonry/.fw_render/site"
     os.makedirs(site, exist_ok=True)
     for d in ("css", "js", "fonts", "images"):
         src = os.path.join(FW, d)
@@ -69,7 +69,7 @@ def render(markup, out, size=(800, 480), screen_classes="screen screen--fonts-tr
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("markup_file")
-    ap.add_argument("--out", default="/workspace/mntr/fw_screen.png")
+    ap.add_argument("--out", default="/workspace/blazonry/fw_screen.png")
     ap.add_argument("--size", default="800x480")
     ap.add_argument("--screen-classes", default="screen screen--fonts-trmnl")
     ap.add_argument("--view", default="full")

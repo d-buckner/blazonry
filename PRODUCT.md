@@ -15,13 +15,13 @@ The admin UI is a shared family surface, not a sysadmin panel. It is designed fo
 
 ## Product Purpose
 
-mntr is a self-hosted server for TRMNL-compatible e-ink displays. Point a device at your own server and you control the whole stack — screens, playlists, pairing, firmware/OTA, users, previews — from one binary on a box you already run.
+blazonry is a self-hosted server for TRMNL-compatible e-ink displays. Point a device at your own server and you control the whole stack — screens, playlists, pairing, firmware/OTA, users, previews — from one binary on a box you already run.
 
 It exists because the obvious path — pointing a TRMNL at your own calendar/data on your own LAN — did not work on the hosted cloud or on the official BYOS server. Success means a family's own information — calendar, weather, chores, photos — reliably on the displays on their wall, owned end to end, and easy enough that anyone in the house can use it.
 
 ## Positioning
 
-**The self-hoster's better half.** mntr is a respectful alternative to TRMNL's cloud and Terminus (the official BYOS server), not a clone. It offers the half self-hosters actually want: your data, your server, your screens, no vendor in the middle. It conforms to the same TRMNL wire contract, so the hardware can't tell the difference.
+**The self-hoster's better half.** blazonry is a respectful alternative to TRMNL's cloud and Terminus (the official BYOS server), not a clone. It offers the half self-hosters actually want: your data, your server, your screens, no vendor in the middle. It conforms to the same TRMNL wire contract, so the hardware can't tell the difference.
 
 It does not try to be TRMNL (no curated plugin catalog, no hosted mobile apps). It wins on ownership and simplicity rather than feature parity.
 
@@ -44,7 +44,10 @@ It does not try to be TRMNL (no curated plugin catalog, no hosted mobile apps). 
 
 ## Brand Commitments
 
-- **Name:** `mntr` (unvowelled), used as-is.
+- **Name:** `blazonry` — the heraldic craft of declaring, in words, what is
+  displayed. A real word (never unvowelled), lowercase always, used as-is.
+  Renamed from `mntr` Nov 2026: the unvowelled trick read as a TRMNL knock-off;
+  the product is an independent alternative that speaks TRMNL's wire protocol.
 - **Voice is split.** The admin UI is warm, calm, and plain — clear and encouraging enough for any age in the house. The opinionated, direct, occasionally combative voice lives in the README and marketing, not in the product UI.
 
 ## Evidence on Hand

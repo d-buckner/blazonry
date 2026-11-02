@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Drive the mntr admin SPA in headless Chromium against a freshly
+"""Drive the blazonry admin SPA in headless Chromium against a freshly
 spawned server on an ephemeral DB: register admin, create screen + playlist,
 walk every tab, screenshot each, fail on JS console errors.
 Run: /workspace/pio-venv/bin/python scripts/ui_check.py"""
@@ -15,10 +15,10 @@ def free_port():
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
-d = tempfile.mkdtemp(prefix="mntr-ui-")
+d = tempfile.mkdtemp(prefix="blazonry-ui-")
 port = free_port()
 srv = subprocess.Popen(
-    [os.path.join(ROOT, "target/debug/mntr"), "serve",
+    [os.path.join(ROOT, "target/debug/blazonry"), "serve",
      "--db", os.path.join(d, "ui.db"), "--addr", f"127.0.0.1:{port}"],
     stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 for _ in range(50):

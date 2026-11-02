@@ -26,7 +26,7 @@ const GREYS: [f32; 4] = [0.0, 0.333, 0.667, 1.0];
 const KEYED_GAP: f32 = 24.0;
 
 /// Fonts are embedded so the binary stays self-contained (no fontconfig, no
-/// system package). Order of resolution: `MNTR_FONT[_BOLD]` override →
+/// system package). Order of resolution: `BLAZONRY_FONT[_BOLD]` override →
 /// embedded bytes → system DejaVu paths (for builds that strip assets).
 const EMBEDDED: [(&str, &[u8]); 2] = [
     ("regular", include_bytes!("../assets/fonts/DejaVuSans.ttf")),
@@ -123,8 +123,8 @@ pub struct Renderer {
 impl Renderer {
     pub fn new() -> anyhow::Result<Self> {
         Ok(Renderer {
-            font: load_font(0, "MNTR_FONT")?,
-            bold: load_font(1, "MNTR_FONT_BOLD")?,
+            font: load_font(0, "BLAZONRY_FONT")?,
+            bold: load_font(1, "BLAZONRY_FONT_BOLD")?,
             text_cache: Mutex::new(HashMap::new()),
         })
     }

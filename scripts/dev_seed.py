@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Seed a local mntr for hands-on testing (browser + trmnl-sim).
+"""Seed a local blazonry for hands-on testing (browser + trmnl-sim).
 
 Idempotent-ish: registers the admin if missing (first user becomes admin),
 then creates the demo screens + playlist and prints the bearer token.
@@ -11,8 +11,8 @@ import argparse, json, urllib.request, urllib.error
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--base", default="http://127.0.0.1:2301")
-ap.add_argument("--email", default="admin@mntr.local")
-ap.add_argument("--password", default="mntr-demo-2026")
+ap.add_argument("--email", default="admin@blazonry.local")
+ap.add_argument("--password", default="blazonry-demo-2026")
 args = ap.parse_args()
 BASE = args.base.rstrip("/")
 
@@ -85,14 +85,14 @@ CENTERED = """{
 
 screens = [
     ("Dashboard", DASHBOARD, {
-        "header": "mntr", "subheader": "one binary, no containers",
+        "header": "blazonry", "subheader": "one binary, no containers",
         "temp": "61°F", "condition": "clear", "meetings": 3, "tasks": 7, "battery": 82,
         "battery_frac": 0.82,
         "week": [{"d": "M", "h": 3.2}, {"d": "T", "h": 5.1}, {"d": "W", "h": 2.4},
                  {"d": "T", "h": 6.8}, {"d": "F", "h": 4.0}, {"d": "S", "h": 1.2},
                  {"d": "S", "h": 2.9}],
     }),
-    ("Centered", CENTERED, {"big": "mntr works", "small": "align: center, no padding hacks"}),
+    ("Centered", CENTERED, {"big": "blazonry works", "small": "align: center, no padding hacks"}),
 ]
 
 ids = []

@@ -1,4 +1,4 @@
-# mntr
+# blazonry
 
 **A TRMNL BYOS server in Rust. One 13 MB binary, zero containers, no Chrome.**
 
@@ -15,18 +15,18 @@ It didn't work — not on the hosted cloud, and not on Terminus, the official
 BYOS server. So I read the stack, and the "self-hosted lightweight display"
 story fell apart:
 
-| Terminus (official BYOS) | mntr |
+| Terminus (official BYOS) | blazonry |
 |---|---|
 | 3 containers: app (649 MB), Postgres (120 MB), Valkey (19 MB) — **~790 MB pulled** | **one 13 MB binary** |
 | Ruby + Hanami + Node + esbuild + Puma + Sidekiq + Overmind + Rodauth | Rust, no runtime deps |
 | Postgres + Valkey/Redis to babysit, migrate, back up | SQLite file. Copy it, you're backed up |
 | Full **Chromium** install in the image to rasterize screens | native renderer (tiny-skia + fontdue), ~60 ms per 800×480 screen |
-| Docker Compose, multiple processes, `overmind start` | `mntr serve` |
+| Docker Compose, multiple processes, `overmind start` | `blazonry serve` |
 
 Chromium. For a **4-level grayscale, 800×480, 1-bit-class image**. That is
 most of the image weight, and it's the most absurd part of the stack: a
 ~500 MB browser doing what a few thousand lines of software rasterizer do
-in milliseconds. mntr renders natively: Liquid template → JSON screen tree
+in milliseconds. blazonry renders natively: Liquid template → JSON screen tree
 → tiny-skia → Floyd–Steinberg dither → 2-bit BMP, verified against the
 real firmware's parser (see [Testing](#testing)).
 
@@ -49,13 +49,13 @@ Once you see what you're actually buying, the math is not close:
   TRMNL firmware preinstalled, open-source enclosure designs — for
   **$47.99**. You are paying the OG's ~$90 premium for the logo, the
   injection-molded case, and the cloud you're about to stop using.
-- **mntr is the software half of the deal, and it's the better half for a
+- **blazonry is the software half of the deal, and it's the better half for a
   self-hoster.** No cloud round-trip, no plugin marketplace to live inside,
   no 790 MB container stack (see above): one 13 MB binary serving your
   screens from your LAN. The wire contract is identical, so the Seeed kit
   can't tell the difference.
 
-**Seeed DIY kit + mntr ≈ $48 all-in. TRMNL OG + cloud ≈ $139 plus a
+**Seeed DIY kit + blazonry ≈ $48 all-in. TRMNL OG + cloud ≈ $139 plus a
 subscription.** Same panel, faster MCU, no vendor in the middle, and
 software that fits in one binary instead of three containers. That is the
 same value for a third of the money — and, on the self-hosting axis,
@@ -63,20 +63,20 @@ better software.
 
 And the "plugin marketplace" objection is smaller than it looks: TRMNL
 plugins are HTML/CSS/Liquid against HTTP data sources — a content format,
-not a runtime. mntr speaks that format out of the box (Liquid templates +
+not a runtime. blazonry speaks that format out of the box (Liquid templates +
 your own endpoints), so any non-JS extension works here the day you write
 it, with no marketplace, review process, or vendor in between — and a
 paste-a-TRMNL-recipe-link importer (fetch the recipe, transpile its Liquid
-to mntr's screen vocabulary) is a small, planned step.
+to blazonry's screen vocabulary) is a small, planned step.
 
 What the OG + cloud still genuinely buys: mobile apps, someone else's
 uptime, and a curated catalog if you want to browse instead of build. If
 that's the product you want, the OG is fine hardware and the firmware is
 open. But if you're a self-hoster who bought an e-ink display to put
 *your* dashboards on *your* server, buy the panel from Seeed and run
-mntr. Own the whole stack for less.
+blazonry. Own the whole stack for less.
 
-Other good Seeed options that speak mntr's protocol:
+Other good Seeed options that speak blazonry's protocol:
 [reTerminal E1001/E1002](https://www.seeedstudio.com/reTerminal-E1002-p-6533.html)
 (~$99–109, assembled, ESP32-S3, ESPHome/Home-Assistant-native — the E1002
 is **full-color** E Ink Spectra 6 at that price) and
@@ -87,7 +87,7 @@ from **$16** for 2.13" panels.
 
 ```bash
 cargo install --path .        # or: download the release binary
-mntr serve                    # → http://0.0.0.0:2301
+blazonry serve                    # → http://0.0.0.0:2301
 ```
 
 1. Open `http://your-server:2301`, register. **The first account becomes
@@ -103,14 +103,14 @@ is one SQLite file (`--db path`), so backups are `cp`.
 ### Docker
 
 ```bash
-docker run -d --name mntr -p 2301:2301 -v mntr-data:/data \
-  internal-forgejo:latest
+docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data \
+  ghcr.io/bloud-os/blazonry:latest
 ```
 
 The image is a `FROM scratch` container around the static musl binary —
 6.3 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
 The SQLite DB lives in the `/data` volume. To build locally:
-`docker buildx build -t mntr .` (multi-arch: `--platform linux/amd64,linux/arm64`).
+`docker buildx build -t blazonry .` (multi-arch: `--platform linux/amd64,linux/arm64`).
 
 Measured against the official Terminus Docker stack (its compose file runs
 three containers — `ghcr.io/usetrmnl/terminus`, `postgres:18.3-alpine`,
@@ -120,10 +120,10 @@ headless Chromium are all baked into the terminus image):
 | Stack | `docker pull` | On disk |
 |---|---|---|
 | Terminus (3 containers) | ~746 MB | ~1.84 GB |
-| mntr (1 container) | 6.3 MB | 15.7 MB |
+| blazonry (1 container) | 6.3 MB | 15.7 MB |
 
 ~118× smaller to pull. Memory tells the same story: Terminus's own compose
-file budgets up to 4.5 GB across its four services, while mntr idles in the
+file budgets up to 4.5 GB across its four services, while blazonry idles in the
 tens of megabytes.
 
 ## What you get
@@ -149,7 +149,7 @@ tens of megabytes.
 src/screen.rs    screen vocabulary (~15 primitives)
 src/template.rs  Liquid → JSON screen tree
 src/markup.rs    HTML+Liquid recipe markup → screen IR (TRMNL class vocabulary)
-src/ext_dev.rs   `mntr ext new|check|render` — offline extension dev loop
+src/ext_dev.rs   `blazonry ext new|check|render` — offline extension dev loop
 src/liquid_compat/ Shopify-Liquid-compatible engine (filters, tags)
 src/render.rs    measure/paint software renderer (tiny-skia + fontdue)
 src/dither.rs    greyscale → 4-level Floyd–Steinberg dither
@@ -169,16 +169,16 @@ Screens are HTML + Liquid using the TRMNL framework class vocabulary
 TRMNL recipes import unchanged. The dev loop is offline: no server, no DB.
 
 ```
-mntr ext new weather        # scaffold ext/weather/ (template + vars)
-mntr ext check ext/weather  # validate; JSON diagnostics on stdout, exit code
-mntr ext render ext/weather # write the 800x480 2-bit BMP + PNG preview
+blazonry ext new weather        # scaffold ext/weather/ (template + vars)
+blazonry ext check ext/weather  # validate; JSON diagnostics on stdout, exit code
+blazonry ext render ext/weather # write the 800x480 2-bit BMP + PNG preview
 ```
 
 `check` runs the full pipeline (vars → Liquid → front-end detect → IR →
 pixel render) and names the failing stage (`vars|liquid|json|schema|markup|render`),
 so agents can iterate headlessly. `tests/markup_corpus.rs` sweeps the
 published-recipe corpus for parse coverage; `tests/markup_parity.rs`
-(`--features browser` + a Chromium via `MNTR_BROWSER_PATH`) asserts the
+(`--features browser` + a Chromium via `BLAZONRY_BROWSER_PATH`) asserts the
 native renderer matches headless Chromium on the framework CSS
 (median MAD < 0.15 over 4-level greys).
 
@@ -206,7 +206,7 @@ plus two Python scripts; no physical hardware required.
 The docs lie; the firmware doesn't. This harness builds the **actual TRMNL
 firmware** from source (PlatformIO, `pio run -e trmnl`) and runs it inside
 QEMU via [trmnl-sim](https://github.com/mooselace/trmnl-sim), then drives it
-against a freshly spawned mntr:
+against a freshly spawned blazonry:
 
 ```bash
 cargo build --release
@@ -267,7 +267,7 @@ advances, and the raster backend is unchanged. A future GPUI with a
 software backend could replace the paint side without touching layout.
 
 **Why not just fix Terminus?** Respect to the Terminus team — the wire
-contract they published is what mntr conforms to. But the container-stack
+contract they published is what blazonry conforms to. But the container-stack
 direction is a product choice, not a bug, and my constraint (a dashboard
 that talks to my LAN in one binary on the box that already runs everything)
 isn't compatible with it. Different tool for a different constraint.
@@ -281,10 +281,10 @@ screens are Liquid you control.
 
 ## License
 
-mntr is licensed under the **GNU AGPL v3** (see `LICENSE`).
+blazonry is licensed under the **GNU AGPL v3** (see `LICENSE`).
 
-The AGPL is the whole point: mntr stays free and open, and anyone who runs a
+The AGPL is the whole point: blazonry stays free and open, and anyone who runs a
 modified version as a network service has to give the source back. If you
-want to embed mntr in something that can't carry AGPL (a commercial product,
+want to embed blazonry in something that can't carry AGPL (a commercial product,
 a closed appliance), commercial dual-licensing is available — open an issue
 and ask.

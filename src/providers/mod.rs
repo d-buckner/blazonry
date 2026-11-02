@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Providers: leaf data dependencies implementing capability shapes.
 //!
-//! Design (AFFiNE: "mntr: Providers & Extensions Design"): providers publish
+//! Design (AFFiNE: "blazonry: Providers & Extensions Design"): providers publish
 //! normalized snapshots on their own refresh cadence (default 1h); extensions
 //! declare a shape + cardinality and consume merged snapshots. Shapes are
 //! typed interfaces, not vendors — a screen never knows if CalDAV or Google

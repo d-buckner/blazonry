@@ -19,8 +19,8 @@ let li = $state({ email: '', pass: '' });
 let rg = $state({ email: '', pass: '' });
 
 onMount(async () => {
-  // OIDC callback lands here as /#mntr_token=... — adopt and scrub the URL.
-  const m = location.hash.match(/mntr_token=([0-9a-f]+)/);
+  // OIDC callback lands here as /#blazonry_token=... — adopt and scrub the URL.
+  const m = location.hash.match(/blazonry_token=([0-9a-f]+)/);
   if (m) {
     sessionStorage.setItem('tr-token', m[1]);
     history.replaceState(null, '', '/');
@@ -52,8 +52,8 @@ function applyUpdate() {
   navigator.serviceWorker.getRegistration().then((r) => r && r.waiting && r.waiting.postMessage('skip-waiting'));
 }
 if (typeof window !== 'undefined') {
-  window.addEventListener('mntr-net', onNet);
-  window.addEventListener('mntr-update', onUpdate);
+  window.addEventListener('blazonry-net', onNet);
+  window.addEventListener('blazonry-update', onUpdate);
 }
 
 async function login(e) {
@@ -70,7 +70,7 @@ async function register(e) {
 </script>
 
 {#if !app.online}
-  <div id="offline-banner">Offline — mntr server unreachable. Data shown may be stale.</div>
+  <div id="offline-banner">Offline — blazonry server unreachable. Data shown may be stale.</div>
 {/if}
 {#if app.updateReady}
   <div id="update-banner">An update is available. <button class="act" onclick={applyUpdate}>Reload</button></div>
@@ -78,7 +78,7 @@ async function register(e) {
 {#if app.token}
   <header>
     <div class="brand">
-      <h1>mntr</h1>
+      <h1>blazonry</h1>
     </div>
     <nav>
       {#each TABS as t}
@@ -104,7 +104,7 @@ async function register(e) {
 {:else}
 <div id="auth">
   <div class="auth-brand">
-    <h1>mntr</h1>
+    <h1>blazonry</h1>
     <p class="tag">your displays, your server</p>
   </div>
   {#if authMode === 'oidc'}

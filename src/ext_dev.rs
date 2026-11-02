@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! `mntr ext` — the extension-authoring dev loop.
+//! `blazonry ext` — the extension-authoring dev loop.
 //!
 //! An extension's authoring surface is a directory:
 //!
@@ -11,10 +11,10 @@
 //!
 //! Three commands, all headless (no server, no DB, no device):
 //!
-//! - `mntr ext new <name>`      scaffold `ext/<name>/` with a working template
-//! - `mntr ext check <path>`    validate: vars JSON, Liquid, screen schema,
+//! - `blazonry ext new <name>`      scaffold `ext/<name>/` with a working template
+//! - `blazonry ext check <path>`    validate: vars JSON, Liquid, screen schema,
 //!                              pixel render — machine-readable JSON output
-//! - `mntr ext render <path>`   write `<out>.bmp` (panel wire format) +
+//! - `blazonry ext render <path>`   write `<out>.bmp` (panel wire format) +
 //!                              `<out>.png` (eyeball preview)
 //!
 //! `check` is designed for agents: one command, exit code + JSON on stdout,
@@ -127,7 +127,7 @@ pub fn check(template_src: &str, vars_json: &str) -> CheckReport {
     CheckReport::ok(screen.parts.len(), front_end)
 }
 
-/// `mntr ext check <path>` — validate an extension dir/template + vars.
+/// `blazonry ext check <path>` — validate an extension dir/template + vars.
 pub fn cmd_check(path: &Path, vars_override: Option<&Path>) -> i32 {
     let paths = match ExtPaths::resolve(path, vars_override) {
         Ok(p) => p,
@@ -149,7 +149,7 @@ pub fn cmd_check(path: &Path, vars_override: Option<&Path>) -> i32 {
     if report.ok { 0 } else { 1 }
 }
 
-/// `mntr ext render <path>` — write `<out>.bmp` + `<out>.png`.
+/// `blazonry ext render <path>` — write `<out>.bmp` + `<out>.png`.
 pub fn cmd_render(path: &Path, vars_override: Option<&Path>, out: Option<&str>, bpp: u16) -> i32 {
     let paths = match ExtPaths::resolve(path, vars_override) {
         Ok(p) => p,
@@ -229,7 +229,7 @@ const SCAFFOLD_TEMPLATE: &str = r##"{
 }
 "##;
 
-/// `mntr ext new <name>` — scaffold `ext/<name>/` and verify it renders.
+/// `blazonry ext new <name>` — scaffold `ext/<name>/` and verify it renders.
 pub fn cmd_new(name: &str) -> i32 {
     if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         eprintln!("error: name must be alphanumeric (dash/underscore ok), got '{name}'");
@@ -250,7 +250,7 @@ pub fn cmd_new(name: &str) -> i32 {
             { "key": "First", "value": "hello" },
             { "key": "Second", "value": "world" }
         ],
-        "footer": "edit template.liquid + vars.json, then: mntr ext check"
+        "footer": "edit template.liquid + vars.json, then: blazonry ext check"
     });
     std::fs::write(dir.join("template.liquid"), SCAFFOLD_TEMPLATE).expect("write template");
     std::fs::write(dir.join("vars.json"), format!("{}\n", serde_json::to_string_pretty(&vars).unwrap()))
@@ -260,7 +260,7 @@ pub fn cmd_new(name: &str) -> i32 {
     cmd_check(&dir, None)
 }
 
-/// CLI entry: `mntr ext <new|check|render> ...`. Returns the process exit code.
+/// CLI entry: `blazonry ext <new|check|render> ...`. Returns the process exit code.
 pub fn cli(args: &[String]) -> i32 {
     let flag = |f: &str| -> Option<String> {
         args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned()
@@ -277,21 +277,21 @@ pub fn cli(args: &[String]) -> i32 {
     match sub {
         "new" => match target {
             Some(t) => cmd_new(&t.to_string_lossy()),
-            None => { eprintln!("usage: mntr ext new <name>"); 1 }
+            None => { eprintln!("usage: blazonry ext new <name>"); 1 }
         },
         "check" => match target {
             Some(t) => cmd_check(t, flag("--vars").as_deref().map(Path::new)),
-            None => { eprintln!("usage: mntr ext check <dir|template.liquid> [--vars vars.json]"); 1 }
+            None => { eprintln!("usage: blazonry ext check <dir|template.liquid> [--vars vars.json]"); 1 }
         },
         "render" => match target {
             Some(t) => {
                 let bpp = flag("--bpp").and_then(|s| s.parse().ok()).unwrap_or(2u16);
                 cmd_render(t, flag("--vars").as_deref().map(Path::new), flag("--out").as_deref(), bpp)
             }
-            None => { eprintln!("usage: mntr ext render <dir|template.liquid> [--vars v.json] [--out prefix] [--bpp 1|2]"); 1 }
+            None => { eprintln!("usage: blazonry ext render <dir|template.liquid> [--vars v.json] [--out prefix] [--bpp 1|2]"); 1 }
         },
         other => {
-            eprintln!("usage: mntr ext new <name> | check <path> | render <path> [--vars v.json] [--out prefix] [--bpp 1|2]");
+            eprintln!("usage: blazonry ext new <name> | check <path> | render <path> [--vars v.json] [--out prefix] [--bpp 1|2]");
             if !other.is_empty() { eprintln!("unknown ext command: {other}"); }
             1
         }

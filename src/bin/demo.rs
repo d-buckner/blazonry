@@ -4,10 +4,10 @@
 
 use base64::Engine as _;
 use serde_json::json;
-use mntr::bmp::encode_2bit_bmp;
-use mntr::render::Renderer;
-use mntr::template::render_screen;
-use mntr::{HEIGHT, WIDTH};
+use blazonry::bmp::encode_2bit_bmp;
+use blazonry::render::Renderer;
+use blazonry::template::render_screen;
+use blazonry::{HEIGHT, WIDTH};
 
 const TEMPLATE: &str = r##"{
   "name": "demo",
@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     let mut img = image::GrayImage::new(WIDTH as u32, HEIGHT as u32);
     for (i, &v) in indices.iter().enumerate() {
         img.put_pixel((i % WIDTH) as u32, (i / WIDTH) as u32,
-            image::Luma([mntr::bmp::LEVELS[v as usize]]));
+            image::Luma([blazonry::bmp::LEVELS[v as usize]]));
     }
     img.save("out.png")?;
     println!("wrote out.bmp + out.png");

@@ -52,7 +52,7 @@ export async function doRegister(email, password) {
   if (r.role === 'admin') {
     sessionStorage.setItem('tr-token', r.token);
     app.token = r.token; app.email = email; app.role = 'admin';
-    toast("You're the admin — welcome to mntr.");
+    toast("You're the admin — welcome to blazonry.");
     return;
   }
   toast('Account created — an admin needs to approve it before you can sign in.');

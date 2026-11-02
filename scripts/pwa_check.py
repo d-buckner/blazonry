@@ -4,12 +4,12 @@
 import subprocess, sys, time, socket, tempfile, os, signal
 from playwright.sync_api import sync_playwright
 
-REPO = "/workspace/mntr"
+REPO = "/workspace/blazonry"
 db = tempfile.mktemp(suffix=".db")
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
 addr = f"127.0.0.1:{port}"
 
-proc = subprocess.Popen([f"{REPO}/target/debug/mntr", "serve", "--db", db, "--addr", addr],
+proc = subprocess.Popen([f"{REPO}/target/debug/blazonry", "serve", "--db", db, "--addr", addr],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 while True:
     line = proc.stdout.readline()
@@ -35,7 +35,7 @@ try:
         print("manifest ok:", mj["name"], mj["display"], len(mj["icons"]), "icons")
 
         cached = page.evaluate("""() => caches.keys().then(ks =>
-            Promise.all(ks.filter(k=>k.startsWith('mntr-shell-'))
+            Promise.all(ks.filter(k=>k.startsWith('blazonry-shell-'))
                        .map(k=>caches.open(k).then(c=>c.keys().then(ks=>ks.map(x=>x.url))))))""")
         print("shell cache:", cached)
         assert any(any(u.rstrip('/') == f'http://{addr}' for u in cl) for cl in cached), "shell '/' not cached"
@@ -56,7 +56,7 @@ try:
         page.goto(f"http://{addr}/", wait_until="domcontentloaded")
         page.wait_for_timeout(1500)
         html = page.content()
-        shell_ok = "mntr" in html and "Sign in" in html
+        shell_ok = "blazonry" in html and "Sign in" in html
         banner_ok = "Offline" in html
         print("offline reload: shell rendered =", shell_ok, "| offline banner =", banner_ok)
         assert shell_ok, "offline shell did not render"

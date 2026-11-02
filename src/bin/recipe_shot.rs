@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! PoC driver for issue #14 with REAL TRMNL recipes from the dump:
-//! render the recipe's Liquid through mntr's own compat engine, wrap it in
+//! render the recipe's Liquid through blazonry's own compat engine, wrap it in
 //! the trmnl-framework page shell (real CSS + fonts over localhost), capture
 //! via CDP, dither, emit panel BMPs + PNGs.
 //!
-//!   MNTR_BROWSER_PATH=/path/to/chrome cargo run --features browser --bin recipe_shot \
+//!   BLAZONRY_BROWSER_PATH=/path/to/chrome cargo run --features browser --bin recipe_shot \
 //!     -- --dump /workspace/trmnl-dump/data --id 53263 --vars vars.json --out out_prefix
 
 use anyhow::{Context, Result};
-use mntr::browser::CdpRenderer;
+use blazonry::browser::CdpRenderer;
 use std::net::SocketAddr;
 
 const SHELL: &str = r#"<!DOCTYPE html>
@@ -81,19 +81,19 @@ async fn main() -> Result<()> {
     }
     anyhow::ensure!(!id.is_empty() && !prefix.is_empty(), "--id and --out required");
     let dump = dump.context("--dump")?;
-    let chrome = std::env::var("MNTR_BROWSER_PATH")
+    let chrome = std::env::var("BLAZONRY_BROWSER_PATH")
         .or_else(|_| std::env::var("CHROME_PATH"))
-        .context("set MNTR_BROWSER_PATH")?;
+        .context("set BLAZONRY_BROWSER_PATH")?;
 
-    // 1. Load real recipe markup + render its Liquid through mntr's engine.
+    // 1. Load real recipe markup + render its Liquid through blazonry's engine.
     let markup_path = dump.join("markup").join(format!("{id}__markup_full.liquid"));
     let src = std::fs::read_to_string(&markup_path)
         .with_context(|| format!("markup for {id}"))?;
-    let html_body = mntr::template::render_str(&src, &vars).context("liquid render")?;
+    let html_body = blazonry::template::render_str(&src, &vars).context("liquid render")?;
 
     // 2. Wrap in the framework shell and serve over localhost (font CORS).
     let page = SHELL.replace("{markup}", &html_body);
-    let site = std::env::temp_dir().join(format!("mntr_recipe_{id}"));
+    let site = std::env::temp_dir().join(format!("blazonry_recipe_{id}"));
     std::fs::create_dir_all(&site)?;
     for d in ["css", "js", "fonts", "images"] {
         let link = site.join(d);
@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
     }
     std::fs::write(site.join("page.html"), &page)?;
     let addr = serve_static(site.clone()).await?;
-    let url = if std::env::var("MNTR_DATA_URL").is_ok() {
+    let url = if std::env::var("BLAZONRY_DATA_URL").is_ok() {
         format!(
             "data:text/html;base64,{}",
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &page)
@@ -119,15 +119,15 @@ async fn main() -> Result<()> {
     let grey = renderer.render_url(&url, settle_ms).await?;
     let render_ms = t0.elapsed().as_millis();
 
-    let grey_img = image::GrayImage::from_vec(mntr::WIDTH as u32, mntr::HEIGHT as u32, grey.clone()).unwrap();
+    let grey_img = image::GrayImage::from_vec(blazonry::WIDTH as u32, blazonry::HEIGHT as u32, grey.clone()).unwrap();
     grey_img.save(format!("{prefix}_grey.png"))?;
 
-    let indices = mntr::dither::floyd_steinberg_4(&grey, mntr::WIDTH, mntr::HEIGHT);
-    let grey4: Vec<u8> = indices.iter().map(|&i| mntr::bmp::LEVELS[i as usize]).collect();
-    image::GrayImage::from_vec(mntr::WIDTH as u32, mntr::HEIGHT as u32, grey4).unwrap()
+    let indices = blazonry::dither::floyd_steinberg_4(&grey, blazonry::WIDTH, blazonry::HEIGHT);
+    let grey4: Vec<u8> = indices.iter().map(|&i| blazonry::bmp::LEVELS[i as usize]).collect();
+    image::GrayImage::from_vec(blazonry::WIDTH as u32, blazonry::HEIGHT as u32, grey4).unwrap()
         .save(format!("{prefix}_dither.png"))?;
-    std::fs::write(format!("{prefix}_1bit.bmp"), mntr::bmp::encode_1bit_bmp(mntr::WIDTH, mntr::HEIGHT, &indices))?;
-    std::fs::write(format!("{prefix}_2bit.bmp"), mntr::bmp::encode_2bit_bmp(mntr::WIDTH, mntr::HEIGHT, &indices))?;
+    std::fs::write(format!("{prefix}_1bit.bmp"), blazonry::bmp::encode_1bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices))?;
+    std::fs::write(format!("{prefix}_2bit.bmp"), blazonry::bmp::encode_2bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices))?;
 
     println!("recipe {id}: render_ms={render_ms} url={url}");
     Ok(())

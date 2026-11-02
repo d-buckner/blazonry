@@ -3,10 +3,10 @@
 //! provider (node oidc-provider) must be running locally. These are opt-in:
 //! they skip cleanly when the test IdPs are absent.
 //!
-//!   LDAP:  slapd on 127.0.0.1:2389, dc=mntr,dc=test, uid=alice/a... (see scripts/auth_test_idps.md)
-//!   OIDC:  oidc-provider on 127.0.0.1:2390, client mntr/mntr-secret, user alice/alicepass
+//!   LDAP:  slapd on 127.0.0.1:2389, dc=blazonry,dc=test, uid=alice/a... (see scripts/auth_test_idps.md)
+//!   OIDC:  oidc-provider on 127.0.0.1:2390, client blazonry/blazonry-secret, user alice/alicepass
 //!
-//! The mntr server under test binds 127.0.0.1:2391 so the OIDC redirect_uri
+//! The blazonry server under test binds 127.0.0.1:2391 so the OIDC redirect_uri
 //! can be registered ahead of time (providers require exact match).
 
 #![allow(dead_code)]
@@ -18,12 +18,12 @@ fn idp_up(url: &str) -> bool {
 }
 
 async fn spawn_server_env(tag: &str, port: u16, envs: &[(&str, String)]) -> (tokio::process::Child, String) {
-    let dir = std::env::temp_dir().join(format!("mntr-test-{}-{}", std::process::id(), tag));
+    let dir = std::env::temp_dir().join(format!("blazonry-test-{}-{}", std::process::id(), tag));
     std::fs::create_dir_all(&dir).unwrap();
     let db = dir.join("t.db").to_str().unwrap().to_string();
-    let mut cmd = tokio::process::Command::new(env!("CARGO_BIN_EXE_mntr"));
+    let mut cmd = tokio::process::Command::new(env!("CARGO_BIN_EXE_blazonry"));
     cmd.args(["serve", "--db", &db, "--addr", &format!("127.0.0.1:{port}")])
-        .env_remove("MNTR_AUTH")
+        .env_remove("BLAZONRY_AUTH")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in envs { cmd.env(k, v); }
@@ -48,7 +48,7 @@ async fn req_no_redirect(client: &reqwest::Client, url: &str, headers: &[(&str, 
 
 #[tokio::test]
 async fn auth_none_opens_admin_plane() {
-    let (mut child, addr) = spawn_server_env("auth-none", 2392, &[("MNTR_AUTH", "none".into())]).await;
+    let (mut child, addr) = spawn_server_env("auth-none", 2392, &[("BLAZONRY_AUTH", "none".into())]).await;
     let cli = reqwest::Client::new();
     // no token at all -> admin plane works
     let s = cli.get(format!("http://{addr}/admin/devices")).send().await.unwrap().status();
@@ -74,14 +74,14 @@ const LDAP_BASE: &[(&str, String)] = &[];
 
 fn ldap_envs(mode: &str) -> Vec<(&'static str, String)> {
     let mut v: Vec<(&'static str, String)> = vec![
-        ("MNTR_AUTH", "ldap".into()),
-        ("MNTR_LDAP_URL", "ldap://127.0.0.1:2389".into()),
+        ("BLAZONRY_AUTH", "ldap".into()),
+        ("BLAZONRY_LDAP_URL", "ldap://127.0.0.1:2389".into()),
     ];
     match mode {
-        "template" => v.push(("MNTR_LDAP_BIND_DN_TEMPLATE", "uid={username},ou=people,dc=mntr,dc=test".into())),
+        "template" => v.push(("BLAZONRY_LDAP_BIND_DN_TEMPLATE", "uid={username},ou=people,dc=blazonry,dc=test".into())),
         "search" => {
-            v.push(("MNTR_LDAP_SEARCH_BASE", "ou=people,dc=mntr,dc=test".into()));
-            v.push(("MNTR_LDAP_SEARCH_FILTER", "(uid={username})".into()));
+            v.push(("BLAZONRY_LDAP_SEARCH_BASE", "ou=people,dc=blazonry,dc=test".into()));
+            v.push(("BLAZONRY_LDAP_SEARCH_FILTER", "(uid={username})".into()));
         }
         _ => {}
     }
@@ -106,7 +106,7 @@ async fn ldap_flow(tag: &'static str, mode: &'static str) {
         .send().await.unwrap().json().await.unwrap();
     let tok = r["token"].as_str().expect(&format!("login should succeed, got {r}")).to_string();
     assert_eq!(r["role"], "admin");
-    assert_eq!(r["email"], "alice@mntr.test"); // from mail attr
+    assert_eq!(r["email"], "alice@blazonry.test"); // from mail attr
 
     // session token works on the admin plane
     let s = cli.get(format!("http://{addr}/admin/devices")).header("authorization", format!("Bearer {tok}")).send().await.unwrap().status();
@@ -138,7 +138,7 @@ async fn ldap_flow(tag: &'static str, mode: &'static str) {
 
     // email-style login also accepted (localpart extracted)
     let r: serde_json::Value = cli.post(format!("http://{addr}/admin/login"))
-        .json(&serde_json::json!({"email": "alice@mntr.test", "password": "alicepass"}))
+        .json(&serde_json::json!({"email": "alice@blazonry.test", "password": "alicepass"}))
         .send().await.unwrap().json().await.unwrap();
     assert!(r["token"].is_string());
 
@@ -161,19 +161,19 @@ async fn auth_ldap_search_mode() {
 
 fn oidc_envs(port: u16) -> Vec<(&'static str, String)> {
     vec![
-        ("MNTR_AUTH", "oidc".into()),
-        ("MNTR_OIDC_ISSUER", "http://127.0.0.1:2390".into()),
-        ("MNTR_OIDC_CLIENT_ID", "mntr".into()),
-        ("MNTR_OIDC_CLIENT_SECRET", "mntr-secret".into()),
-        ("MNTR_OIDC_REDIRECT_URI", format!("http://127.0.0.1:{port}/auth/oidc/callback")),
-        ("MNTR_OIDC_ADMIN_EMAILS", "alice@mntr.test".into()),
+        ("BLAZONRY_AUTH", "oidc".into()),
+        ("BLAZONRY_OIDC_ISSUER", "http://127.0.0.1:2390".into()),
+        ("BLAZONRY_OIDC_CLIENT_ID", "blazonry".into()),
+        ("BLAZONRY_OIDC_CLIENT_SECRET", "blazonry-secret".into()),
+        ("BLAZONRY_OIDC_REDIRECT_URI", format!("http://127.0.0.1:{port}/auth/oidc/callback")),
+        ("BLAZONRY_OIDC_ADMIN_EMAILS", "alice@blazonry.test".into()),
     ]
 }
 
 /// Drive the full browser flow with a cookie jar, exactly like a browser:
 /// /auth/oidc/login -> provider interaction -> login form -> callback.
 async fn oidc_browser_login(cli: &reqwest::Client, addr: &str, user: &str, pass: &str) -> Option<String> {
-    // 1. start: mntr redirects to the provider authorize endpoint
+    // 1. start: blazonry redirects to the provider authorize endpoint
     let resp = req_no_redirect(cli, &format!("http://{addr}/auth/oidc/login"), &[]).await;
     assert!(resp.status().is_redirection(), "login start should redirect, got {}", resp.status());
     let authorize_url = resp.headers().get("location").unwrap().to_str().unwrap().to_string();
@@ -208,11 +208,11 @@ async fn oidc_browser_login(cli: &reqwest::Client, addr: &str, user: &str, pass:
     }
     assert!(back.starts_with("http://127.0.0.1:2391/auth/oidc/callback?code="), "callback url: {back}");
 
-    // 4. mntr callback: exchanges code, verifies id_token, issues session
+    // 4. blazonry callback: exchanges code, verifies id_token, issues session
     let resp = req_no_redirect(cli, &back, &[]).await;
     assert!(resp.status().is_redirection(), "callback should redirect to / with a token, got {}", resp.status());
     let loc = resp.headers().get("location").unwrap().to_str().unwrap().to_string();
-    loc.strip_prefix("/#mntr_token=").map(|t| t.to_string())
+    loc.strip_prefix("/#blazonry_token=").map(|t| t.to_string())
 }
 
 #[tokio::test]
@@ -233,14 +233,14 @@ async fn auth_oidc_full_browser_flow() {
     // admin email -> admin role
     let tok = oidc_browser_login(&cli, &addr, "alice", "alicepass").await.expect("oidc flow should complete");
     let me: serde_json::Value = cli.get(format!("http://{addr}/admin/me")).header("authorization", format!("Bearer {tok}")).send().await.unwrap().json().await.unwrap();
-    assert_eq!(me["email"], "alice@mntr.test");
-    assert_eq!(me["role"], "admin"); // via MNTR_OIDC_ADMIN_EMAILS
+    assert_eq!(me["email"], "alice@blazonry.test");
+    assert_eq!(me["role"], "admin"); // via BLAZONRY_OIDC_ADMIN_EMAILS
 
     // non-admin email -> user role
     let cli2 = reqwest::Client::builder().cookie_store(true).redirect(reqwest::redirect::Policy::none()).build().unwrap();
     let tok2 = oidc_browser_login(&cli2, &addr, "bob", "bobpass").await.expect("second oidc flow");
     let me2: serde_json::Value = cli2.get(format!("http://{addr}/admin/me")).header("authorization", format!("Bearer {tok2}")).send().await.unwrap().json().await.unwrap();
-    assert_eq!(me2["email"], "bob@mntr.test");
+    assert_eq!(me2["email"], "bob@blazonry.test");
     assert_eq!(me2["role"], "user");
 
     // replayed callback (same code/state) must be rejected

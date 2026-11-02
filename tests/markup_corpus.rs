@@ -41,16 +41,16 @@ fn corpus_native_render_rate() {
     for path in &files {
         total += 1;
         let src = std::fs::read_to_string(path).unwrap();
-        let rendered = match mntr::template::render_str(&src, &vars) {
+        let rendered = match blazonry::template::render_str(&src, &vars) {
             Ok(r) => r,
             Err(_) => { liquid_err += 1; continue; }
         };
-        match mntr::markup::markup_to_screen(&rendered, "probe") {
+        match blazonry::markup::markup_to_screen(&rendered, "probe") {
             Ok(s) if !s.parts.is_empty() => ok += 1,
             // empty after mapping = JS-driven content (script tags, data-*
             // views, comment-only) — nothing native to render; browser backend
             Ok(_) => browser_required += 1,
-            Err(mntr::markup::Unsupported(what)) => {
+            Err(blazonry::markup::Unsupported(what)) => {
                 if BROWSER_ONLY.contains(&what.as_str()) {
                     browser_required += 1;
                 } else {

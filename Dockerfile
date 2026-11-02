@@ -1,16 +1,16 @@
-# mntr — TRMNL BYOS server (single static binary + SQLite)
+# blazonry — TRMNL BYOS server (single static binary + SQLite)
 #
 # Multi-stage: the builder compiles a fully static musl binary (SQLite is
 # bundled, rustls needs only the system CA bundle), so the runtime stage is
 # `FROM scratch` — final image is ~7 MB compressed.
 #
 # Build (plain docker):
-#   docker build -t mntr .
+#   docker build -t blazonry .
 # Multi-arch (recommended for releases — TRMNL users love Raspberry Pis):
-#   docker buildx build --platform linux/amd64,linux/arm64 -t mntr .
+#   docker buildx build --platform linux/amd64,linux/arm64 -t blazonry .
 #
 # Run:
-#   docker run -d --name mntr -p 2301:2301 -v mntr-data:/data mntr
+#   docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data blazonry
 #   # admin UI: http://localhost:2301/  (device API on the same port)
 
 FROM --platform=$BUILDPLATFORM rust:1.99.1-bookworm AS builder
@@ -40,13 +40,13 @@ RUN set -e; \
       *) echo "unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
     esac; \
     cargo build --release --target "$T"; \
-    cp "target/$T/release/mntr" /mntr
+    cp "target/$T/release/blazonry" /blazonry
 
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder /mntr /mntr
+COPY --from=builder /blazonry /blazonry
 # SQLite DB + rendered screens live here — mount a volume at /data
 VOLUME /data
 ENV RUST_LOG=info
 EXPOSE 2301
-ENTRYPOINT ["/mntr", "serve", "--db", "/data/mntr.db", "--addr", "0.0.0.0:2301"]
+ENTRYPOINT ["/blazonry", "serve", "--db", "/data/blazonry.db", "--addr", "0.0.0.0:2301"]

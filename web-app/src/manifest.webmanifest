@@ -1,7 +1,7 @@
 {
-  "name": "mntr",
-  "short_name": "mntr",
-  "description": "mntr admin — your dashboard stack, on your box",
+  "name": "blazonry",
+  "short_name": "blazonry",
+  "description": "blazonry admin — your dashboard stack, on your box",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -9,7 +9,7 @@
 //!
 //! One browser process is shared (pages are cheap, launches are not); renders
 //! are serialized so a refresh burst can't fork-fest. The browser binary is
-//! located via $MNTR_BROWSER_PATH / $CHROME_PATH / PATH — never downloaded,
+//! located via $BLAZONRY_BROWSER_PATH / $CHROME_PATH / PATH — never downloaded,
 //! never embedded (see issue #14 rationale).
 
 mod assets;
@@ -30,10 +30,10 @@ use chromiumoxide::page::ScreenshotParams;
 use futures_util::StreamExt;
 use std::sync::{Arc, Mutex};
 
-/// Locate a Chromium-family binary. Order: $MNTR_BROWSER_PATH, $CHROME_PATH,
+/// Locate a Chromium-family binary. Order: $BLAZONRY_BROWSER_PATH, $CHROME_PATH,
 /// well-known paths, PATH. Returns None on core-style installs.
 pub fn find_browser() -> Option<String> {
-    for var in ["MNTR_BROWSER_PATH", "CHROME_PATH"] {
+    for var in ["BLAZONRY_BROWSER_PATH", "CHROME_PATH"] {
         if let Ok(p) = std::env::var(var) {
             if std::path::Path::new(&p).exists() {
                 return Some(p);
@@ -162,13 +162,13 @@ impl CdpRenderer {
             let _ = page
                 .evaluate(
                     r#"(() => {
-                        window.__mntrFontsDone = false;
-                        if (!document.fonts) { window.__mntrFontsDone = true; return true; }
+                        window.__blazonryFontsDone = false;
+                        if (!document.fonts) { window.__blazonryFontsDone = true; return true; }
                         const kicks = [];
                         for (const fam of ['TRMNL12','TRMNL16','TRMNL21','Inter Variable'])
                           for (const w of ['normal','bold'])
                             kicks.push(document.fonts.load(w + ' 40px "' + fam + '"', 'MW0').catch(() => {}));
-                        Promise.all(kicks).then(() => { window.__mntrFontsDone = true; });
+                        Promise.all(kicks).then(() => { window.__blazonryFontsDone = true; });
                         return true; })()"#,
                 )
                 .await;
@@ -176,7 +176,7 @@ impl CdpRenderer {
                 + std::time::Duration::from_millis(settle_ms + 5000);
             loop {
                 let done = page
-                    .evaluate("window.__mntrFontsDone === true")
+                    .evaluate("window.__blazonryFontsDone === true")
                     .await
                     .ok()
                     .and_then(|r| r.value().and_then(|v| v.as_bool()))

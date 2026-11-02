@@ -3,7 +3,7 @@
 //!
 //! The framework's `plugins.min.css` is ~19 MB of generated utility CSS; we
 //! embed the Brotli copies (~260 KB) and decompress once into a cache dir at
-//! startup. The browser then loads them from mntr's own loopback server, so
+//! startup. The browser then loads them from blazonry's own loopback server, so
 //! renders work fully offline and never phone home to usetrmnl.com.
 //!
 //! Branding strip: recipe markup that references the TRMNL wordmark
@@ -76,7 +76,7 @@ pub fn rewrite_vendor_urls(markup: &str) -> String {
     }
     // protocol-relative //usetrmnl.com/...
     out = out.replace("//usetrmnl.com/", "/").replace("//trmnl.com/", "/");
-    out = out.replace("images/plugins/trmnl--render.svg", "images/plugins/mntr-blank.svg");
+    out = out.replace("images/plugins/trmnl--render.svg", "images/plugins/blazonry-blank.svg");
     out
 }
 
@@ -94,10 +94,10 @@ impl AssetStore {
             let rel = key.strip_suffix(".br").unwrap_or(key);
             files.insert(format!("/{rel}"), decompress(key)?);
         }
-        // alias: rewritten recipe URLs point at mntr-blank.svg
+        // alias: rewritten recipe URLs point at blazonry-blank.svg
         if let Some(blank) = files.get("/images/plugins/trmnl--render.svg") {
             let b = blank.clone();
-            files.insert("/images/plugins/mntr-blank.svg".into(), b);
+            files.insert("/images/plugins/blazonry-blank.svg".into(), b);
         }
         Ok(Self { files })
     }
@@ -125,7 +125,7 @@ mod tests {
 <img src="//usetrmnl.com/images/grayscale/gray-5.png">"#;
         let out = rewrite_vendor_urls(src);
         assert!(!out.contains("usetrmnl.com"));
-        assert!(out.contains("/images/plugins/mntr-blank.svg"));
+        assert!(out.contains("/images/plugins/blazonry-blank.svg"));
         assert!(out.contains("/js/highcharts/12.3.0/highcharts.js"));
         assert!(out.contains("/images/grayscale/gray-5.png"));
     }

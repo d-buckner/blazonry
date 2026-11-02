@@ -10,7 +10,7 @@
 //!
 //! Scope is deliberate: layout + text + design-system classes render natively;
 //! elements that need the real framework (img, table, svg, progress-bar,
-//! data-overflow) return `Unsupported` so `mntr ext check` can say "use the
+//! data-overflow) return `Unsupported` so `blazonry ext check` can say "use the
 //! browser backend" instead of rendering something wrong.
 
 use crate::screen::{Align, Direction, Node, NodeKind, Screen, Style};

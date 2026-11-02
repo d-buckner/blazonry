@@ -8,9 +8,9 @@
 //! Issue #4 replaces this pass with taffy; keep the assertions, they are the
 //! golden-image seed for that migration.
 
-use mntr::render::Renderer;
-use mntr::screen::Screen;
-use mntr::{HEIGHT, WIDTH};
+use blazonry::render::Renderer;
+use blazonry::screen::Screen;
+use blazonry::{HEIGHT, WIDTH};
 
 fn render(json: &str) -> Vec<u8> {
     let screen: Screen = serde_json::from_str(json).expect("screen json");

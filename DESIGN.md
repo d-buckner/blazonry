@@ -1,4 +1,4 @@
-# DESIGN.md — mntr admin visual system
+# DESIGN.md — blazonry admin visual system
 
 **Status:** direction locked, home/overview prototype built and reviewed.
 **Direction:** *The Bitmap* — restrained register.
@@ -38,7 +38,7 @@ The cream ground is **intentional** — it is the e-ink material, not a default 
 
 Three faces, strict roles:
 
-- **`--display` — Pixelify Sans (bitmap).** Only for: the `mntr` wordmark, and text *inside e-ink screen previews* (the clock, "Good morning", "7:40", "21°", "Today", recently-shown words). Never on admin chrome.
+- **`--display` — Pixelify Sans (bitmap).** Only for: the `blazonry` wordmark, and text *inside e-ink screen previews* (the clock, "Good morning", "7:40", "21°", "Today", recently-shown words). Never on admin chrome.
 - **`--body` — Hanken Grotesk.** All admin chrome: nav, buttons, card titles, section labels, body copy, event names.
 - **`--mono` — JetBrains Mono.** Data and tracked micro-labels: status keys, timecodes, measurements, ids, footer.
 
@@ -86,7 +86,7 @@ The primary button is **ink**, not red. Selection is ink (border + subtle offset
 - **Display card** — hairline border; top row = id + status dot; e-ink preview thumbnail (5:3); name (grotesk) + one-line status; footer `View display →` + dim mono spec. States: `active` (ink dot), `low` (hollow dot), `off` (red dot + red label). Selected = ink border + `3px 3px 0 var(--line)` shadow.
 - **Today rail** — bordered panel; hairline event rows (`time / name + who`); next-up row gets `--paper2` fill + red time + red square. Family legend of initial squares at the foot.
 - **Recently shown** — strip of small e-ink preview tiles (4:3), tracked cap + bitmap word.
-- **Footer** — quiet mono line, bitmap `mntr`.
+- **Footer** — quiet mono line, bitmap `blazonry`.
 
 ## 7. Layout & responsiveness
 
@@ -114,7 +114,7 @@ The primary button is **ink**, not red. Selection is ink (border + subtle offset
 
 The overview is ported and verified against the real backend with seeded data. Deltas from the prototype, all deliberate:
 
-- **Fonts are self-hosted, no Google Fonts.** mntr is offline-first / no cloud round-trip, so the UI must not fetch fonts. The wordmark uses the **real device font TRMNL16-Bold** (vendored in `assets/framework/fonts/`, inlined as base64 `@font-face` at build time in `build.js`). Body = system-ui stack; data = ui-monospace. The prototype's Pixelify/Hanken/JetBrains were demo-only.
+- **Fonts are self-hosted, no Google Fonts.** blazonry is offline-first / no cloud round-trip, so the UI must not fetch fonts. The wordmark uses the **real device font TRMNL16-Bold** (vendored in `assets/framework/fonts/`, inlined as base64 `@font-face` at build time in `build.js`). Body = system-ui stack; data = ui-monospace. The prototype's Pixelify/Hanken/JetBrains were demo-only.
 - **Screen previews are real rendered images**, fetched authed from `/admin/screens/:id/preview` (native renderer output) — the e-ink look is authentic automatically; the dot-field is only the placeholder when a device has no current screen. Required a one-line backend change: `current_screen_id` + `refresh_interval` added to `device_list_json`.
 - **The fictional "Today" calendar and "Recently shown" strip are dropped** — there is no calendar or per-display history in the data model, so inventing them would be dishonest. The right rail is now an **Attention** panel listing offline / low-battery devices (the real "needs attention" items), with a calm "All displays healthy" empty state.
 - **Live state is derived, never fabricated:** online = last poll within `max(2×refresh_interval, 30 min)`; low battery = `voltage < 3.3 V`; needs-attention = offline + low-battery count. Battery shows voltage, not a fake percentage.

@@ -4,10 +4,10 @@
 //! and measure the visual gap.
 //!
 //! Requires: `--features browser` build + a Chromium binary
-//! (MNTR_BROWSER_PATH or CHROME_PATH). Skips cleanly otherwise so default CI
+//! (BLAZONRY_BROWSER_PATH or CHROME_PATH). Skips cleanly otherwise so default CI
 //! is unaffected.
 //!
-//!   MNTR_BROWSER_PATH=/usr/bin/chromium cargo test --features browser \
+//!   BLAZONRY_BROWSER_PATH=/usr/bin/chromium cargo test --features browser \
 //!     --test markup_parity -- --nocapture
 //!
 //! The two backends will never be pixel-identical (font hinting, dither seed),
@@ -17,7 +17,7 @@
 //! spikes MAD, font jitter does not.
 
 #[cfg(feature = "browser")]
-use mntr::backend::RenderBackend;
+use blazonry::backend::RenderBackend;
 
 /// Probe vars (same shape as the corpus probe test).
 #[cfg(feature = "browser")]
@@ -62,8 +62,8 @@ async fn native_vs_browser_parity() {
     }
     #[cfg(feature = "browser")]
     {
-        let Some(chrome) = mntr::browser::find_browser() else {
-            eprintln!("SKIP: no Chromium found (set MNTR_BROWSER_PATH)");
+        let Some(chrome) = blazonry::browser::find_browser() else {
+            eprintln!("SKIP: no Chromium found (set BLAZONRY_BROWSER_PATH)");
             return;
         };
         let dir = std::path::Path::new("/workspace/trmnl-dump/data/markup");
@@ -72,7 +72,7 @@ async fn native_vs_browser_parity() {
             return;
         }
 
-        let browser = mntr::browser::BrowserBackend::launch(&chrome).await.expect("launch browser backend");
+        let browser = blazonry::browser::BrowserBackend::launch(&chrome).await.expect("launch browser backend");
         let vars = probe_vars();
         let vars_json = vars.to_string();
 
@@ -87,11 +87,11 @@ async fn native_vs_browser_parity() {
             if samples.len() >= 12 { break; }
             let src = std::fs::read_to_string(&path).unwrap();
             let globals = liquid::to_object(&vars).unwrap();
-            let Ok(rendered) = mntr::liquid_compat::render_str(&src, &globals) else { continue };
+            let Ok(rendered) = blazonry::liquid_compat::render_str(&src, &globals) else { continue };
             if !rendered.trim_start().starts_with('<') { continue; }
-            if mntr::markup::markup_to_screen(&rendered, "p").is_err() { continue; }
+            if blazonry::markup::markup_to_screen(&rendered, "p").is_err() { continue; }
             // skip near-empty renders (nothing to compare)
-            let screen = mntr::markup::markup_to_screen(&rendered, "p").unwrap();
+            let screen = blazonry::markup::markup_to_screen(&rendered, "p").unwrap();
             if screen.parts.is_empty() { continue; }
             samples.push((path.file_name().unwrap().to_string_lossy().into_owned(), src, rendered));
         }
@@ -100,10 +100,10 @@ async fn native_vs_browser_parity() {
         let mut scores = Vec::new();
         for (name, tmpl, html) in &samples {
             // native: markup -> IR -> dithered BMP (same path as ext render)
-            let screen = mntr::markup::markup_to_screen(html, "parity").unwrap();
-            let renderer = mntr::render::Renderer::new().unwrap();
+            let screen = blazonry::markup::markup_to_screen(html, "parity").unwrap();
+            let renderer = blazonry::render::Renderer::new().unwrap();
             let indices = renderer.render(&screen);
-            let native_bmp = mntr::bmp::encode_2bit_bmp(mntr::WIDTH, mntr::HEIGHT, &indices);
+            let native_bmp = blazonry::bmp::encode_2bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices);
             // browser: same Liquid markup wrapped in the framework shell
             let browser_bmp = browser.render_bmp(tmpl, &vars_json, 2).await.unwrap();
             let d = mad(&bmp_to_levels(&native_bmp), &bmp_to_levels(&browser_bmp));

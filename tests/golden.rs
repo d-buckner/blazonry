@@ -8,8 +8,8 @@
 //! Regenerate deliberately: `UPDATE_GOLDEN=1 cargo test --test golden`
 //! then review the diff of the .bin files (or render them to PNG).
 
-use mntr::render::Renderer;
-use mntr::screen::Screen;
+use blazonry::render::Renderer;
+use blazonry::screen::Screen;
 use std::fs;
 use std::path::Path;
 

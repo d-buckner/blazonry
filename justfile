@@ -1,4 +1,4 @@
-# mntr — local dev
+# blazonry — local dev
 #
 #   just            build the web UI + icons, then serve
 #   just <name>     see `just --list`
@@ -11,7 +11,7 @@ default: serve
 
 # build web UI + icons, then run the server (Ctrl-C to stop)
 serve: web icons
-    @cargo run --quiet {{ if release == "true" { "--release" } else { "" } }} --bin mntr -- serve --addr {{addr}}
+    @cargo run --quiet {{ if release == "true" { "--release" } else { "" } }} --bin blazonry -- serve --addr {{addr}}
 
 # build the embedded web UI (Svelte shell → web/index.html)
 web: deps
@@ -40,11 +40,11 @@ deps:
 
 # build the binary (just release=true build for a release build)
 build: web icons
-    @cargo build {{ if release == "true" { "--release" } else { "" } }} --bin mntr
+    @cargo build {{ if release == "true" { "--release" } else { "" } }} --bin blazonry
 
 # stop a running server
 stop:
-    @pkill -f 'mntr serve' && echo "stopped" || echo "not running"
+    @pkill -f 'blazonry serve' && echo "stopped" || echo "not running"
 
 # run the test suite
 test: web icons
