@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { api } from './api.js';
 import { app, ago, toast } from './store.svelte.js';
 import Dialog from './Dialog.svelte';
+import Empty from './Empty.svelte';
 import PreviewImg from './PreviewImg.svelte';
 
 const EXAMPLE = JSON.stringify({ name: "hello", parts: [
@@ -67,6 +68,7 @@ async function del(id) {
     <h3>Screens</h3><span class="sp"></span>
     <button class="pri" onclick={() => open(null)}>New screen</button>
   </div>
+  {#if rows.length}
   <table>
     <thead><tr><th></th><th>Name</th><th>Updated</th><th></th></tr></thead>
     <tbody>
@@ -80,11 +82,14 @@ async function del(id) {
           <button class="act danger" onclick={() => del(s.id)}>Delete</button>
         </td>
       </tr>
-    {:else}
-      <tr><td colspan="4" class="mut">No screens yet.</td></tr>
     {/each}
     </tbody>
   </table>
+  {:else}
+    <Empty title="No screens yet"
+      blurb="A screen is one picture for your display — a clock, your calendar, a photo. Make one and it shows up here."
+      action="New screen" onaction={() => open(null)} />
+  {/if}
 </div>
 
 <Dialog bind:this={dlg}>

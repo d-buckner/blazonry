@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { api } from './api.js';
 import { app, toast } from './store.svelte.js';
 import Dialog from './Dialog.svelte';
+import Empty from './Empty.svelte';
 
 let rows = $state([]);
 let dlg = $state(null);
@@ -40,6 +41,7 @@ async function del(id) {
     <h3>Device models</h3><span class="sp"></span>
     <button class="pri" onclick={open}>Add model</button>
   </div>
+  {#if rows.length}
   <table>
     <thead><tr><th>Name</th><th>Label</th><th>Size</th><th>Bit depth</th><th></th></tr></thead>
     <tbody>
@@ -54,6 +56,11 @@ async function del(id) {
     {/each}
     </tbody>
   </table>
+  {:else}
+    <Empty title="No device models"
+      blurb="A model describes a screen's size and bit depth so renders come out right. The common ones ship with the server; add one here for anything unusual."
+      action="Add model" onaction={open} />
+  {/if}
 </div>
 
 <Dialog bind:this={dlg}>

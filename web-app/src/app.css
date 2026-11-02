@@ -108,6 +108,21 @@ img.prev { max-width:200px; border:1px solid var(--ln2); border-radius:0; displa
 .ov-btn:hover { transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--ln2) }
 .ov-btn:active { transform:translate(1px,1px); box-shadow:0 0 0 var(--ln2) }
 
+/* empty-state system (#40) — the dither only ever appears inside a screen frame */
+.empty { display:flex; align-items:center; gap:28px; padding:8px 4px }
+.empty-frame { flex:none; width:200px; aspect-ratio:5/3; background:var(--paper2);
+  border:1px solid var(--ln2); display:grid; place-items:center }
+.empty-frame svg { width:78%; height:78%; display:block; fill:var(--ink3) }
+.empty-copy { min-width:0 }
+.empty-copy h3 { font-size:16px; margin-bottom:5px }
+.empty-copy p { font-size:13.5px; color:var(--ink2); line-height:1.5; margin-bottom:12px; max-width:46ch }
+.empty-copy .pri { font-size:13px }
+@media (max-width:640px) { .empty { flex-direction:column; align-items:flex-start; gap:16px } }
+.empty.compact { gap:18px; padding:4px }
+.empty.compact .empty-frame { width:120px }
+.empty.compact .empty-copy h3 { font-size:14px }
+.empty.compact .empty-copy p { font-size:12.5px; margin-bottom:0 }
+
 /* e-ink screen preview — the single home of the dither */
 /* first-run guided setup (#39) */
 .welcome { margin-bottom:28px }

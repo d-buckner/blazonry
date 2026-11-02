@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { api } from './api.js';
 import { app, ago, toast } from './store.svelte.js';
 import Dialog from './Dialog.svelte';
+import Empty from './Empty.svelte';
 import ScreenPreview from './ScreenPreview.svelte';
 
 let rows = $state([]);
@@ -109,7 +110,9 @@ async function del(id) {
           </div>
         </article>
       {:else}
-        <div class="ov-empty" style="grid-column:1/-1">No displays yet — pair one from a TRMNL by pointing it at this server.</div>
+        <Empty title="No displays yet"
+          blurb="A display joins by pointing at this server: on the device, Settings → Server URL → this address. It shows up here the moment it phones home."
+          action="Add display" onaction={() => open(null)} />
       {/each}
     </div>
   </section>

@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { api } from './api.js';
 import { app, ago, toast } from './store.svelte.js';
 import Dialog from './Dialog.svelte';
+import Empty from './Empty.svelte';
 
 let rows = $state([]);
 let dlg = $state(null);
@@ -44,6 +45,7 @@ async function wipe() {
     <button class="act danger" onclick={wipe}>Wipe all</button>
     <button class="pri" onclick={open}>Add firmware</button>
   </div>
+  {#if rows.length}
   <table>
     <thead><tr><th>Version</th><th>URL</th><th>Notes</th><th>Added</th><th></th></tr></thead>
     <tbody>
@@ -55,11 +57,14 @@ async function wipe() {
         <td>{ago(fw.created_at)}</td>
         <td class="acts"><button class="act danger" onclick={() => del(fw.id)}>Delete</button></td>
       </tr>
-    {:else}
-      <tr><td colspan="5" class="mut">No firmware — devices report no update available.</td></tr>
     {/each}
     </tbody>
   </table>
+  {:else}
+    <Empty title="No firmware uploaded"
+      blurb="Devices report their own firmware version, and updates only happen when you upload one here. Nothing to do unless you have a newer build."
+      action="Add firmware" onaction={open} />
+  {/if}
 </div>
 
 <Dialog bind:this={dlg}>
