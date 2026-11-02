@@ -87,7 +87,8 @@ organization, never for a product.
   not export it to other bloud-os products.
 - **Split voice:** admin UI is warm, calm, plain (family surface); README and
   marketing carry the opinionated register. This split is blazonry's, and it
-  survives the move unchanged.
+  survives the move unchanged. Do/don't pairs for UI strings:
+  [`docs/microcopy.md`](docs/microcopy.md).
 
 ## 5. The accent question, decided
 
