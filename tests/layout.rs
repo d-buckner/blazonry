@@ -77,7 +77,10 @@ fn padded_full_width_nodes_stay_inside_the_panel() {
             "{kind} ink started at x={min}, expected >= {}",
             20 - straddle
         );
-        assert!(max < WIDTH, "{kind} ink reached x={max}, expected < {WIDTH}");
+        assert!(
+            max < WIDTH,
+            "{kind} ink reached x={max}, expected < {WIDTH}"
+        );
         assert!(
             max <= 780 + straddle,
             "{kind} ink reached x={max}, expected <= {}",
@@ -95,9 +98,7 @@ fn unpadded_full_width_nodes_span_the_panel() {
 /// `width`/`height` are declared in the vocabulary and were never read.
 #[test]
 fn explicit_width_is_honored() {
-    let (min, max) = ink_cols(&render(&screen_of(
-        r#"{"type":"divider","width":400}"#,
-    )));
+    let (min, max) = ink_cols(&render(&screen_of(r#"{"type":"divider","width":400}"#)));
     assert!(min <= 1, "expected the box to start at 0, ink at {min}");
     assert!(
         (395..=402).contains(&max),
@@ -119,8 +120,16 @@ fn explicit_height_is_honored() {
         .filter(|&y| buf[y * WIDTH..(y + 1) * WIDTH].iter().any(|&v| v <= 1))
         .collect();
     assert!(rows.len() >= 2, "expected two inked rows, got {rows:?}");
-    let gap = rows.iter().zip(rows.iter().skip(1)).map(|(a, b)| b - a).max().unwrap();
-    assert!(gap >= 100, "second divider sat at row offset {gap}, expected >= 100");
+    let gap = rows
+        .iter()
+        .zip(rows.iter().skip(1))
+        .map(|(a, b)| b - a)
+        .max()
+        .unwrap();
+    assert!(
+        gap >= 100,
+        "second divider sat at row offset {gap}, expected >= 100"
+    );
 }
 
 #[test]

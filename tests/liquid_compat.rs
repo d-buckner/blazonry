@@ -106,7 +106,11 @@ fn date_parses_iso8601_with_offset() {
 
 #[test]
 fn date_parses_date_only() {
-    let out = render("{{ t | date: \"%B %-d, %Y\" }}", json!({ "t": "2026-10-30" })).unwrap();
+    let out = render(
+        "{{ t | date: \"%B %-d, %Y\" }}",
+        json!({ "t": "2026-10-30" }),
+    )
+    .unwrap();
     assert_eq!(out, "October 30, 2026");
 }
 
@@ -256,11 +260,7 @@ fn qr_code_emits_inline_svg() {
 
 #[test]
 fn qr_code_accepts_scale_and_level_args() {
-    let out = render(
-        "{{ s | qr_code: 8, \"h\" }}",
-        json!({ "s": "x" }),
-    )
-    .unwrap();
+    let out = render("{{ s | qr_code: 8, \"h\" }}", json!({ "s": "x" })).unwrap();
     assert!(out.contains("<svg"));
 }
 
@@ -268,7 +268,11 @@ fn qr_code_accepts_scale_and_level_args() {
 fn number_with_delimiter() {
     let out = render("{{ n | number_with_delimiter }}", json!({ "n": 1234567 })).unwrap();
     assert_eq!(out, "1,234,567");
-    let out = render("{{ n | number_with_delimiter: \".\" }}", json!({ "n": 1234567.89 })).unwrap();
+    let out = render(
+        "{{ n | number_with_delimiter: \".\" }}",
+        json!({ "n": 1234567.89 }),
+    )
+    .unwrap();
     assert_eq!(out, "1.234.567.89");
 }
 
@@ -282,11 +286,7 @@ fn number_to_currency() {
 fn jsonify_and_parse_json_roundtrip() {
     let out = render("{{ data | jsonify }}", json!({ "data": { "a": 1 } })).unwrap();
     assert_eq!(out, "{\"a\":1}");
-    let out = render(
-        "{{ s | parse_json | json }}",
-        json!({ "s": "{\"a\":1}" }),
-    )
-    .unwrap();
+    let out = render("{{ s | parse_json | json }}", json!({ "s": "{\"a\":1}" })).unwrap();
     assert_eq!(out, "{\"a\":1}");
 }
 
@@ -336,7 +336,8 @@ fn where_exp_string_equality() {
 
 #[test]
 fn where_exp_comparisons() {
-    let items = json!({ "items": [{ "n": "a", "v": 1 }, { "n": "b", "v": 2 }, { "n": "c", "v": 3 }] });
+    let items =
+        json!({ "items": [{ "n": "a", "v": 1 }, { "n": "b", "v": 2 }, { "n": "c", "v": 3 }] });
     let names = |cond: &str| {
         render(
             &format!("{{{{ items | where_exp: \"i\", \"{cond}\" | map: \"n\" | join: \",\" }}}}"),
@@ -400,7 +401,10 @@ fn append_random_appends_hex_token() {
     assert!(out.starts_with("img.png"), "got: {out}");
     let token = &out["img.png".len()..];
     assert!(!token.is_empty() && token.len() <= 8, "got token: {token}");
-    assert!(token.chars().all(|c| c.is_ascii_hexdigit()), "got token: {token}");
+    assert!(
+        token.chars().all(|c| c.is_ascii_hexdigit()),
+        "got token: {token}"
+    );
 }
 
 #[test]

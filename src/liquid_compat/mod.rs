@@ -33,8 +33,8 @@ pub use context::with_trmnl_context;
 
 use std::sync::Arc;
 
-use liquid_core::partials::PartialCompiler;
 use liquid_core::parser::Language;
+use liquid_core::partials::PartialCompiler;
 use liquid_core::runtime::{Renderable, RuntimeBuilder};
 use liquid_lib::stdlib;
 
@@ -55,7 +55,8 @@ fn language() -> Language {
         stdlib::CaptureBlock.into(),
         stdlib::CaseBlock.into(),
     ] {
-        lang.blocks.register(b.reflection().start_tag().to_owned(), b);
+        lang.blocks
+            .register(b.reflection().start_tag().to_owned(), b);
     }
     // stdlib tags (render replaced below)
     for t in [
@@ -71,8 +72,7 @@ fn language() -> Language {
     }
     lang.tags
         .register("render".into(), render_tag::RenderTag.into());
-    lang.tags
-        .register("echo".into(), filters::EchoTag.into());
+    lang.tags.register("echo".into(), filters::EchoTag.into());
     // stdlib filters
     for f in [
         Box::new(stdlib::Abs) as Box<dyn liquid_core::ParseFilter>,

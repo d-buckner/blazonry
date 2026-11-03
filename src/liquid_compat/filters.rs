@@ -30,10 +30,16 @@ use liquid_core::{Language, Renderable, Runtime, TagTokenIter};
 /// and the `now` / `today` keywords.
 pub fn parse_dt(input: &dyn ValueView) -> Option<DateTime<FixedOffset>> {
     if let Some(scalar) = input.as_scalar() {
-        if let Some(n) = scalar.to_float().or_else(|| scalar.to_integer().map(|i| i as f64))
-            && scalar.to_kstr().chars().all(|c| c.is_ascii_digit() || c == '-' || c == '.') {
-                return Utc.timestamp_opt(n as i64, 0).single().map(Into::into);
-            }
+        if let Some(n) = scalar
+            .to_float()
+            .or_else(|| scalar.to_integer().map(|i| i as f64))
+            && scalar
+                .to_kstr()
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '-' || c == '.')
+        {
+            return Utc.timestamp_opt(n as i64, 0).single().map(Into::into);
+        }
         let s = scalar.to_kstr().into_owned();
         match s.trim().to_ascii_lowercase().as_str() {
             "now" | "today" => return Some(Utc::now().into()),
@@ -83,14 +89,15 @@ fn strftime(dt: &DateTime<FixedOffset>, format: &str) -> Result<String, Error> {
         format
     };
     if StrftimeItems::new(format).any(|item| matches!(item, Item::Error)) {
-        return Err(Error::with_msg(format!("date: invalid strftime format `{format}`")));
+        return Err(Error::with_msg(format!(
+            "date: invalid strftime format `{format}`"
+        )));
     }
     Ok(dt.format(format).to_string())
 }
 
 fn date_error(input: &dyn ValueView) -> Error {
-    Error::with_msg("date: unparseable datetime")
-        .context("input", input.to_kstr().into_owned())
+    Error::with_msg("date: unparseable datetime").context("input", input.to_kstr().into_owned())
 }
 
 #[derive(Debug, FilterParameters)]
@@ -132,7 +139,10 @@ impl Filter for DateFilter {
 struct LDateArgs {
     #[parameter(description = "strftime format.", arg_type = "str")]
     format: liquid_core::Expression,
-    #[parameter(description = "BCP-47 locale (accepted, not applied).", arg_type = "str")]
+    #[parameter(
+        description = "BCP-47 locale (accepted, not applied).",
+        arg_type = "str"
+    )]
     locale: Option<liquid_core::Expression>,
 }
 
@@ -189,13 +199,21 @@ impl Filter for LocalTimeFilter {
         let args = self.args.evaluate(runtime)?;
         let dt = parse_dt(input).ok_or_else(|| date_error(input))?;
         let offset = args.offset.unwrap_or(0.0);
-        let offset = FixedOffset::east_opt(offset as i32).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
-        Ok(Value::scalar(strftime(&dt.with_timezone(&offset), args.format.as_str())?))
+        let offset = FixedOffset::east_opt(offset as i32)
+            .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+        Ok(Value::scalar(strftime(
+            &dt.with_timezone(&offset),
+            args.format.as_str(),
+        )?))
     }
 }
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "to_date", description = "Parses a datetime to a date (strict).", parsed(ToDateFilter))]
+#[filter(
+    name = "to_date",
+    description = "Parses a datetime to a date (strict).",
+    parsed(ToDateFilter)
+)]
 pub struct ToDate;
 
 #[derive(Debug, Default, Display_filter)]
@@ -219,7 +237,11 @@ fn to_json_string(input: &dyn ValueView) -> String {
 }
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "jsonify", description = "Serializes the input as compact JSON.", parsed(JsonifyFilter))]
+#[filter(
+    name = "jsonify",
+    description = "Serializes the input as compact JSON.",
+    parsed(JsonifyFilter)
+)]
 pub struct Jsonify;
 
 #[derive(Debug, Default, Display_filter)]
@@ -234,7 +256,11 @@ impl Filter for JsonifyFilter {
 
 /// TRMNL cloud alias for jsonify.
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "json", description = "Serializes the input as compact JSON.", parsed(JsonFilter))]
+#[filter(
+    name = "json",
+    description = "Serializes the input as compact JSON.",
+    parsed(JsonFilter)
+)]
 pub struct JsonFilterParse;
 
 #[derive(Debug, Default, Display_filter)]
@@ -248,7 +274,11 @@ impl Filter for JsonFilter {
 }
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "parse_json", description = "Parses a JSON string into data.", parsed(ParseJsonFilter))]
+#[filter(
+    name = "parse_json",
+    description = "Parses a JSON string into data.",
+    parsed(ParseJsonFilter)
+)]
 pub struct ParseJson;
 
 #[derive(Debug, Default, Display_filter)]
@@ -318,7 +348,11 @@ impl Filter for DelimiterFilter {
             Some((a, b)) => (a.to_string(), format!(".{b}")),
             None => (s.to_string(), String::new()),
         };
-        Ok(Value::scalar(format!("{}{}", group_digits(&int_part, &delim), frac)))
+        Ok(Value::scalar(format!(
+            "{}{}",
+            group_digits(&int_part, &delim),
+            frac
+        )))
     }
 }
 
@@ -356,7 +390,9 @@ impl Filter for CurrencyFilter {
             .and_then(|s| s.to_float().or_else(|| s.to_integer().map(|i| i as f64)))
             .ok_or_else(|| Error::with_msg("number_to_currency: input is not a number"))?;
         let formatted = format!("{n:.2}");
-        let (int_part, frac) = formatted.split_once('.').unwrap_or((formatted.as_str(), "00"));
+        let (int_part, frac) = formatted
+            .split_once('.')
+            .unwrap_or((formatted.as_str(), "00"));
         let grouped = group_digits(int_part, ",");
         Ok(Value::scalar(format!("{unit}{grouped}.{frac}")))
     }
@@ -367,7 +403,11 @@ impl Filter for CurrencyFilter {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "sum", description = "Sums an array of numbers (or a property).", parsed(SumFilter))]
+#[filter(
+    name = "sum",
+    description = "Sums an array of numbers (or a property).",
+    parsed(SumFilter)
+)]
 pub struct Sum;
 
 #[derive(Debug, Default, Display_filter)]
@@ -380,7 +420,10 @@ impl Filter for SumFilter {
         let mut int_only = true;
         if let Some(items) = input.as_array() {
             for item in items.values() {
-                let Some(n) = item.as_scalar().and_then(|s| s.to_float().or_else(|| s.to_integer().map(|i| i as f64))) else {
+                let Some(n) = item
+                    .as_scalar()
+                    .and_then(|s| s.to_float().or_else(|| s.to_integer().map(|i| i as f64)))
+                else {
                     continue;
                 };
                 if n.fract() != 0.0 {
@@ -389,7 +432,11 @@ impl Filter for SumFilter {
                 total += n;
             }
         }
-        if int_only { Ok(Value::scalar(total as i64)) } else { Ok(Value::scalar(total)) }
+        if int_only {
+            Ok(Value::scalar(total as i64))
+        } else {
+            Ok(Value::scalar(total))
+        }
     }
 }
 
@@ -468,13 +515,23 @@ impl Filter for WhereExpFilter {
             .captures(&cond)
             .ok_or_else(|| Error::with_msg(format!("where_exp: unsupported condition `{cond}`")))?;
         let (_, [_, path, op, lit]) = caps.extract();
-        let op = if op == "=>" { ">=" } else if op == "=<" { "<=" } else { op };
-        let items: Vec<Value> = input.as_array().map(|a| a.values().map(|v| v.to_value()).collect())
+        let op = if op == "=>" {
+            ">="
+        } else if op == "=<" {
+            "<="
+        } else {
+            op
+        };
+        let items: Vec<Value> = input
+            .as_array()
+            .map(|a| a.values().map(|v| v.to_value()).collect())
             .unwrap_or_default();
         let kept: Vec<Value> = items
             .into_iter()
             .filter(|item| {
-                let Ok(j) = serde_json::to_value(item) else { return false };
+                let Ok(j) = serde_json::to_value(item) else {
+                    return false;
+                };
                 json_path(&j, path).is_some_and(|v| compare(v, op, lit))
             })
             .collect();
@@ -491,7 +548,11 @@ fn rand_u64() -> u64 {
 }
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "sample", description = "Picks a random element of an array.", parsed(SampleFilter))]
+#[filter(
+    name = "sample",
+    description = "Picks a random element of an array.",
+    parsed(SampleFilter)
+)]
 pub struct Sample;
 
 #[derive(Debug, Default, Display_filter)]
@@ -526,7 +587,11 @@ struct AppendRandomFilter;
 
 impl Filter for AppendRandomFilter {
     fn evaluate(&self, input: &dyn ValueView, _runtime: &dyn Runtime) -> Result<Value> {
-        Ok(Value::scalar(format!("{}{:08x}", input.to_kstr(), (rand_u64() & 0xffff_ffff) as u32)))
+        Ok(Value::scalar(format!(
+            "{}{:08x}",
+            input.to_kstr(),
+            (rand_u64() & 0xffff_ffff) as u32
+        )))
     }
 }
 
@@ -535,7 +600,11 @@ impl Filter for AppendRandomFilter {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "base64_encode", description = "Base64-encodes the input.", parsed(B64EncodeFilter))]
+#[filter(
+    name = "base64_encode",
+    description = "Base64-encodes the input.",
+    parsed(B64EncodeFilter)
+)]
 pub struct Base64Encode;
 
 #[derive(Debug, Default, Display_filter)]
@@ -552,7 +621,11 @@ impl Filter for B64EncodeFilter {
 }
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "base64_decode", description = "Base64-decodes the input.", parsed(B64DecodeFilter))]
+#[filter(
+    name = "base64_decode",
+    description = "Base64-decodes the input.",
+    parsed(B64DecodeFilter)
+)]
 pub struct Base64Decode;
 
 #[derive(Debug, Default, Display_filter)]
@@ -622,7 +695,11 @@ impl Filter for QrFilter {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "trim", description = "Strips surrounding whitespace.", parsed(TrimFilter))]
+#[filter(
+    name = "trim",
+    description = "Strips surrounding whitespace.",
+    parsed(TrimFilter)
+)]
 pub struct Trim;
 
 #[derive(Debug, Default, Display_filter)]
@@ -636,7 +713,11 @@ impl Filter for TrimFilter {
 }
 
 #[derive(Clone, ParseFilter, FilterReflection)]
-#[filter(name = "lowercase", description = "Downcases the input.", parsed(LowercaseFilter))]
+#[filter(
+    name = "lowercase",
+    description = "Downcases the input.",
+    parsed(LowercaseFilter)
+)]
 pub struct Lowercase;
 
 #[derive(Debug, Default, Display_filter)]
@@ -733,8 +814,7 @@ impl Renderable for EchoChain {
             .0
             .evaluate(runtime)
             .trace_with(|| "{% echo %}".to_owned().into())?;
-        write!(writer, "{}", value.to_kstr())
-            .map_err(|e| Error::with_msg(format!("echo: {e}")))
+        write!(writer, "{}", value.to_kstr()).map_err(|e| Error::with_msg(format!("echo: {e}")))
     }
 }
 

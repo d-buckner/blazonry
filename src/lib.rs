@@ -14,9 +14,9 @@ pub mod api;
 pub mod auth;
 pub mod auth_core;
 pub mod backend;
+pub mod bmp;
 #[cfg(feature = "browser")]
 pub mod browser;
-pub mod bmp;
 pub mod cache;
 pub mod db;
 pub mod dither;
@@ -28,9 +28,9 @@ pub mod markup;
 pub mod models;
 pub mod playlists;
 pub mod providers;
-pub mod screens;
 pub mod render;
 pub mod screen;
+pub mod screens;
 pub mod template;
 
 pub use screen::Screen;

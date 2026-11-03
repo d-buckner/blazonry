@@ -71,12 +71,22 @@ pub const SHELL: &str = r#"<!DOCTYPE html>
 /// - the TRMNL wordmark asset -> blank placeholder (branding strip)
 pub fn rewrite_vendor_urls(markup: &str) -> String {
     let mut out = markup.to_string();
-    for host in ["https://usetrmnl.com", "http://usetrmnl.com", "https://trmnl.com", "http://trmnl.com"] {
+    for host in [
+        "https://usetrmnl.com",
+        "http://usetrmnl.com",
+        "https://trmnl.com",
+        "http://trmnl.com",
+    ] {
         out = out.replace(host, "");
     }
     // protocol-relative //usetrmnl.com/...
-    out = out.replace("//usetrmnl.com/", "/").replace("//trmnl.com/", "/");
-    out = out.replace("images/plugins/trmnl--render.svg", "images/plugins/blazonry-blank.svg");
+    out = out
+        .replace("//usetrmnl.com/", "/")
+        .replace("//trmnl.com/", "/");
+    out = out.replace(
+        "images/plugins/trmnl--render.svg",
+        "images/plugins/blazonry-blank.svg",
+    );
     out
 }
 
@@ -114,7 +124,11 @@ mod tests {
     #[test]
     fn plugins_css_decompresses_and_is_big() {
         let css = decompress("css/latest/plugins.min.css.br").unwrap();
-        assert!(css.len() > 10_000_000, "css should expand to ~19MB, got {}", css.len());
+        assert!(
+            css.len() > 10_000_000,
+            "css should expand to ~19MB, got {}",
+            css.len()
+        );
         assert!(css.starts_with(b"@layer") || css.windows(6).any(|w| w == b"@layer"));
     }
 

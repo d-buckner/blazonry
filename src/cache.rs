@@ -53,7 +53,11 @@ pub struct Backends {
 impl Backends {
     pub fn native_only() -> anyhow::Result<Self> {
         let native: Arc<dyn RenderBackend> = std::sync::Arc::new(NativeBackend::new()?);
-        Ok(Self { native: native.clone(), browser: None, default: native })
+        Ok(Self {
+            native: native.clone(),
+            browser: None,
+            default: native,
+        })
     }
 
     /// Resolve the backend for a screen preference ("native" | "browser" | "").
@@ -78,22 +82,45 @@ pub fn new_cache() -> BmpCache {
 }
 
 /// Render one screen template+vars to BMP bytes at the given depth (1 or 2 bpp).
-pub async fn render_bmp(backend: &dyn RenderBackend, template: &str, vars_json: &str, bpp: u16) -> anyhow::Result<Vec<u8>> {
+pub async fn render_bmp(
+    backend: &dyn RenderBackend,
+    template: &str,
+    vars_json: &str,
+    bpp: u16,
+) -> anyhow::Result<Vec<u8>> {
     backend.render_bmp(template, vars_json, bpp).await
 }
 
 /// Load + render a screen from the DB, inserting into the cache.
-pub async fn render_and_cache(pool: &SqlitePool, backends: &Backends, cache: &BmpCache, screen_id: i64, bpp: u16) -> anyhow::Result<Arc<Vec<u8>>> {
+pub async fn render_and_cache(
+    pool: &SqlitePool,
+    backends: &Backends,
+    cache: &BmpCache,
+    screen_id: i64,
+    bpp: u16,
+) -> anyhow::Result<Arc<Vec<u8>>> {
     let (template, vars, pref) = crate::screens::template_vars_backend(pool, screen_id).await?;
     let backend = backends.for_pref(&pref);
     let bmp = Arc::new(render_bmp(backend.as_ref(), &template, &vars, bpp).await?);
     let hash = content_hash(&template, &vars, backend.name());
-    cache.write().await.insert((screen_id, bpp), Entry { bmp: bmp.clone(), hash });
+    cache.write().await.insert(
+        (screen_id, bpp),
+        Entry {
+            bmp: bmp.clone(),
+            hash,
+        },
+    );
     Ok(bmp)
 }
 
 /// Get BMP for a screen: cache hit or render-on-miss.
-pub async fn cached_bmp(pool: &SqlitePool, backends: &Backends, cache: &BmpCache, screen_id: i64, bpp: u16) -> anyhow::Result<Arc<Vec<u8>>> {
+pub async fn cached_bmp(
+    pool: &SqlitePool,
+    backends: &Backends,
+    cache: &BmpCache,
+    screen_id: i64,
+    bpp: u16,
+) -> anyhow::Result<Arc<Vec<u8>>> {
     if let Some(e) = cache.read().await.get(&(screen_id, bpp)) {
         return Ok(e.bmp.clone());
     }
@@ -108,7 +135,12 @@ pub async fn invalidate(cache: &BmpCache, screen_id: i64) {
 /// Background job loop: periodically re-render every screen so the cache is
 /// warm and (later) fresh with live vars. Unchanged content (hash match) is
 /// carried over without re-rendering — essential for the browser backend.
-pub fn spawn_job_loop(pool: SqlitePool, backends: Backends, cache: BmpCache, interval: std::time::Duration) -> tokio::task::JoinHandle<()> {
+pub fn spawn_job_loop(
+    pool: SqlitePool,
+    backends: Backends,
+    cache: BmpCache,
+    interval: std::time::Duration,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(interval);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -116,7 +148,10 @@ pub fn spawn_job_loop(pool: SqlitePool, backends: Backends, cache: BmpCache, int
             tick.tick().await;
             let ids = match crate::screens::all_ids(&pool).await {
                 Ok(v) => v,
-                Err(e) => { tracing::warn!(%e, "job loop: screen list failed"); continue; }
+                Err(e) => {
+                    tracing::warn!(%e, "job loop: screen list failed");
+                    continue;
+                }
             };
             let mut fresh: HashMap<(i64, u16), Entry> = HashMap::new();
             let mut skipped = 0usize;
@@ -127,17 +162,36 @@ pub fn spawn_job_loop(pool: SqlitePool, backends: Backends, cache: BmpCache, int
                         let hash = content_hash(&template, &vars, backend.name());
                         for bpp in [1u16, 2u16] {
                             // unchanged content: carry the previous render over
-                            let hit = cache.read().await.get(&(id, bpp))
+                            let hit = cache
+                                .read()
+                                .await
+                                .get(&(id, bpp))
                                 .filter(|e| e.hash == hash)
                                 .map(|e| e.bmp.clone());
                             if let Some(bmp) = hit {
-                                fresh.insert((id, bpp), Entry { bmp, hash: hash.clone() });
+                                fresh.insert(
+                                    (id, bpp),
+                                    Entry {
+                                        bmp,
+                                        hash: hash.clone(),
+                                    },
+                                );
                                 skipped += 1;
                                 continue;
                             }
                             match render_bmp(backend.as_ref(), &template, &vars, bpp).await {
-                                Ok(bmp) => { fresh.insert((id, bpp), Entry { bmp: Arc::new(bmp), hash: hash.clone() }); }
-                                Err(e) => tracing::warn!(%e, screen = id, backend = backend.name(), "job loop: render failed"),
+                                Ok(bmp) => {
+                                    fresh.insert(
+                                        (id, bpp),
+                                        Entry {
+                                            bmp: Arc::new(bmp),
+                                            hash: hash.clone(),
+                                        },
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(%e, screen = id, backend = backend.name(), "job loop: render failed")
+                                }
                             }
                         }
                     }
@@ -146,7 +200,11 @@ pub fn spawn_job_loop(pool: SqlitePool, backends: Backends, cache: BmpCache, int
             }
             let n = fresh.len();
             *cache.write().await = fresh;
-            tracing::debug!(screens = n, skipped_unchanged = skipped, "job loop: cache refreshed");
+            tracing::debug!(
+                screens = n,
+                skipped_unchanged = skipped,
+                "job loop: cache refreshed"
+            );
         }
     })
 }

@@ -21,7 +21,11 @@ pub struct Unsupported(pub String);
 
 impl std::fmt::Display for Unsupported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} requires the browser backend (not expressible natively)", self.0)
+        write!(
+            f,
+            "{} requires the browser backend (not expressible natively)",
+            self.0
+        )
     }
 }
 impl std::error::Error for Unsupported {}
@@ -94,8 +98,14 @@ fn is_variant_prefixed(class: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 enum Token<'a> {
-    Open { tag: &'a str, attrs: Vec<(&'a str, &'a str)>, self_closing: bool },
-    Close { tag: &'a str },
+    Open {
+        tag: &'a str,
+        attrs: Vec<(&'a str, &'a str)>,
+        self_closing: bool,
+    },
+    Close {
+        tag: &'a str,
+    },
     Text(&'a str),
 }
 
@@ -138,7 +148,9 @@ fn tokenize(src: &str) -> Vec<Token<'_>> {
             let mut attrs = Vec::new();
             let mut self_closing = false;
             loop {
-                while j < b.len() && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b'\r') {
+                while j < b.len()
+                    && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b'\r')
+                {
                     j += 1;
                 }
                 if j >= b.len() {
@@ -154,7 +166,12 @@ fn tokenize(src: &str) -> Vec<Token<'_>> {
                     break;
                 }
                 let an_start = j;
-                while j < b.len() && b[j] != b'=' && b[j] != b'>' && !b[j].is_ascii_whitespace() && !(b[j] == b'/' && b.get(j + 1) == Some(&b'>')) {
+                while j < b.len()
+                    && b[j] != b'='
+                    && b[j] != b'>'
+                    && !b[j].is_ascii_whitespace()
+                    && !(b[j] == b'/' && b.get(j + 1) == Some(&b'>'))
+                {
                     j += 1;
                 }
                 let name = &src[an_start..j];
@@ -189,7 +206,15 @@ fn tokenize(src: &str) -> Vec<Token<'_>> {
                     attrs.push((name, ""));
                 }
             }
-            out.push(if closing { Token::Close { tag } } else { Token::Open { tag, attrs, self_closing } });
+            out.push(if closing {
+                Token::Close { tag }
+            } else {
+                Token::Open {
+                    tag,
+                    attrs,
+                    self_closing,
+                }
+            });
             text_start = j;
             i = j;
         } else {
@@ -242,7 +267,10 @@ impl<'a> El<'a> {
         self.classes.contains(&c)
     }
     fn class_starting_with(&self, p: &str) -> Option<&'a str> {
-        self.classes.iter().find(|x| x.starts_with(p) && !is_variant_prefixed(x)).map(|x| &x[p.len()..])
+        self.classes
+            .iter()
+            .find(|x| x.starts_with(p) && !is_variant_prefixed(x))
+            .map(|x| &x[p.len()..])
     }
 }
 
@@ -251,13 +279,22 @@ fn build_tree<'a>(tokens: Vec<Token<'a>>) -> Result<Vec<El<'a>>, Unsupported> {
     let mut stack: Vec<El<'a>> = Vec::new();
     for tok in tokens {
         match tok {
-            Token::Open { tag, attrs, self_closing } => {
+            Token::Open {
+                tag,
+                attrs,
+                self_closing,
+            } => {
                 let classes = attrs
                     .iter()
                     .find(|(k, _)| *k == "class")
                     .map(|(_, v)| v.split_whitespace().collect())
                     .unwrap_or_default();
-                let el = El { tag, classes, children: Vec::new(), text: String::new() };
+                let el = El {
+                    tag,
+                    classes,
+                    children: Vec::new(),
+                    text: String::new(),
+                };
                 if self_closing {
                     match stack.last_mut() {
                         Some(parent) => parent.children.push(el),
@@ -284,7 +321,12 @@ fn build_tree<'a>(tokens: Vec<Token<'a>>) -> Result<Vec<El<'a>>, Unsupported> {
                     None => {
                         let trimmed = decoded.trim();
                         if !trimmed.is_empty() {
-                            root_children.push(El { tag: "#text", classes: vec![], children: vec![], text: trimmed.to_string() });
+                            root_children.push(El {
+                                tag: "#text",
+                                classes: vec![],
+                                children: vec![],
+                                text: trimmed.to_string(),
+                            });
                         }
                     }
                 }
@@ -334,36 +376,88 @@ fn map_el(el: &El, inh: Inherited) -> Result<Option<Node>, Unsupported> {
         let size_suffix = el
             .classes
             .iter()
-            .find_map(|c| c.strip_prefix(role).and_then(|rest| rest.strip_prefix("--")))
+            .find_map(|c| {
+                c.strip_prefix(role)
+                    .and_then(|rest| rest.strip_prefix("--"))
+            })
             .filter(|c| !is_variant_prefixed(c))
             .unwrap_or("");
         let font_px = role_font(role, size_suffix).unwrap_or_else(|| role_font(role, "").unwrap());
         // titles read bold on the panel (framework weight + our font pair)
-        let style = Style { font_px, fg: inh.fg, bg: inh.bg, bold: role == "title" };
+        let style = Style {
+            font_px,
+            fg: inh.fg,
+            bg: inh.bg,
+            bold: role == "title",
+        };
         let text = collapse_ws(&el.text);
-        let mut node = Node { style, padding: [0.0; 4], gap: 0.0, align: Align::Start, grow: 0.0, width: None, height: None, border: false, kind: NodeKind::Text { text } };
+        let mut node = Node {
+            style,
+            padding: [0.0; 4],
+            gap: 0.0,
+            align: Align::Start,
+            grow: 0.0,
+            width: None,
+            height: None,
+            border: false,
+            kind: NodeKind::Text { text },
+        };
         apply_common(el, &mut node);
         return Ok(Some(node));
     }
 
     // bare text node
     if el.tag == "#text" {
-        let style = Style { fg: inh.fg, bg: inh.bg, ..Default::default() };
-        let mut node = Node { style, padding: [0.0; 4], gap: 0.0, align: Align::Start, grow: 0.0, width: None, height: None, border: false, kind: NodeKind::Text { text: collapse_ws(&el.text) } };
+        let style = Style {
+            fg: inh.fg,
+            bg: inh.bg,
+            ..Default::default()
+        };
+        let mut node = Node {
+            style,
+            padding: [0.0; 4],
+            gap: 0.0,
+            align: Align::Start,
+            grow: 0.0,
+            width: None,
+            height: None,
+            border: false,
+            kind: NodeKind::Text {
+                text: collapse_ws(&el.text),
+            },
+        };
         apply_common(el, &mut node);
         return Ok(Some(node));
     }
 
     // divider
     if el.tag == "hr" || el.has("divider") {
-        let style = Style { fg: inh.fg, bg: inh.bg, ..Default::default() };
-        let mut node = Node { style, padding: [0.0; 4], gap: 0.0, align: Align::Start, grow: 0.0, width: None, height: None, border: false, kind: NodeKind::Divider };
+        let style = Style {
+            fg: inh.fg,
+            bg: inh.bg,
+            ..Default::default()
+        };
+        let mut node = Node {
+            style,
+            padding: [0.0; 4],
+            gap: 0.0,
+            align: Align::Start,
+            grow: 0.0,
+            width: None,
+            height: None,
+            border: false,
+            kind: NodeKind::Divider,
+        };
         apply_common(el, &mut node);
         return Ok(Some(node));
     }
 
     // container (div/span/flex/layout/grid/columns/column/title_bar/content/item)
-    let mut style = Style { fg: inh.fg, bg: inh.bg, ..Default::default() };
+    let mut style = Style {
+        fg: inh.fg,
+        bg: inh.bg,
+        ..Default::default()
+    };
 
     let direction = if el.has("flex--col") || el.has("layout--col") || el.has("column") {
         Direction::Column
@@ -381,7 +475,9 @@ fn map_el(el: &El, inh: Inherited) -> Result<Option<Node>, Unsupported> {
     // bg inversion: bg--black paints black ground; text inside turns white
     let child_inh = if el.has("bg--black") {
         style.bg = 0;
-        if style.fg == 0 { style.fg = 3; }
+        if style.fg == 0 {
+            style.fg = 3;
+        }
         Inherited { fg: 3, bg: 0 }
     } else if el.has("bg--gray") {
         style.bg = 2;
@@ -395,8 +491,24 @@ fn map_el(el: &El, inh: Inherited) -> Result<Option<Node>, Unsupported> {
 
     let mut children = Vec::new();
     if !el.text.trim().is_empty() {
-        let style = Style { fg: child_inh.fg, bg: child_inh.bg, ..Default::default() };
-        children.push(Node { style, padding: [0.0; 4], gap: 0.0, align: Align::Start, grow: 0.0, width: None, height: None, border: false, kind: NodeKind::Text { text: collapse_ws(&el.text) } });
+        let style = Style {
+            fg: child_inh.fg,
+            bg: child_inh.bg,
+            ..Default::default()
+        };
+        children.push(Node {
+            style,
+            padding: [0.0; 4],
+            gap: 0.0,
+            align: Align::Start,
+            grow: 0.0,
+            width: None,
+            height: None,
+            border: false,
+            kind: NodeKind::Text {
+                text: collapse_ws(&el.text),
+            },
+        });
     }
     for child in &el.children {
         if let Some(mut n) = map_el(child, child_inh)? {
@@ -409,7 +521,20 @@ fn map_el(el: &El, inh: Inherited) -> Result<Option<Node>, Unsupported> {
     if children.is_empty() {
         return Ok(None);
     }
-    let mut node = Node { style, padding: [0.0; 4], gap: 0.0, align: Align::Start, grow: 0.0, width: None, height: None, border: false, kind: NodeKind::Flex { direction, children } };
+    let mut node = Node {
+        style,
+        padding: [0.0; 4],
+        gap: 0.0,
+        align: Align::Start,
+        grow: 0.0,
+        width: None,
+        height: None,
+        border: false,
+        kind: NodeKind::Flex {
+            direction,
+            children,
+        },
+    };
     apply_common(el, &mut node);
     Ok(Some(node))
 }
@@ -426,7 +551,12 @@ fn apply_common(el: &El, node: &mut Node) {
     if el.has("grow") {
         node.grow = 1.0;
     }
-    if el.has("flex--center") || el.has("flex--center-y") || el.has("align--center") || el.has("text--center") || el.has("col--center") {
+    if el.has("flex--center")
+        || el.has("flex--center-y")
+        || el.has("align--center")
+        || el.has("text--center")
+        || el.has("col--center")
+    {
         node.align = Align::Center;
     }
     if el.has("flex--right") || el.has("text--right") {
@@ -454,7 +584,10 @@ pub fn markup_to_screen(html: &str, name: &str) -> Result<Screen, Unsupported> {
             parts.push(n);
         }
     }
-    Ok(Screen { name: name.to_string(), parts })
+    Ok(Screen {
+        name: name.to_string(),
+        parts,
+    })
 }
 
 #[cfg(test)]
@@ -462,12 +595,18 @@ mod tests {
     use super::*;
 
     fn kinds(s: &Screen) -> Vec<String> {
-        s.parts.iter().map(|p| match &p.kind {
-            NodeKind::Text { text } => format!("text:{text}"),
-            NodeKind::Flex { direction, children } => format!("flex({:?}):{}", direction, children.len()),
-            NodeKind::Divider => "divider".into(),
-            _ => "other".into(),
-        }).collect()
+        s.parts
+            .iter()
+            .map(|p| match &p.kind {
+                NodeKind::Text { text } => format!("text:{text}"),
+                NodeKind::Flex {
+                    direction,
+                    children,
+                } => format!("flex({:?}):{}", direction, children.len()),
+                NodeKind::Divider => "divider".into(),
+                _ => "other".into(),
+            })
+            .collect()
     }
 
     #[test]
@@ -478,7 +617,13 @@ mod tests {
         </div>"#;
         let s = markup_to_screen(html, "t").unwrap();
         assert_eq!(s.parts.len(), 1);
-        let NodeKind::Flex { direction, children } = &s.parts[0].kind else { panic!() };
+        let NodeKind::Flex {
+            direction,
+            children,
+        } = &s.parts[0].kind
+        else {
+            panic!()
+        };
         assert_eq!(*direction, Direction::Column);
         assert_eq!(children.len(), 2);
         assert_eq!(children[0].style.font_px, 30.0); // title--large
@@ -491,7 +636,9 @@ mod tests {
     fn bg_black_inverts_children() {
         let html = r#"<div class="flex flex--col bg--black"><span class="value value--xxlarge">72°</span></div>"#;
         let s = markup_to_screen(html, "t").unwrap();
-        let NodeKind::Flex { children, .. } = &s.parts[0].kind else { panic!() };
+        let NodeKind::Flex { children, .. } = &s.parts[0].kind else {
+            panic!()
+        };
         assert_eq!(s.parts[0].style.bg, 0);
         assert_eq!(children[0].style.fg, 3);
         assert_eq!(children[0].style.font_px, 96.0);
@@ -501,7 +648,9 @@ mod tests {
     fn grid_children_grow() {
         let html = r#"<div class="grid grid--cols-3"><div class="col"><span class="label">a</span></div><div class="col"><span class="label">b</span></div></div>"#;
         let s = markup_to_screen(html, "t").unwrap();
-        let NodeKind::Flex { children, .. } = &s.parts[0].kind else { panic!() };
+        let NodeKind::Flex { children, .. } = &s.parts[0].kind else {
+            panic!()
+        };
         assert!(children.iter().all(|c| c.grow == 1.0));
     }
 
@@ -524,7 +673,9 @@ mod tests {
         // lg: and portrait: variants must not change native (single-viewport) mapping
         let html = r#"<span class="title lg:title--xxlarge portrait:title--small">x</span>"#;
         let s = markup_to_screen(html, "t").unwrap();
-        let NodeKind::Text { .. } = &s.parts[0].kind else { panic!() };
+        let NodeKind::Text { .. } = &s.parts[0].kind else {
+            panic!()
+        };
         assert_eq!(s.parts[0].style.font_px, 21.0); // base title
     }
 }

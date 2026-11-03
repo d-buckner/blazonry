@@ -7,12 +7,14 @@
 use anyhow::{Context, Result};
 use blazonry::browser::CdpRenderer;
 use blazonry::dither::floyd_steinberg_4;
-use blazonry::{bmp, HEIGHT, WIDTH};
+use blazonry::{HEIGHT, WIDTH, bmp};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
-    let html_path = args.next().context("usage: browser_demo <recipe.html> <out_prefix>")?;
+    let html_path = args
+        .next()
+        .context("usage: browser_demo <recipe.html> <out_prefix>")?;
     let prefix = args.next().unwrap_or_else(|| "browser_out".into());
     let chrome = std::env::var("BLAZONRY_BROWSER_PATH")
         .or_else(|_| std::env::var("CHROME_PATH"))

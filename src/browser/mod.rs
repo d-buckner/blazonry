@@ -15,15 +15,15 @@
 mod assets;
 pub mod assets_data;
 
-pub use assets::{rewrite_vendor_urls, AssetStore, SHELL};
+pub use assets::{AssetStore, SHELL, rewrite_vendor_urls};
 
 use crate::backend::RenderBackend;
 use anyhow::{Context, Result};
+use axum::Router;
 use axum::extract::{Path as AxPath, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::Router;
 use chromiumoxide::browser::{Browser, BrowserConfig};
 use chromiumoxide::cdp::browser_protocol::page::{CaptureScreenshotFormat, Viewport};
 use chromiumoxide::page::ScreenshotParams;
@@ -52,7 +52,13 @@ pub fn find_browser() -> Option<String> {
             return Some((*c).to_string());
         }
     }
-    for name in ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"] {
+    for name in [
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+        "chrome",
+    ] {
         if let Ok(out) = std::process::Command::new("which").arg(name).output() {
             if out.status.success() {
                 let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -82,31 +88,38 @@ impl CdpRenderer {
         let slot: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 
         let app = Router::new()
-            .route("/page.html", get({
-                let slot = slot.clone();
-                move || {
-                    let slot = slot.clone();
-                    async move {
-                        let html = slot.lock().unwrap().clone();
-                        ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
-                    }
-                }
-            }))
             .route(
-                "/{*path}",
-                get(|AxPath(p): AxPath<String>, State(store): State<Arc<AssetStore>>| async move {
-                    match store.get(&format!("/{p}")) {
-                        Some(bytes) => (
-                            [(header::CONTENT_TYPE, assets::content_type(&p))],
-                            bytes.to_vec(),
-                        )
-                            .into_response(),
-                        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+                "/page.html",
+                get({
+                    let slot = slot.clone();
+                    move || {
+                        let slot = slot.clone();
+                        async move {
+                            let html = slot.lock().unwrap().clone();
+                            ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
+                        }
                     }
                 }),
             )
+            .route(
+                "/{*path}",
+                get(
+                    |AxPath(p): AxPath<String>, State(store): State<Arc<AssetStore>>| async move {
+                        match store.get(&format!("/{p}")) {
+                            Some(bytes) => (
+                                [(header::CONTENT_TYPE, assets::content_type(&p))],
+                                bytes.to_vec(),
+                            )
+                                .into_response(),
+                            None => (StatusCode::NOT_FOUND, "not found").into_response(),
+                        }
+                    },
+                ),
+            )
             .with_state(store);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.context("bind asset server")?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("bind asset server")?;
         let addr = listener.local_addr()?;
         tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
@@ -149,7 +162,11 @@ impl CdpRenderer {
     /// Render any URL (http/file/data) to the greyscale buffer.
     pub async fn render_url(&self, url: &str, settle_ms: u64) -> Result<Vec<u8>> {
         let page = self.browser.new_page(url).await.context("new page")?;
-        let nav = tokio::time::timeout(std::time::Duration::from_secs(20), page.wait_for_navigation()).await;
+        let nav = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            page.wait_for_navigation(),
+        )
+        .await;
         if nav.is_err() {
             tracing::warn!("browser render: navigation timed out, capturing anyway");
         }
@@ -172,8 +189,8 @@ impl CdpRenderer {
                         return true; })()"#,
                 )
                 .await;
-            let deadline = tokio::time::Instant::now()
-                + std::time::Duration::from_millis(settle_ms + 5000);
+            let deadline =
+                tokio::time::Instant::now() + std::time::Duration::from_millis(settle_ms + 5000);
             loop {
                 let done = page
                     .evaluate("window.__blazonryFontsDone === true")
@@ -244,7 +261,9 @@ pub struct BrowserBackend {
 
 impl BrowserBackend {
     pub async fn launch(chrome_path: &str) -> Result<Self> {
-        Ok(Self { renderer: Arc::new(CdpRenderer::launch(chrome_path).await?) })
+        Ok(Self {
+            renderer: Arc::new(CdpRenderer::launch(chrome_path).await?),
+        })
     }
 }
 
@@ -254,7 +273,12 @@ impl RenderBackend for BrowserBackend {
         "browser"
     }
 
-    async fn render_bmp(&self, template: &str, vars_json: &str, bpp: u16) -> anyhow::Result<Vec<u8>> {
+    async fn render_bmp(
+        &self,
+        template: &str,
+        vars_json: &str,
+        bpp: u16,
+    ) -> anyhow::Result<Vec<u8>> {
         let vars = crate::backend::parse_vars(vars_json);
         // Recipes emit HTML fragments (not the JSON screen tree): render the
         // Liquid to text, feed the browser directly.
@@ -267,7 +291,3 @@ impl RenderBackend for BrowserBackend {
         })
     }
 }
-
-
-
-

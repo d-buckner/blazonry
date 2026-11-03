@@ -15,9 +15,9 @@ use crate::screen::{Align, Direction, Node, NodeKind, Screen};
 use crate::{HEIGHT, WIDTH};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use taffy::prelude::*;
-use taffy::{compute_leaf_layout, LayoutInput};
 use taffy::geometry::Rect as TaffyRect;
+use taffy::prelude::*;
+use taffy::{LayoutInput, compute_leaf_layout};
 use tiny_skia::{Color, ColorU8, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
 const GREYS: [f32; 4] = [0.0, 0.333, 0.667, 1.0];
@@ -30,7 +30,10 @@ const KEYED_GAP: f32 = 24.0;
 /// embedded bytes → system DejaVu paths (for builds that strip assets).
 const EMBEDDED: [(&str, &[u8]); 2] = [
     ("regular", include_bytes!("../assets/fonts/DejaVuSans.ttf")),
-    ("bold", include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf")),
+    (
+        "bold",
+        include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf"),
+    ),
 ];
 
 const SYSTEM: [(&str, &[&str]); 2] = [
@@ -150,7 +153,10 @@ impl Renderer {
                 Style {
                     display: Display::Flex,
                     flex_direction: FlexDirection::Column,
-                    size: Size { width: length::<f32, Dimension>(WIDTH as f32), height: auto() },
+                    size: Size {
+                        width: length::<f32, Dimension>(WIDTH as f32),
+                        height: auto(),
+                    },
                     ..Default::default()
                 },
                 &[],
@@ -162,19 +168,25 @@ impl Renderer {
         let mut registry: Vec<*const Node> = Vec::new();
         let mut wrappers: Vec<NodeId> = Vec::with_capacity(screen.parts.len());
         {
-            fn build(taffy: &mut TaffyTree<usize>, node: &Node, registry: &mut Vec<*const Node>, top_level: bool) -> NodeId {
+            fn build(
+                taffy: &mut TaffyTree<usize>,
+                node: &Node,
+                registry: &mut Vec<*const Node>,
+                top_level: bool,
+            ) -> NodeId {
                 let style = node_style(node, top_level);
                 match &node.kind {
                     NodeKind::Flex { children, .. } => {
-                        let kids: Vec<NodeId> =
-                            children.iter().map(|c| build(taffy, c, registry, false)).collect();
+                        let kids: Vec<NodeId> = children
+                            .iter()
+                            .map(|c| build(taffy, c, registry, false))
+                            .collect();
                         taffy.new_with_children(style, &kids).expect("flex node")
                     }
                     _ => {
                         let idx = registry.len();
                         registry.push(node as *const Node);
-                        taffy.new_leaf_with_context(style, idx)
-                            .expect("leaf node")
+                        taffy.new_leaf_with_context(style, idx).expect("leaf node")
                     }
                 }
             }
@@ -201,9 +213,12 @@ impl Renderer {
                     let node: &Node = ctx
                         .and_then(|c| registry.get(*c).map(|p| unsafe { &**p }))
                         .unwrap_or(&EMPTY_NODE);
-                    compute_leaf_layout(inputs, style, |_, v| v, |_known, _avail| {
-                        self.leaf_measure(node)
-                    })
+                    compute_leaf_layout(
+                        inputs,
+                        style,
+                        |_, v| v,
+                        |_known, _avail| self.leaf_measure(node),
+                    )
                 },
             )
             .expect("taffy layout");
@@ -227,26 +242,52 @@ impl Renderer {
         match &node.kind {
             NodeKind::Text { text } => {
                 let (w, h) = self.measure_text(text, node);
-                Size { width: w, height: h }
+                Size {
+                    width: w,
+                    height: h,
+                }
             }
             NodeKind::KeyedValue { key, value } => {
                 let (kw, kh) = self.measure_text(key, node);
                 let (vw, vh) = self.measure_text(value, node);
-                Size { width: kw + vw + KEYED_GAP, height: kh.max(vh) }
+                Size {
+                    width: kw + vw + KEYED_GAP,
+                    height: kh.max(vh),
+                }
             }
-            NodeKind::Divider => Size { width: 0.0, height: 2.0 },
-            NodeKind::Progress { .. } => Size { width: 0.0, height: 28.0 },
-            NodeKind::Bars { .. } => Size { width: 0.0, height: 140.0 },
-            NodeKind::Flex { .. } => Size { width: 0.0, height: 0.0 },
+            NodeKind::Divider => Size {
+                width: 0.0,
+                height: 2.0,
+            },
+            NodeKind::Progress { .. } => Size {
+                width: 0.0,
+                height: 28.0,
+            },
+            NodeKind::Bars { .. } => Size {
+                width: 0.0,
+                height: 140.0,
+            },
+            NodeKind::Flex { .. } => Size {
+                width: 0.0,
+                height: 0.0,
+            },
         }
     }
 
     fn font_for(&self, node: &Node) -> &fontdue::Font {
-        if node.style.bold { &self.bold } else { &self.font }
+        if node.style.bold {
+            &self.bold
+        } else {
+            &self.font
+        }
     }
 
     fn measure_text(&self, text: &str, node: &Node) -> (f32, f32) {
-        let key = (text.to_string(), node.style.font_px.to_bits(), node.style.bold);
+        let key = (
+            text.to_string(),
+            node.style.font_px.to_bits(),
+            node.style.bold,
+        );
         if let Some(&m) = self.text_cache.lock().expect("text cache").get(&key) {
             return m;
         }
@@ -301,11 +342,16 @@ impl Renderer {
             fill_rect(pm, x, y, w, h, grey_color(node.style.bg));
         }
         if node.border {
-            let stroke = Stroke { width: 1.0, ..Default::default() };
+            let stroke = Stroke {
+                width: 1.0,
+                ..Default::default()
+            };
             let mut p = Paint::default();
             p.set_color(fg);
             let mut pb = PathBuilder::new();
-            if let Some(r) = Rect::from_xywh(x + 0.5, y + 0.5, (w - 1.0).max(1.0), (h - 1.0).max(1.0)) {
+            if let Some(r) =
+                Rect::from_xywh(x + 0.5, y + 0.5, (w - 1.0).max(1.0), (h - 1.0).max(1.0))
+            {
                 pb.push_rect(r);
                 if let Some(path) = pb.finish() {
                     pm.stroke_path(&path, &p, &stroke, Transform::default(), None);
@@ -335,7 +381,10 @@ impl Renderer {
                 {
                     pm.fill_rect(r, &p, Transform::default(), None);
                 }
-                let s = Stroke { width: 1.0, ..Default::default() };
+                let s = Stroke {
+                    width: 1.0,
+                    ..Default::default()
+                };
                 let mut pb = PathBuilder::new();
                 if let Some(frame) = Rect::from_xywh(ix, iy + 6.0, iw, 16.0) {
                     pb.push_rect(frame);
@@ -396,7 +445,10 @@ impl Renderer {
                     if px_x < 0 || px_y < 0 {
                         continue;
                     }
-                    if let Some(p) = pm.pixels_mut().get_mut(px_y as usize * WIDTH + px_x as usize) {
+                    if let Some(p) = pm
+                        .pixels_mut()
+                        .get_mut(px_y as usize * WIDTH + px_x as usize)
+                    {
                         let bg = p.red() as u32;
                         let v = (bg * (255 - cov) + grey as u32 * cov) / 255;
                         *p = ColorU8::from_rgba(v as u8, v as u8, v as u8, 255).premultiply();
@@ -419,7 +471,9 @@ static EMPTY_NODE: std::sync::LazyLock<Node> = std::sync::LazyLock::new(|| Node 
     width: None,
     height: None,
     border: false,
-    kind: NodeKind::Text { text: String::new() },
+    kind: NodeKind::Text {
+        text: String::new(),
+    },
 });
 
 /// Taffy style for a vocabulary node (flex containers and leaves alike).
@@ -448,11 +502,13 @@ fn node_style(node: &Node, top_level: bool) -> Style {
                 Direction::Row => FlexDirection::Row,
                 Direction::Column => FlexDirection::Column,
             };
-            s.gap = Size::<LengthPercentage> { width: length(node.gap), height: length(node.gap) };
+            s.gap = Size::<LengthPercentage> {
+                width: length(node.gap),
+                height: length(node.gap),
+            };
             // The old pass gave every top-level part a full-width box; a
             // nested row only fills its parent when it has growing children.
-            let wants_full_width = node.width.is_none()
-                && (top_level || children_have_grow(node));
+            let wants_full_width = node.width.is_none() && (top_level || children_have_grow(node));
             if wants_full_width {
                 s.align_self = Some(AlignSelf::STRETCH);
             }
@@ -491,7 +547,10 @@ fn wrapper_style(part: &Node) -> Style {
     Style {
         display: Display::Flex,
         flex_direction: FlexDirection::Column,
-        size: Size { width: length::<f32, Dimension>(WIDTH as f32), height: auto() },
+        size: Size {
+            width: length::<f32, Dimension>(WIDTH as f32),
+            height: auto(),
+        },
         align_items: items(part.align),
         ..Default::default()
     }

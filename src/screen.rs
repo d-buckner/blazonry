@@ -33,13 +33,24 @@ pub struct Style {
     pub bold: bool,
 }
 
-fn default_fg() -> u8 { 0 }
-fn default_bg() -> u8 { 3 }
-fn default_font_px() -> f32 { 24.0 }
+fn default_fg() -> u8 {
+    0
+}
+fn default_bg() -> u8 {
+    3
+}
+fn default_font_px() -> f32 {
+    24.0
+}
 
 impl Default for Style {
     fn default() -> Self {
-        Style { fg: default_fg(), bg: default_bg(), font_px: default_font_px(), bold: false }
+        Style {
+            fg: default_fg(),
+            bg: default_bg(),
+            font_px: default_font_px(),
+            bold: false,
+        }
     }
 }
 
@@ -94,13 +105,19 @@ pub enum NodeKind {
     /// Text line. Supports `{{var}}` already resolved by Liquid.
     Text { text: String },
     /// Flex container.
-    Flex { direction: Direction, children: Vec<Node> },
+    Flex {
+        direction: Direction,
+        children: Vec<Node>,
+    },
     /// Horizontal rule.
     Divider,
     /// key/value row — the workhorse of TRMNL screens.
     KeyedValue { key: String, value: String },
     /// Simple vertical bar chart.
-    Bars { values: Vec<f32>, labels: Vec<String> },
+    Bars {
+        values: Vec<f32>,
+        labels: Vec<String>,
+    },
     /// Progress bar 0.0..=1.0
     Progress { value: f32 },
 }

@@ -13,10 +13,10 @@
 use crate::api::SharedState;
 use crate::extensions;
 use crate::providers;
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 type Err = (StatusCode, String);
 type Res = Result<Json<Value>, Err>;
@@ -33,18 +33,31 @@ pub async fn list_providers(State(st): State<SharedState>) -> Res {
 }
 
 pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
-    let kind = b.get("kind").and_then(|v| v.as_str()).ok_or_else(|| bad("kind required"))?;
+    let kind = b
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| bad("kind required"))?;
     let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("calendar");
-    let config = b.get("config").cloned().unwrap_or(Value::Object(Default::default()));
+    let config = b
+        .get("config")
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
     // Validate the config through the provider registry — bad config fails
     // here, not at render time.
     providers::validate_config(kind, &config).map_err(|e| bad(e.to_string()))?;
-    let refresh_secs = b.get("refresh_secs").and_then(|v| v.as_i64())
-        .unwrap_or(providers::DEFAULT_REFRESH_SECS).max(60);
-    let id = providers::create(&st.pool, kind, name, &config, refresh_secs).await.map_err(err)?;
+    let refresh_secs = b
+        .get("refresh_secs")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(providers::DEFAULT_REFRESH_SECS)
+        .max(60);
+    let id = providers::create(&st.pool, kind, name, &config, refresh_secs)
+        .await
+        .map_err(err)?;
     // First refresh inline so the admin sees success/failure immediately.
     let refresh = providers::refresh_provider(&st.pool, id).await;
-    let mut out = providers::get(&st.pool, id).await.map_err(err)?
+    let mut out = providers::get(&st.pool, id)
+        .await
+        .map_err(err)?
         .ok_or_else(|| err("provider vanished after create"))?;
     out["last_item_count"] = json!(refresh.as_ref().ok().map(|r| r.items).unwrap_or(0));
     if let Err(e) = refresh {
@@ -58,24 +71,35 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
 }
 
 pub async fn get_provider(State(st): State<SharedState>, Path(id): Path<i64>) -> Res {
-    let mut out = providers::get(&st.pool, id).await.map_err(err)?
+    let mut out = providers::get(&st.pool, id)
+        .await
+        .map_err(err)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "unknown provider".into()))?;
     out["item_count"] = json!(providers::snapshot_items(&st.pool, id).await.map_err(err)?);
     Ok(Json(out))
 }
 
-pub async fn patch_provider(State(st): State<SharedState>, Path(id): Path<i64>, Json(b): Json<Value>) -> Res {
+pub async fn patch_provider(
+    State(st): State<SharedState>,
+    Path(id): Path<i64>,
+    Json(b): Json<Value>,
+) -> Res {
     if !providers::exists(&st.pool, id).await.map_err(err)? {
         return Err((StatusCode::NOT_FOUND, "unknown provider".into()));
     }
     let name = b.get("name").and_then(|v| v.as_str());
-    let secs = b.get("refresh_secs").and_then(|v| v.as_i64()).map(|s| s.max(60));
+    let secs = b
+        .get("refresh_secs")
+        .and_then(|v| v.as_i64())
+        .map(|s| s.max(60));
     let config = b.get("config");
     if let Some(config) = config {
         let kind = providers::kind_of(&st.pool, id).await.map_err(err)?;
         providers::validate_config(&kind, config).map_err(|e| bad(e.to_string()))?;
     }
-    providers::patch(&st.pool, id, name, secs, config).await.map_err(err)?;
+    providers::patch(&st.pool, id, name, secs, config)
+        .await
+        .map_err(err)?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -91,12 +115,23 @@ pub async fn refresh_provider_now(State(st): State<SharedState>, Path(id): Path<
             // Shape-scoped: a manual refresh repaints only screens consuming
             // this provider's shape (and only if content changed).
             let mut shapes: std::collections::HashSet<String> = Default::default();
-            if r.changed { shapes.insert(r.shape); }
+            if r.changed {
+                shapes.insert(r.shape);
+            }
             if !shapes.is_empty()
-                && let Err(e) = extensions::rebuild_extensions_shapes(&st.pool, &st.backends, &st.cache, &shapes).await {
+                && let Err(e) = extensions::rebuild_extensions_shapes(
+                    &st.pool,
+                    &st.backends,
+                    &st.cache,
+                    &shapes,
+                )
+                .await
+            {
                 tracing::warn!(%e, "extension rebuild after refresh failed");
             }
-            Ok(Json(json!({ "ok": true, "items": r.items, "changed": r.changed })))
+            Ok(Json(
+                json!({ "ok": true, "items": r.items, "changed": r.changed }),
+            ))
         }
         Err(e) => Ok(Json(json!({ "ok": false, "error": e.to_string() }))),
     }
@@ -109,7 +144,10 @@ pub async fn list_extensions(State(st): State<SharedState>) -> Res {
 }
 
 pub async fn create_extension(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
-    let kind = b.get("kind").and_then(|v| v.as_str()).ok_or_else(|| bad("kind required"))?;
+    let kind = b
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| bad("kind required"))?;
     let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("Calendar");
     let settings = b.get("settings").cloned().unwrap_or(json!({}));
     match extensions::create(&st.pool, &st.backends, &st.cache, kind, name, settings).await {
@@ -118,12 +156,18 @@ pub async fn create_extension(State(st): State<SharedState>, Json(b): Json<Value
     }
 }
 
-pub async fn patch_extension(State(st): State<SharedState>, Path(id): Path<i64>, Json(b): Json<Value>) -> Res {
+pub async fn patch_extension(
+    State(st): State<SharedState>,
+    Path(id): Path<i64>,
+    Json(b): Json<Value>,
+) -> Res {
     if !extensions::exists(&st.pool, id).await.map_err(err)? {
         return Err((StatusCode::NOT_FOUND, "unknown extension".into()));
     }
     if let Some(name) = b.get("name").and_then(|v| v.as_str()) {
-        extensions::set_name(&st.pool, id, name).await.map_err(err)?;
+        extensions::set_name(&st.pool, id, name)
+            .await
+            .map_err(err)?;
     }
     if let Some(settings) = b.get("settings") {
         // Re-validate cardinality on settings change (explicit picks must
@@ -136,14 +180,25 @@ pub async fn patch_extension(State(st): State<SharedState>, Path(id): Path<i64>,
             let kind = extensions::kind_of(&st.pool, id).await.map_err(err)?;
             match extensions::consumes_shape(&kind) {
                 Some(shape) => {
-                    if !providers::ids_with_shape_exist(&st.pool, shape, &ids).await.map_err(err)? {
-                        return Err(bad(format!("provider_ids contains unknown or non-{shape} providers")));
+                    if !providers::ids_with_shape_exist(&st.pool, shape, &ids)
+                        .await
+                        .map_err(err)?
+                    {
+                        return Err(bad(format!(
+                            "provider_ids contains unknown or non-{shape} providers"
+                        )));
                     }
                 }
-                None => return Err(bad("this extension kind consumes no providers; provider_ids is not applicable")),
+                None => {
+                    return Err(bad(
+                        "this extension kind consumes no providers; provider_ids is not applicable",
+                    ));
+                }
             }
         }
-        extensions::set_settings(&st.pool, id, settings).await.map_err(err)?;
+        extensions::set_settings(&st.pool, id, settings)
+            .await
+            .map_err(err)?;
     }
     if let Err(e) = extensions::rebuild_extensions(&st.pool, &st.backends, &st.cache).await {
         tracing::warn!(%e, "extension rebuild after patch failed");

@@ -28,19 +28,24 @@ const SHELL: &str = r#"<!DOCTYPE html>
 
 /// Minimal static file server (framework public/ dir) on an ephemeral port.
 async fn serve_static(dir: std::path::PathBuf) -> Result<SocketAddr> {
-    use axum::{extract::Path as AxPath, http::StatusCode, response::IntoResponse, routing::get, Router};
+    use axum::{
+        Router, extract::Path as AxPath, http::StatusCode, response::IntoResponse, routing::get,
+    };
     let app = Router::new().route(
         "/{*path}",
-        get(|AxPath(p): AxPath<String>, axum::extract::State(dir): axum::extract::State<std::path::PathBuf>| async move {
-            let safe: std::path::PathBuf = p
-                .split('/')
-                .filter(|s| *s != ".." && !s.is_empty())
-                .collect();
-            match tokio::fs::read(dir.join(&safe)).await {
-                Ok(bytes) => bytes.into_response(),
-                Err(_) => (StatusCode::NOT_FOUND, format!("missing {p}")).into_response(),
-            }
-        }),
+        get(
+            |AxPath(p): AxPath<String>,
+             axum::extract::State(dir): axum::extract::State<std::path::PathBuf>| async move {
+                let safe: std::path::PathBuf = p
+                    .split('/')
+                    .filter(|s| *s != ".." && !s.is_empty())
+                    .collect();
+                match tokio::fs::read(dir.join(&safe)).await {
+                    Ok(bytes) => bytes.into_response(),
+                    Err(_) => (StatusCode::NOT_FOUND, format!("missing {p}")).into_response(),
+                }
+            },
+        ),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -62,7 +67,9 @@ async fn main() -> Result<()> {
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
-        let (flag, mut inline) = a.split_once('=').map_or((a.as_str(), None), |(f, v)| (f, Some(v)));
+        let (flag, mut inline) = a
+            .split_once('=')
+            .map_or((a.as_str(), None), |(f, v)| (f, Some(v)));
         let mut val = || -> Result<String> {
             Ok(match inline.take() {
                 Some(v) => v.to_string(),
@@ -79,16 +86,20 @@ async fn main() -> Result<()> {
             other => anyhow::bail!("unknown arg {other}"),
         }
     }
-    anyhow::ensure!(!id.is_empty() && !prefix.is_empty(), "--id and --out required");
+    anyhow::ensure!(
+        !id.is_empty() && !prefix.is_empty(),
+        "--id and --out required"
+    );
     let dump = dump.context("--dump")?;
     let chrome = std::env::var("BLAZONRY_BROWSER_PATH")
         .or_else(|_| std::env::var("CHROME_PATH"))
         .context("set BLAZONRY_BROWSER_PATH")?;
 
     // 1. Load real recipe markup + render its Liquid through blazonry's engine.
-    let markup_path = dump.join("markup").join(format!("{id}__markup_full.liquid"));
-    let src = std::fs::read_to_string(&markup_path)
-        .with_context(|| format!("markup for {id}"))?;
+    let markup_path = dump
+        .join("markup")
+        .join(format!("{id}__markup_full.liquid"));
+    let src = std::fs::read_to_string(&markup_path).with_context(|| format!("markup for {id}"))?;
     let html_body = blazonry::template::render_str(&src, &vars).context("liquid render")?;
 
     // 2. Wrap in the framework shell and serve over localhost (font CORS).
@@ -119,15 +130,30 @@ async fn main() -> Result<()> {
     let grey = renderer.render_url(&url, settle_ms).await?;
     let render_ms = t0.elapsed().as_millis();
 
-    let grey_img = image::GrayImage::from_vec(blazonry::WIDTH as u32, blazonry::HEIGHT as u32, grey.clone()).unwrap();
+    let grey_img = image::GrayImage::from_vec(
+        blazonry::WIDTH as u32,
+        blazonry::HEIGHT as u32,
+        grey.clone(),
+    )
+    .unwrap();
     grey_img.save(format!("{prefix}_grey.png"))?;
 
     let indices = blazonry::dither::floyd_steinberg_4(&grey, blazonry::WIDTH, blazonry::HEIGHT);
-    let grey4: Vec<u8> = indices.iter().map(|&i| blazonry::bmp::LEVELS[i as usize]).collect();
-    image::GrayImage::from_vec(blazonry::WIDTH as u32, blazonry::HEIGHT as u32, grey4).unwrap()
+    let grey4: Vec<u8> = indices
+        .iter()
+        .map(|&i| blazonry::bmp::LEVELS[i as usize])
+        .collect();
+    image::GrayImage::from_vec(blazonry::WIDTH as u32, blazonry::HEIGHT as u32, grey4)
+        .unwrap()
         .save(format!("{prefix}_dither.png"))?;
-    std::fs::write(format!("{prefix}_1bit.bmp"), blazonry::bmp::encode_1bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices))?;
-    std::fs::write(format!("{prefix}_2bit.bmp"), blazonry::bmp::encode_2bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices))?;
+    std::fs::write(
+        format!("{prefix}_1bit.bmp"),
+        blazonry::bmp::encode_1bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices),
+    )?;
+    std::fs::write(
+        format!("{prefix}_2bit.bmp"),
+        blazonry::bmp::encode_2bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices),
+    )?;
 
     println!("recipe {id}: render_ms={render_ms} url={url}");
     Ok(())
