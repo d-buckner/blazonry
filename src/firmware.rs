@@ -26,8 +26,8 @@ pub async fn get(pool: &SqlitePool, id: i64) -> Result<Option<Value>, sqlx::Erro
 
 /// Newest row: (version, url, notes).
 pub async fn latest(pool: &SqlitePool) -> Result<Option<(String, String, String)>, sqlx::Error> {
-    Ok(sqlx::query_as("SELECT version, url, notes FROM firmware ORDER BY id DESC LIMIT 1")
-        .fetch_optional(pool).await?)
+    sqlx::query_as("SELECT version, url, notes FROM firmware ORDER BY id DESC LIMIT 1")
+        .fetch_optional(pool).await
 }
 
 pub async fn create(pool: &SqlitePool, version: &str, url: &str, notes: &str) -> Result<i64, sqlx::Error> {

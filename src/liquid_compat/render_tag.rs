@@ -107,7 +107,7 @@ fn parse_pairs(arguments: &mut TagTokenIter<'_>, vars: &mut Vec<(String, Express
             .expect_next("expected value")?
             .expect_value()
             .into_result()?;
-        vars.push((id.into(), val));
+        vars.push((id, val));
         token = match arguments.next() {
             Some(t) if t.as_str() == "," => arguments.next(),
             other => other,
@@ -191,8 +191,8 @@ impl Renderable for Render {
         partial
             .render_to(writer, &scope)
             .trace_with(|| format!("{{% render {name} %}}").into())
-            .context_key_with(|| name.clone().into())
-            .value_with(|| name.clone().into())
+            .context_key_with(|| name.clone())
+            .value_with(|| name.clone())
     }
 }
 

@@ -30,11 +30,10 @@ use liquid_core::{Language, Renderable, Runtime, TagTokenIter};
 /// and the `now` / `today` keywords.
 pub fn parse_dt(input: &dyn ValueView) -> Option<DateTime<FixedOffset>> {
     if let Some(scalar) = input.as_scalar() {
-        if let Some(n) = scalar.to_float().or_else(|| scalar.to_integer().map(|i| i as f64)) {
-            if scalar.to_kstr().chars().all(|c| c.is_ascii_digit() || c == '-' || c == '.') {
+        if let Some(n) = scalar.to_float().or_else(|| scalar.to_integer().map(|i| i as f64))
+            && scalar.to_kstr().chars().all(|c| c.is_ascii_digit() || c == '-' || c == '.') {
                 return Utc.timestamp_opt(n as i64, 0).single().map(Into::into);
             }
-        }
         let s = scalar.to_kstr().into_owned();
         match s.trim().to_ascii_lowercase().as_str() {
             "now" | "today" => return Some(Utc::now().into()),
@@ -449,12 +448,12 @@ fn compare(jv: &serde_json::Value, op: &str, lit: &str) -> bool {
         (serde_json::Value::Null, _) => Some("".cmp(lit_str)),
         _ => None,
     };
-    match (ord, op) {
+    matches!(
+        (ord, op),
         (Some(std::cmp::Ordering::Less), "<" | "<=" | "!=")
-        | (Some(std::cmp::Ordering::Greater), ">" | ">=" | "!=")
-        | (Some(std::cmp::Ordering::Equal), "=" | "==" | ">=" | "<=") => true,
-        _ => false,
-    }
+            | (Some(std::cmp::Ordering::Greater), ">" | ">=" | "!=")
+            | (Some(std::cmp::Ordering::Equal), "=" | "==" | ">=" | "<=")
+    )
 }
 
 impl Filter for WhereExpFilter {

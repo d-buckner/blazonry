@@ -80,6 +80,12 @@ impl PendingOidc {
     }
 }
 
+impl Default for PendingOidc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Build the provider authorize URL (state + PKCE + nonce generated and
 /// remembered in `pending`). The handler turns this into a redirect.
 pub async fn start_login(cfg: &OidcCfg, pending: &PendingOidc) -> Result<String, OidcError> {

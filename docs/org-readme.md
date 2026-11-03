@@ -51,7 +51,9 @@ conflict and will not be merged. A product's accent only ever carries meaning
 
 ## Licensing stance
 
-Bloud itself is currently closed source while its products ship open
-(AGPL-3.0 + commercial dual-license). That's a deliberate mix: copyleft keeps
-modified network services open, dual-licensing keeps commercial embedding
-possible. We say it plainly when asked.
+Everything in this house is AGPL-3.0: the engine, the catalog, the products.
+Copyleft keeps modified network services open and keeps community catalog
+contributions compounding in one repo instead of fragmenting into forks. A
+commercial dual-license keeps white-label embedding possible without anyone
+forking. The paid part is the Mesh subscription — multi-host coordination —
+never a feature of the free single host. We say it plainly when asked.

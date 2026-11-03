@@ -112,12 +112,15 @@ fn is_stretchy(kind: &NodeKind) -> bool {
     )
 }
 
+/// Cached text advance: (width, height) per (text, px, bold) key.
+type TextAdvance = (f32, f32);
+
 pub struct Renderer {
     font: fontdue::Font,
     bold: fontdue::Font,
     /// taffy may measure the same leaf repeatedly (min/max-content passes);
     /// fontdue rasterizes per call, so cache advances per (text, px, bold).
-    text_cache: Mutex<HashMap<(String, u32, bool), (f32, f32)>>,
+    text_cache: Mutex<HashMap<(String, u32, bool), TextAdvance>>,
 }
 
 impl Renderer {
@@ -298,8 +301,7 @@ impl Renderer {
             fill_rect(pm, x, y, w, h, grey_color(node.style.bg));
         }
         if node.border {
-            let mut stroke = Stroke::default();
-            stroke.width = 1.0;
+            let stroke = Stroke { width: 1.0, ..Default::default() };
             let mut p = Paint::default();
             p.set_color(fg);
             let mut pb = PathBuilder::new();
@@ -333,8 +335,7 @@ impl Renderer {
                 {
                     pm.fill_rect(r, &p, Transform::default(), None);
                 }
-                let mut s = Stroke::default();
-                s.width = 1.0;
+                let s = Stroke { width: 1.0, ..Default::default() };
                 let mut pb = PathBuilder::new();
                 if let Some(frame) = Rect::from_xywh(ix, iy + 6.0, iw, 16.0) {
                     pb.push_rect(frame);
@@ -470,8 +471,8 @@ fn node_style(node: &Node, top_level: bool) -> Style {
             }
         }
     }
-    s.size.width = node.width.map(|w| length::<f32, Dimension>(w)).unwrap_or(auto());
-    s.size.height = node.height.map(|h| length::<f32, Dimension>(h)).unwrap_or(auto());
+    s.size.width = node.width.map(length::<f32, Dimension>).unwrap_or(auto());
+    s.size.height = node.height.map(length::<f32, Dimension>).unwrap_or(auto());
     s
 }
 

@@ -104,7 +104,7 @@ async fn ldap_flow(tag: &'static str, mode: &'static str) {
     let r: serde_json::Value = cli.post(format!("http://{addr}/admin/login"))
         .json(&serde_json::json!({"username": "alice", "password": "alicepass"}))
         .send().await.unwrap().json().await.unwrap();
-    let tok = r["token"].as_str().expect(&format!("login should succeed, got {r}")).to_string();
+    let tok = r["token"].as_str().unwrap_or_else(|| panic!("login should succeed, got {r}")).to_string();
     assert_eq!(r["role"], "admin");
     assert_eq!(r["email"], "alice@blazonry.test"); // from mail attr
 
@@ -189,7 +189,7 @@ async fn oidc_browser_login(cli: &reqwest::Client, addr: &str, user: &str, pass:
     assert_eq!(resp.status(), 200); // login form
 
     // 3. submit credentials
-    let resp = cli.post(&format!("{interaction_url}/login"))
+    let resp = cli.post(format!("{interaction_url}/login"))
         .form(&[("uid", user), ("pw", pass)])
         .send().await.unwrap();
     assert!(resp.status().is_redirection(), "provider should redirect back with a code, got {}", resp.status());
@@ -271,7 +271,7 @@ async fn auth_oidc_bad_credentials_rejected() {
     let interaction = resp.headers().get("location").unwrap().to_str().unwrap().to_string();
     let interaction_url = format!("http://127.0.0.1:2390{interaction}");
     let _ = req_no_redirect(&cli, &interaction_url, &[]).await;
-    let resp = cli.post(&format!("{interaction_url}/login")).form(&[("uid", "alice"), ("pw", "WRONG")]).send().await.unwrap();
+    let resp = cli.post(format!("{interaction_url}/login")).form(&[("uid", "alice"), ("pw", "WRONG")]).send().await.unwrap();
     assert_eq!(resp.status(), 401);
     // and no session was created: /admin/me without token still 401
     let s = cli.get(format!("http://{addr}/admin/me")).send().await.unwrap().status();

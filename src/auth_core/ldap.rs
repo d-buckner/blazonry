@@ -77,12 +77,10 @@ pub fn ldap_verify(cfg: &LdapCfg, username: &str, password: &str) -> anyhow::Res
     if r.rc != 0 { anyhow::bail!("ldap bind rejected (rc {})", r.rc); }
     // template mode: read the email attr from the user's own entry (post-bind,
     // scope=base — reading one's own entry is universally permitted)
-    if email.is_none() && cfg.bind_dn_template.is_some() {
-        if let Ok(res) = ldap.search(&dn, Scope::Base, "(objectClass=*)", vec![cfg.email_attr.as_str()]) {
-            if let Some(entry) = res.0.into_iter().next().map(ldap3::SearchEntry::construct) {
+    if email.is_none() && cfg.bind_dn_template.is_some()
+        && let Ok(res) = ldap.search(&dn, Scope::Base, "(objectClass=*)", vec![cfg.email_attr.as_str()])
+            && let Some(entry) = res.0.into_iter().next().map(ldap3::SearchEntry::construct) {
                 email = entry.attrs.get(&cfg.email_attr).and_then(|v| v.first()).cloned().filter(|s| !s.is_empty());
             }
-        }
-    }
     Ok(email.unwrap_or(fallback_email))
 }
