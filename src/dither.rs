@@ -64,7 +64,10 @@ mod tests {
         let out = floyd_steinberg_4(&src, 64, 64);
         let ones = out.iter().filter(|&&v| v == 1).count();
         let twos = out.iter().filter(|&&v| v == 2).count();
-        assert!(ones > 100 && twos > 100, "expected dither mix, got {ones}/{twos}");
+        assert!(
+            ones > 100 && twos > 100,
+            "expected dither mix, got {ones}/{twos}"
+        );
         assert!(out.iter().all(|&v| v <= 3));
     }
 }

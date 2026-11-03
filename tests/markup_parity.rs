@@ -34,7 +34,9 @@ fn probe_vars() -> serde_json::Value {
 /// loading through `image` and quantizing.
 #[cfg(feature = "browser")]
 fn bmp_to_levels(bytes: &[u8]) -> Vec<u8> {
-    let img = image::load_from_memory(bytes).expect("decode bmp").to_luma8();
+    let img = image::load_from_memory(bytes)
+        .expect("decode bmp")
+        .to_luma8();
     img.pixels()
         .map(|p| match p.0[0] {
             v if v < 64 => 0,
@@ -49,7 +51,11 @@ fn bmp_to_levels(bytes: &[u8]) -> Vec<u8> {
 #[cfg(feature = "browser")]
 fn mad(a: &[u8], b: &[u8]) -> f64 {
     let n = a.len().min(b.len());
-    let sum: u32 = a[..n].iter().zip(&b[..n]).map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs()).sum();
+    let sum: u32 = a[..n]
+        .iter()
+        .zip(&b[..n])
+        .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs())
+        .sum();
     sum as f64 / (n as f64 * 3.0)
 }
 
@@ -72,28 +78,46 @@ async fn native_vs_browser_parity() {
             return;
         }
 
-        let browser = blazonry::browser::BrowserBackend::launch(&chrome).await.expect("launch browser backend");
+        let browser = blazonry::browser::BrowserBackend::launch(&chrome)
+            .await
+            .expect("launch browser backend");
         let vars = probe_vars();
         let vars_json = vars.to_string();
 
         // Sample: recipes that render natively (the parity claim only covers
         // those). Take a bounded sample so the test stays under a few minutes.
         let mut samples: Vec<(String, String, String)> = Vec::new();
-        let files: Vec<_> = std::fs::read_dir(dir).unwrap()
-            .filter_map(|e| e.ok()).map(|e| e.path())
+        let files: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
             .filter(|p| p.to_string_lossy().ends_with("__markup_full.liquid"))
             .collect();
         for path in files {
-            if samples.len() >= 12 { break; }
+            if samples.len() >= 12 {
+                break;
+            }
             let src = std::fs::read_to_string(&path).unwrap();
             let globals = liquid::to_object(&vars).unwrap();
-            let Ok(rendered) = blazonry::liquid_compat::render_str(&src, &globals) else { continue };
-            if !rendered.trim_start().starts_with('<') { continue; }
-            if blazonry::markup::markup_to_screen(&rendered, "p").is_err() { continue; }
+            let Ok(rendered) = blazonry::liquid_compat::render_str(&src, &globals) else {
+                continue;
+            };
+            if !rendered.trim_start().starts_with('<') {
+                continue;
+            }
+            if blazonry::markup::markup_to_screen(&rendered, "p").is_err() {
+                continue;
+            }
             // skip near-empty renders (nothing to compare)
             let screen = blazonry::markup::markup_to_screen(&rendered, "p").unwrap();
-            if screen.parts.is_empty() { continue; }
-            samples.push((path.file_name().unwrap().to_string_lossy().into_owned(), src, rendered));
+            if screen.parts.is_empty() {
+                continue;
+            }
+            samples.push((
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                src,
+                rendered,
+            ));
         }
         assert!(!samples.is_empty(), "no natively-renderable recipes found");
 
@@ -103,7 +127,8 @@ async fn native_vs_browser_parity() {
             let screen = blazonry::markup::markup_to_screen(html, "parity").unwrap();
             let renderer = blazonry::render::Renderer::new().unwrap();
             let indices = renderer.render(&screen);
-            let native_bmp = blazonry::bmp::encode_2bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices);
+            let native_bmp =
+                blazonry::bmp::encode_2bit_bmp(blazonry::WIDTH, blazonry::HEIGHT, &indices);
             // browser: same Liquid markup wrapped in the framework shell
             let browser_bmp = browser.render_bmp(tmpl, &vars_json, 2).await.unwrap();
             let d = mad(&bmp_to_levels(&native_bmp), &bmp_to_levels(&browser_bmp));

@@ -11,29 +11,44 @@ fn row_json((id, version, url, notes, created_at): Row) -> Value {
 }
 
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Value>, sqlx::Error> {
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT id, version, url, notes, created_at FROM firmware ORDER BY id DESC")
-        .fetch_all(pool).await?;
+    let rows: Vec<Row> =
+        sqlx::query_as("SELECT id, version, url, notes, created_at FROM firmware ORDER BY id DESC")
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(row_json).collect())
 }
 
 pub async fn get(pool: &SqlitePool, id: i64) -> Result<Option<Value>, sqlx::Error> {
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT id, version, url, notes, created_at FROM firmware WHERE id = ?")
-        .bind(id).fetch_optional(pool).await?;
+    let row: Option<Row> =
+        sqlx::query_as("SELECT id, version, url, notes, created_at FROM firmware WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.map(row_json))
 }
 
 /// Newest row: (version, url, notes).
 pub async fn latest(pool: &SqlitePool) -> Result<Option<(String, String, String)>, sqlx::Error> {
     sqlx::query_as("SELECT version, url, notes FROM firmware ORDER BY id DESC LIMIT 1")
-        .fetch_optional(pool).await
+        .fetch_optional(pool)
+        .await
 }
 
-pub async fn create(pool: &SqlitePool, version: &str, url: &str, notes: &str) -> Result<i64, sqlx::Error> {
-    Ok(sqlx::query("INSERT INTO firmware (version, url, notes, created_at) VALUES (?, ?, ?, datetime('now'))")
-        .bind(version).bind(url).bind(notes)
-        .execute(pool).await?.last_insert_rowid())
+pub async fn create(
+    pool: &SqlitePool,
+    version: &str,
+    url: &str,
+    notes: &str,
+) -> Result<i64, sqlx::Error> {
+    Ok(sqlx::query(
+        "INSERT INTO firmware (version, url, notes, created_at) VALUES (?, ?, ?, datetime('now'))",
+    )
+    .bind(version)
+    .bind(url)
+    .bind(notes)
+    .execute(pool)
+    .await?
+    .last_insert_rowid())
 }
 
 pub async fn patch(pool: &SqlitePool, id: i64, body: &Value) -> Result<u64, sqlx::Error> {
@@ -41,10 +56,16 @@ pub async fn patch(pool: &SqlitePool, id: i64, body: &Value) -> Result<u64, sqlx
 }
 
 pub async fn delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
-    Ok(sqlx::query("DELETE FROM firmware WHERE id = ?").bind(id)
-        .execute(pool).await?.rows_affected())
+    Ok(sqlx::query("DELETE FROM firmware WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?
+        .rows_affected())
 }
 
 pub async fn wipe(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
-    Ok(sqlx::query("DELETE FROM firmware").execute(pool).await?.rows_affected())
+    Ok(sqlx::query("DELETE FROM firmware")
+        .execute(pool)
+        .await?
+        .rows_affected())
 }

@@ -8,7 +8,7 @@
 //! unresolved lookups into nil — parse errors and filter errors still raise.
 #![allow(deprecated)] // the Runtime trait signatures use KString aliases
 
-use liquid_core::model::{ScalarCow, ValueCow, Value};
+use liquid_core::model::{ScalarCow, Value, ValueCow};
 use liquid_core::runtime::{PartialStore, Registers, Runtime};
 
 pub struct LenientRuntime<R: Runtime> {
@@ -46,11 +46,7 @@ impl<R: Runtime> Runtime for LenientRuntime<R> {
         }
     }
 
-    fn set_global(
-        &self,
-        name: liquid_core::model::KString,
-        val: Value,
-    ) -> Option<Value> {
+    fn set_global(&self, name: liquid_core::model::KString, val: Value) -> Option<Value> {
         self.inner.set_global(name, val)
     }
 

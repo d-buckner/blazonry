@@ -27,9 +27,12 @@ fn corpus() -> Vec<(String, Screen)> {
             continue;
         }
         let src = fs::read_to_string(&path).expect("read screen");
-        let screen: Screen = serde_json::from_str(&src)
-            .unwrap_or_else(|err| panic!("{}: {err}", path.display()));
-        out.push((path.file_stem().unwrap().to_string_lossy().into_owned(), screen));
+        let screen: Screen =
+            serde_json::from_str(&src).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+        out.push((
+            path.file_stem().unwrap().to_string_lossy().into_owned(),
+            screen,
+        ));
     }
     assert!(!out.is_empty(), "golden corpus is empty");
     out
@@ -59,8 +62,14 @@ fn golden_screens_render_byte_identical() {
                 .zip(buf.iter())
                 .filter(|(a, b)| a != b)
                 .count();
-            failures.push(format!("{name}: {diff} differing pixels (actual in tests/golden/actual/)"));
+            failures.push(format!(
+                "{name}: {diff} differing pixels (actual in tests/golden/actual/)"
+            ));
         }
     }
-    assert!(failures.is_empty(), "golden mismatches:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "golden mismatches:\n{}",
+        failures.join("\n")
+    );
 }

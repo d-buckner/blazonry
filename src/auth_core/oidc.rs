@@ -14,7 +14,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use super::{env_or, random_b64url, ContextEnv};
+use super::{ContextEnv, env_or, random_b64url};
 
 #[derive(Clone, Debug)]
 pub struct OidcCfg {
@@ -30,12 +30,19 @@ impl OidcCfg {
     pub fn from_env() -> anyhow::Result<Self> {
         Ok(OidcCfg {
             issuer: std::env::var("BLAZONRY_OIDC_ISSUER").context_env("BLAZONRY_OIDC_ISSUER")?,
-            client_id: std::env::var("BLAZONRY_OIDC_CLIENT_ID").context_env("BLAZONRY_OIDC_CLIENT_ID")?,
-            client_secret: std::env::var("BLAZONRY_OIDC_CLIENT_SECRET").context_env("BLAZONRY_OIDC_CLIENT_SECRET")?,
-            redirect_uri: std::env::var("BLAZONRY_OIDC_REDIRECT_URI").context_env("BLAZONRY_OIDC_REDIRECT_URI")?,
+            client_id: std::env::var("BLAZONRY_OIDC_CLIENT_ID")
+                .context_env("BLAZONRY_OIDC_CLIENT_ID")?,
+            client_secret: std::env::var("BLAZONRY_OIDC_CLIENT_SECRET")
+                .context_env("BLAZONRY_OIDC_CLIENT_SECRET")?,
+            redirect_uri: std::env::var("BLAZONRY_OIDC_REDIRECT_URI")
+                .context_env("BLAZONRY_OIDC_REDIRECT_URI")?,
             scopes: env_or("BLAZONRY_OIDC_SCOPES", "openid email profile"),
-            admin_emails: std::env::var("BLAZONRY_OIDC_ADMIN_EMAILS").unwrap_or_default()
-                .split(',').map(|s| s.trim().to_ascii_lowercase()).filter(|s| !s.is_empty()).collect(),
+            admin_emails: std::env::var("BLAZONRY_OIDC_ADMIN_EMAILS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect(),
         })
     }
 
@@ -89,7 +96,9 @@ impl Default for PendingOidc {
 /// Build the provider authorize URL (state + PKCE + nonce generated and
 /// remembered in `pending`). The handler turns this into a redirect.
 pub async fn start_login(cfg: &OidcCfg, pending: &PendingOidc) -> Result<String, OidcError> {
-    let disc = discover(cfg).await.map_err(|e| OidcError::Upstream(e.to_string()))?;
+    let disc = discover(cfg)
+        .await
+        .map_err(|e| OidcError::Upstream(e.to_string()))?;
     let state = random_b64url(24);
     let nonce = random_b64url(24);
     let verifier = random_b64url(32);
@@ -98,8 +107,11 @@ pub async fn start_login(cfg: &OidcCfg, pending: &PendingOidc) -> Result<String,
     let url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256",
         disc.authorization_endpoint,
-        urlencoding(&cfg.client_id), urlencoding(&cfg.redirect_uri),
-        urlencoding(&cfg.scopes), urlencoding(&state), urlencoding(&nonce),
+        urlencoding(&cfg.client_id),
+        urlencoding(&cfg.redirect_uri),
+        urlencoding(&cfg.scopes),
+        urlencoding(&state),
+        urlencoding(&nonce),
         urlencoding(&challenge),
     );
     Ok(url)
@@ -116,7 +128,9 @@ pub async fn finish_login(
 ) -> Result<OidcIdentity, OidcError> {
     if let Some(err) = q.get("error") {
         let desc = q.get("error_description").cloned().unwrap_or_default();
-        return Err(OidcError::Auth(format!("oidc provider error: {err} {desc}")));
+        return Err(OidcError::Auth(format!(
+            "oidc provider error: {err} {desc}"
+        )));
     }
     let (Some(code), Some(state)) = (q.get("code"), q.get("state")) else {
         return Err(OidcError::BadRequest("missing code or state".into()));
@@ -124,13 +138,21 @@ pub async fn finish_login(
     let Some((nonce, verifier)) = pending.take(state) else {
         return Err(OidcError::Auth("unknown or expired state".into()));
     };
-    let disc = discover(cfg).await.map_err(|e| OidcError::Upstream(e.to_string()))?;
-    let tokens = exchange(cfg, &disc, code, &verifier).await
+    let disc = discover(cfg)
+        .await
+        .map_err(|e| OidcError::Upstream(e.to_string()))?;
+    let tokens = exchange(cfg, &disc, code, &verifier)
+        .await
         .map_err(|e| OidcError::Auth(e.to_string()))?;
-    let id_token = tokens.get("id_token").and_then(|v| v.as_str()).unwrap_or("");
-    let jwks = fetch_jwks(cfg, &disc).await.map_err(|e| OidcError::Upstream(e.to_string()))?;
-    let claims = verify_idtoken(id_token, &jwks, cfg, &nonce)
-        .map_err(|e| OidcError::Auth(e.to_string()))?;
+    let id_token = tokens
+        .get("id_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let jwks = fetch_jwks(cfg, &disc)
+        .await
+        .map_err(|e| OidcError::Upstream(e.to_string()))?;
+    let claims =
+        verify_idtoken(id_token, &jwks, cfg, &nonce).map_err(|e| OidcError::Auth(e.to_string()))?;
     // OIDC core: email may only be trusted when verified (or unverified-but-configured)
     let email = match (&claims.email, claims.email_verified) {
         (Some(e), Some(true)) | (Some(e), None) => e.clone(),
@@ -154,14 +176,27 @@ struct OidcDiscovery {
 }
 
 async fn discover(cfg: &OidcCfg) -> anyhow::Result<OidcDiscovery> {
-    let url = format!("{}/.well-known/openid-configuration", cfg.issuer.trim_end_matches('/'));
-    let d: OidcDiscovery = reqwest::Client::new().get(&url).send().await
+    let url = format!(
+        "{}/.well-known/openid-configuration",
+        cfg.issuer.trim_end_matches('/')
+    );
+    let d: OidcDiscovery = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| anyhow::anyhow!("oidc discovery: {e}"))?
-        .error_for_status().map_err(|e| anyhow::anyhow!("oidc discovery: {e}"))?
-        .json().await.map_err(|e| anyhow::anyhow!("oidc discovery parse: {e}"))?;
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("oidc discovery: {e}"))?
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("oidc discovery parse: {e}"))?;
     // issuer mismatch is a hard error: tokens from a different issuer must never be accepted
     if d.issuer != cfg.issuer {
-        anyhow::bail!("oidc discovery issuer '{}' != configured '{}'", d.issuer, cfg.issuer);
+        anyhow::bail!(
+            "oidc discovery issuer '{}' != configured '{}'",
+            d.issuer,
+            cfg.issuer
+        );
     }
     Ok(d)
 }
@@ -169,14 +204,19 @@ async fn discover(cfg: &OidcCfg) -> anyhow::Result<OidcDiscovery> {
 fn pkce_challenge(verifier: &str) -> String {
     use base64::Engine;
     use sha2::Digest;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()))
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(sha2::Sha256::digest(verifier.as_bytes()))
 }
 
 fn urlencoding(s: &str) -> String {
-    s.bytes().map(|b| match b {
-        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
-        _ => format!("%{b:02X}"),
-    }).collect()
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 /// Exchange an authorization code for tokens (client_secret_basic + PKCE).
@@ -195,7 +235,9 @@ async fn exchange(
             ("redirect_uri", cfg.redirect_uri.clone()),
             ("code_verifier", verifier.to_string()),
         ])
-        .send().await.map_err(|e| anyhow::anyhow!("token exchange: {e}"))?;
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("token exchange: {e}"))?;
     let status = resp.status();
     let body: serde_json::Value = resp.json().await.unwrap_or_default();
     if !status.is_success() {
@@ -205,7 +247,9 @@ async fn exchange(
 }
 
 #[derive(Debug, Deserialize)]
-struct Jwks { keys: Vec<Jwk> }
+struct Jwks {
+    keys: Vec<Jwk>,
+}
 
 #[derive(Debug, Deserialize)]
 struct Jwk {
@@ -222,10 +266,16 @@ async fn fetch_jwks(cfg: &OidcCfg, disc: &OidcDiscovery) -> anyhow::Result<Jwks>
     } else {
         format!("{}{}", cfg.issuer.trim_end_matches('/'), disc.jwks_uri)
     };
-    let j: Jwks = reqwest::Client::new().get(&url).send().await
+    let j: Jwks = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| anyhow::anyhow!("jwks fetch: {e}"))?
-        .error_for_status().map_err(|e| anyhow::anyhow!("jwks fetch: {e}"))?
-        .json().await.map_err(|e| anyhow::anyhow!("jwks parse: {e}"))?;
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("jwks fetch: {e}"))?
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("jwks parse: {e}"))?;
     Ok(j)
 }
 
@@ -250,7 +300,10 @@ struct IdClaims {
 /// OIDC aud may be a string or an array.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum OidcAud { One(String), Many(Vec<String>) }
+enum OidcAud {
+    One(String),
+    Many(Vec<String>),
+}
 
 impl OidcAud {
     fn contains(&self, a: &str) -> bool {
@@ -275,18 +328,36 @@ fn verify_idtoken(
         jsonwebtoken::Algorithm::RS256 => jsonwebtoken::Algorithm::RS256,
         other => anyhow::bail!("unsupported id_token alg {other:?} (RS256 only)"),
     };
-    let key = jwks.keys.iter().find(|k| {
-        k.kty == "RSA" && header.kid.as_deref().map(|kid| k.kid.as_deref() == Some(kid)).unwrap_or(true)
-    }).ok_or_else(|| anyhow::anyhow!("no matching JWK for kid {:?}", header.kid))?;
-    let n = key.n.as_ref().ok_or_else(|| anyhow::anyhow!("JWK missing n"))?;
-    let e = key.e.as_ref().ok_or_else(|| anyhow::anyhow!("JWK missing e"))?;
+    let key = jwks
+        .keys
+        .iter()
+        .find(|k| {
+            k.kty == "RSA"
+                && header
+                    .kid
+                    .as_deref()
+                    .map(|kid| k.kid.as_deref() == Some(kid))
+                    .unwrap_or(true)
+        })
+        .ok_or_else(|| anyhow::anyhow!("no matching JWK for kid {:?}", header.kid))?;
+    let n = key
+        .n
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("JWK missing n"))?;
+    let e = key
+        .e
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("JWK missing e"))?;
     let decoding = jsonwebtoken::DecodingKey::from_rsa_components(n, e)
         .map_err(|e| anyhow::anyhow!("jwk decode: {e}"))?;
     let mut v = jsonwebtoken::Validation::new(alg);
     v.set_audience(&[cfg.client_id.as_str()]);
     v.set_issuer(&[&cfg.issuer]);
     v.leeway = 30;
-    v.required_spec_claims = ["exp", "iat", "iss", "aud", "sub"].into_iter().map(String::from).collect();
+    v.required_spec_claims = ["exp", "iat", "iss", "aud", "sub"]
+        .into_iter()
+        .map(String::from)
+        .collect();
     let data = jsonwebtoken::decode::<IdClaims>(id_token, &decoding, &v)
         .map_err(|e| anyhow::anyhow!("id_token verify: {e}"))?;
     let claims = data.claims;

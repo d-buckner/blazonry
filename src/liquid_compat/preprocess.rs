@@ -9,18 +9,23 @@ use regex_lite::Regex;
 /// TRMNL cloud semantics: a `{% template %}` block defines a partial and
 /// renders nothing inline. Markers inside `{% raw %}` are left alone.
 pub fn extract_partials(src: &str) -> anyhow::Result<(String, Vec<(String, String)>)> {
-    let re = Regex::new(r"\{%-?\s*template\s+([A-Za-z0-9_\-]+)\s*-?%\}([\s\S]*?)\{%-?\s*endtemplate\s*-?%\}")
-        .expect("valid regex");
+    let re = Regex::new(
+        r"\{%-?\s*template\s+([A-Za-z0-9_\-]+)\s*-?%\}([\s\S]*?)\{%-?\s*endtemplate\s*-?%\}",
+    )
+    .expect("valid regex");
     let mut out = String::with_capacity(src.len());
     let mut partials = Vec::new();
     let mut rest = src;
     loop {
         // The template regex runs only on non-raw segments; raw passes through verbatim.
         let (before, tail) = split_once_keep(rest, "{% raw %}");
-        out.push_str(&String::from(re.replace_all(before, |c: &regex_lite::Captures| {
-            partials.push((c[1].to_string(), c[2].to_string()));
-            ""
-        })));
+        out.push_str(&String::from(re.replace_all(
+            before,
+            |c: &regex_lite::Captures| {
+                partials.push((c[1].to_string(), c[2].to_string()));
+                ""
+            },
+        )));
         let Some(tail) = tail else { break };
         let (inner, after) = split_once_keep(tail, "{% endraw %}");
         out.push_str("{% raw %}");

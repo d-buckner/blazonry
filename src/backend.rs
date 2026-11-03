@@ -24,7 +24,12 @@ pub trait RenderBackend: Send + Sync {
     /// Stable name for logs/admin: "native" | "browser".
     fn name(&self) -> &'static str;
     /// Render at the given colour depth (1 or 2 bpp) and encode BMP.
-    async fn render_bmp(&self, template: &str, vars_json: &str, bpp: u16) -> anyhow::Result<Vec<u8>>;
+    async fn render_bmp(
+        &self,
+        template: &str,
+        vars_json: &str,
+        bpp: u16,
+    ) -> anyhow::Result<Vec<u8>>;
 }
 
 /// The always-available native renderer (Liquid -> Screen -> taffy/tiny-skia).
@@ -34,7 +39,9 @@ pub struct NativeBackend {
 
 impl NativeBackend {
     pub fn new() -> anyhow::Result<Self> {
-        Ok(Self { renderer: Renderer::new()? })
+        Ok(Self {
+            renderer: Renderer::new()?,
+        })
     }
 }
 
@@ -44,7 +51,12 @@ impl RenderBackend for NativeBackend {
         "native"
     }
 
-    async fn render_bmp(&self, template: &str, vars_json: &str, bpp: u16) -> anyhow::Result<Vec<u8>> {
+    async fn render_bmp(
+        &self,
+        template: &str,
+        vars_json: &str,
+        bpp: u16,
+    ) -> anyhow::Result<Vec<u8>> {
         let vars: serde_json::Value =
             serde_json::from_str(vars_json).unwrap_or(serde_json::json!({}));
         let screen = crate::template::render_screen(template, &vars)?;

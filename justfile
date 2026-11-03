@@ -46,9 +46,31 @@ build: web icons
 stop:
     @pkill -f 'blazonry serve' && echo "stopped" || echo "not running"
 
-# run the test suite
+# run the test suite (4 threads: test binaries spawn servers; more starves the box)
 test: web icons
-    @cargo test
+    @cargo test -- --test-threads=4
+
+# full local gate: fmt + clippy (deny warnings) + tests
+check: fmt-check clippy test
+
+# install the repo's git hooks (run once per clone)
+hooks:
+    @git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/pre-commit scripts/hooks/pre-push && echo "hooks installed (pre-commit: fmt+clippy, pre-push: tests)"
+
+# formatting
+fmt:
+    @cargo fmt
+
+fmt-check:
+    @cargo fmt --check
+
+# clippy, warnings as errors
+clippy:
+    @cargo clippy --all-targets -- -D warnings
+
+# clippy with autofix
+clippy-fix:
+    @cargo clippy --all-targets --fix --allow-dirty -- -D warnings
 
 # show what is listening on the port
 status:

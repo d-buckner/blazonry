@@ -44,9 +44,10 @@ impl Provider for CalDav {
         Ok(())
     }
 
-    fn fetch(&self, config: serde_json::Value)
-        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Snapshot>> + Send>>
-    {
+    fn fetch(
+        &self,
+        config: serde_json::Value,
+    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Snapshot>> + Send>> {
         Box::pin(async move {
             let cfg: CalDavConfig = serde_json::from_value(config)?;
             Ok(Snapshot::Calendar(fetch(&cfg, WINDOW_DAYS).await?))
@@ -63,7 +64,8 @@ pub async fn fetch(cfg: &CalDavConfig, window_days: i64) -> anyhow::Result<Vec<C
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
     let send_get = |url: String| {
-        let mut req = client.get(&url)
+        let mut req = client
+            .get(&url)
             .header("Accept", "text/calendar")
             .header("Depth", "1");
         if let (Some(u), Some(p)) = (&cfg.user, &cfg.pass) {
@@ -120,30 +122,44 @@ fn join_url(base: &str, href: &str) -> String {
     }
     // href is server-absolute (/base/coll/file.ics); base is a full URL.
     let scheme_end = base.find("://").map(|i| i + 3).unwrap_or(0);
-    let host_end = base[scheme_end..].find('/').map(|i| scheme_end + i).unwrap_or(base.len());
+    let host_end = base[scheme_end..]
+        .find('/')
+        .map(|i| scheme_end + i)
+        .unwrap_or(base.len());
     format!("{}{}", &base[..host_end], href)
 }
 
 /// Whether a DTSTART falls inside the LA wall-clock window (recurrence
 /// expansion already windows itself; single instances need the same filter).
-fn in_window(dt: &icalendar::DatePerhapsTime, win_start: chrono::DateTime<icalendar::Tz>, win_end: chrono::DateTime<icalendar::Tz>) -> bool {
+fn in_window(
+    dt: &icalendar::DatePerhapsTime,
+    win_start: chrono::DateTime<icalendar::Tz>,
+    win_end: chrono::DateTime<icalendar::Tz>,
+) -> bool {
     use icalendar::{CalendarDateTime, DatePerhapsTime};
     let tz = super::la();
     let start: chrono::DateTime<Utc> = match dt {
-        DatePerhapsTime::Date(d) => tz.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
-            .single().map(|l| l.to_utc()).unwrap_or_else(|| Utc.from_utc_datetime(&d.and_hms_opt(0,0,0).unwrap())),
+        DatePerhapsTime::Date(d) => tz
+            .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+            .single()
+            .map(|l| l.to_utc())
+            .unwrap_or_else(|| Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap())),
         DatePerhapsTime::DateTime(CalendarDateTime::Utc(utc)) => *utc,
         DatePerhapsTime::DateTime(CalendarDateTime::WithTimezone { date_time, tzid }) => {
-            let t: chrono_tz::Tz = match tzid.parse() { Ok(t) => t, Err(_) => tz };
-            t.from_local_datetime(date_time).single()
+            let t: chrono_tz::Tz = match tzid.parse() {
+                Ok(t) => t,
+                Err(_) => tz,
+            };
+            t.from_local_datetime(date_time)
+                .single()
                 .map(|l| l.to_utc())
                 .unwrap_or_else(|| Utc.from_utc_datetime(date_time))
         }
-        DatePerhapsTime::DateTime(CalendarDateTime::Floating(naive)) => {
-            tz.from_local_datetime(naive).single()
-                .map(|l| l.to_utc())
-                .unwrap_or_else(|| Utc.from_utc_datetime(naive))
-        }
+        DatePerhapsTime::DateTime(CalendarDateTime::Floating(naive)) => tz
+            .from_local_datetime(naive)
+            .single()
+            .map(|l| l.to_utc())
+            .unwrap_or_else(|| Utc.from_utc_datetime(naive)),
     };
     let (a, b) = (win_start.to_utc(), win_end.to_utc());
     start >= a && start < b
@@ -156,40 +172,51 @@ pub fn parse_ics_events(ics: &str, window_days: i64) -> anyhow::Result<Vec<Calen
     let cal = icalendar::Calendar::from_str(ics).map_err(|e| anyhow::anyhow!("ics parse: {e}"))?;
     let tz = super::la();
     let today = Utc::now().with_timezone(&tz).date_naive();
-    let win_end_date = today.checked_add_days(chrono::Days::new(window_days.max(1) as u64))
+    let win_end_date = today
+        .checked_add_days(chrono::Days::new(window_days.max(1) as u64))
         .unwrap_or(today);
     // rrule bounds in LA-local terms (rrule::Tz converts from chrono_tz::Tz).
     let rtz: icalendar::Tz = tz.into();
-    let win_start = rtz.from_local_datetime(&today.and_hms_opt(0,0,0).unwrap())
-        .single().unwrap_or_else(|| rtz.from_utc_datetime(&today.and_hms_opt(0,0,0).unwrap()));
-    let win_end = rtz.from_local_datetime(&win_end_date.and_hms_opt(0,0,0).unwrap())
-        .single().unwrap_or_else(|| rtz.from_utc_datetime(&win_end_date.and_hms_opt(0,0,0).unwrap()));
+    let win_start = rtz
+        .from_local_datetime(&today.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .unwrap_or_else(|| rtz.from_utc_datetime(&today.and_hms_opt(0, 0, 0).unwrap()));
+    let win_end = rtz
+        .from_local_datetime(&win_end_date.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .unwrap_or_else(|| rtz.from_utc_datetime(&win_end_date.and_hms_opt(0, 0, 0).unwrap()));
 
     let mut events = Vec::new();
     for event in cal.calendar_events() {
-        let text = |name: &str| event
-            .property_value(name)
-            .unwrap_or_default()
-            .to_string();
+        let text = |name: &str| event.property_value(name).unwrap_or_default().to_string();
         // All occurrence start times: recurrence-expanded when RRULE is
         // present, else the single DTSTART.
-        let starts: Vec<DatePerhapsTime> = match event.property_value("RRULE").and_then(|_| event.get_recurrence().ok()) {
+        let starts: Vec<DatePerhapsTime> = match event
+            .property_value("RRULE")
+            .and_then(|_| event.get_recurrence().ok())
+        {
             Some(rrset) => {
                 let res = rrset.after(win_start).before(win_end).all(500);
                 if res.dates.is_empty() {
-                    event.get_start().into_iter()
+                    event
+                        .get_start()
+                        .into_iter()
                         .filter(|s| in_window(s, win_start, win_end))
                         .collect()
                 } else {
                     // Recurrence dates come back in the rule's own tz; map
                     // each to its LA-local date/time.
-                    res.dates.iter().map(|d| {
-                        let local = d.with_timezone(&tz).naive_local();
-                        DatePerhapsTime::DateTime(icalendar::CalendarDateTime::from(local))
-                    }).collect()
+                    res.dates
+                        .iter()
+                        .map(|d| {
+                            let local = d.with_timezone(&tz).naive_local();
+                            DatePerhapsTime::DateTime(icalendar::CalendarDateTime::from(local))
+                        })
+                        .collect()
                 }
             }
-            None => event.get_start()
+            None => event
+                .get_start()
                 .into_iter()
                 .filter(|s| in_window(s, win_start, win_end))
                 .collect(),
@@ -197,21 +224,34 @@ pub fn parse_ics_events(ics: &str, window_days: i64) -> anyhow::Result<Vec<Calen
         for dt in starts {
             let (start_str, all_day) = match dt {
                 DatePerhapsTime::Date(d) => (d.format("%Y-%m-%d").to_string(), true),
-                DatePerhapsTime::DateTime(icalendar::CalendarDateTime::Utc(utc)) =>
-                    (utc.to_rfc3339(), false),
-                DatePerhapsTime::DateTime(icalendar::CalendarDateTime::WithTimezone { date_time, tzid }) => {
-                    let utc = tzid.parse::<chrono_tz::Tz>()
-                        .map(|t| t.from_local_datetime(&date_time).single()
-                            .map(|l| l.to_utc())
-                            .unwrap_or_else(|| Utc.from_utc_datetime(&date_time)))
-                        .unwrap_or_else(|_| tz.from_local_datetime(&date_time)
-                            .single().map(|l| l.to_utc())
-                            .unwrap_or_else(|| Utc.from_utc_datetime(&date_time)));
+                DatePerhapsTime::DateTime(icalendar::CalendarDateTime::Utc(utc)) => {
+                    (utc.to_rfc3339(), false)
+                }
+                DatePerhapsTime::DateTime(icalendar::CalendarDateTime::WithTimezone {
+                    date_time,
+                    tzid,
+                }) => {
+                    let utc = tzid
+                        .parse::<chrono_tz::Tz>()
+                        .map(|t| {
+                            t.from_local_datetime(&date_time)
+                                .single()
+                                .map(|l| l.to_utc())
+                                .unwrap_or_else(|| Utc.from_utc_datetime(&date_time))
+                        })
+                        .unwrap_or_else(|_| {
+                            tz.from_local_datetime(&date_time)
+                                .single()
+                                .map(|l| l.to_utc())
+                                .unwrap_or_else(|| Utc.from_utc_datetime(&date_time))
+                        });
                     (utc.to_rfc3339(), false)
                 }
                 DatePerhapsTime::DateTime(icalendar::CalendarDateTime::Floating(naive)) => {
                     // Floating time: treat as LA wall clock.
-                    let utc = tz.from_local_datetime(&naive).single()
+                    let utc = tz
+                        .from_local_datetime(&naive)
+                        .single()
                         .map(|l| l.to_utc())
                         .unwrap_or_else(|| Utc.from_utc_datetime(&naive));
                     (utc.to_rfc3339(), false)
@@ -238,9 +278,12 @@ mod tests {
     /// Fixture dates are relative to LA "today": the window starts at today,
     /// so hardcoded dates would silently age out (they did, on 2026-10-30).
     fn fixture_ics() -> (String, String) {
-        let today = chrono::Utc::now().with_timezone(&super::super::la()).date_naive();
+        let today = chrono::Utc::now()
+            .with_timezone(&super::super::la())
+            .date_naive();
         let day = |d: chrono::NaiveDate| d.format("%Y%m%d").to_string();
-        let ics = format!(r#"BEGIN:VCALENDAR
+        let ics = format!(
+            r#"BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//test//EN
 BEGIN:VEVENT
@@ -268,7 +311,10 @@ DTSTART:20200101T170000Z
 SUMMARY:Ancient event
 END:VEVENT
 END:VCALENDAR
-"#, t = day(today), n = day(today + chrono::Duration::days(1)));
+"#,
+            t = day(today),
+            n = day(today + chrono::Duration::days(1))
+        );
         (ics, today.format("%Y-%m-%d").to_string())
     }
 
@@ -302,10 +348,18 @@ END:VCALENDAR
         let (ics, _) = fixture_ics();
         let evs = parse_ics_events(&ics, 365 * 6).unwrap();
         let recur: Vec<_> = evs.iter().filter(|e| e.uid == "recur-1").collect();
-        assert!(recur.len() >= 4, "expected several Monday occurrences, got {}", recur.len());
+        assert!(
+            recur.len() >= 4,
+            "expected several Monday occurrences, got {}",
+            recur.len()
+        );
         // Each occurrence is 10:00 LA = 17:00Z (PDT) or 18:00Z (PST).
         for e in &recur {
-            assert!(e.start.ends_with("+00:00"), "stored as UTC rfc3339: {}", e.start);
+            assert!(
+                e.start.ends_with("+00:00"),
+                "stored as UTC rfc3339: {}",
+                e.start
+            );
             let hour = e.start.split('T').nth(1).unwrap()[..2].to_string();
             assert!(hour == "17" || hour == "18", "unexpected UTC hour {hour}");
         }
@@ -317,19 +371,36 @@ END:VCALENDAR
 <D:response><D:href>/caldav-service/family/1.ics</D:href></D:response>
 <D:response><d:href xmlns:d="DAV:">/caldav-service/family/2.ics</d:href></D:response>
 </D:multistatus>"#;
-        assert_eq!(parse_propfind_hrefs(xml), vec!["/caldav-service/family/1.ics", "/caldav-service/family/2.ics"]);
+        assert_eq!(
+            parse_propfind_hrefs(xml),
+            vec![
+                "/caldav-service/family/1.ics",
+                "/caldav-service/family/2.ics"
+            ]
+        );
     }
 
     #[test]
     fn join_url_absolute_paths() {
-        assert_eq!(join_url("http://h:5232/caldav-service/family/", "/x/y.ics"), "http://h:5232/x/y.ics");
+        assert_eq!(
+            join_url("http://h:5232/caldav-service/family/", "/x/y.ics"),
+            "http://h:5232/x/y.ics"
+        );
         assert_eq!(join_url("http://h:5232/a/b/", "http://o/z"), "http://o/z");
     }
 
     #[test]
     fn validate_rejects_bad_config() {
-        assert!(CalDav.validate(&serde_json::json!({"url": "ftp://x"})).is_err());
-        assert!(CalDav.validate(&serde_json::json!({"url": "http://h/"})).is_ok());
+        assert!(
+            CalDav
+                .validate(&serde_json::json!({"url": "ftp://x"}))
+                .is_err()
+        );
+        assert!(
+            CalDav
+                .validate(&serde_json::json!({"url": "http://h/"}))
+                .is_ok()
+        );
         assert!(CalDav.validate(&serde_json::json!({})).is_err());
     }
 }

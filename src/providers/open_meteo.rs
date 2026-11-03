@@ -10,7 +10,7 @@
 //!     "days": [ {date, code, hi, lo, precip}, ... ], "fetched_at": iso }
 
 use super::{Provider, Snapshot};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::pin::Pin;
 
 pub struct OpenMeteo;
@@ -47,7 +47,9 @@ pub fn wmo_label(code: i64) -> &'static str {
 
 fn validate(config: &Value) -> anyhow::Result<()> {
     for key in ["latitude", "longitude"] {
-        let v = config.get(key).and_then(|v| v.as_f64())
+        let v = config
+            .get(key)
+            .and_then(|v| v.as_f64())
             .ok_or_else(|| anyhow::anyhow!("config.{key} must be a number"))?;
         let ok = match key {
             "latitude" => (-90.0..=90.0).contains(&v),
@@ -59,7 +61,9 @@ fn validate(config: &Value) -> anyhow::Result<()> {
     }
     match config.get("units").and_then(|v| v.as_str()) {
         None | Some("imperial") | Some("metric") => Ok(()),
-        Some(other) => anyhow::bail!("config.units must be \"imperial\" or \"metric\", got \"{other}\""),
+        Some(other) => {
+            anyhow::bail!("config.units must be \"imperial\" or \"metric\", got \"{other}\"")
+        }
     }
 }
 
@@ -76,9 +80,10 @@ impl Provider for OpenMeteo {
         validate(config)
     }
 
-    fn fetch(&self, config: Value)
-        -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Snapshot>> + Send>>
-    {
+    fn fetch(
+        &self,
+        config: Value,
+    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Snapshot>> + Send>> {
         Box::pin(async move {
             validate(&config)?;
             let imperial = config.get("units").and_then(|v| v.as_str()) != Some("metric");
@@ -88,7 +93,8 @@ impl Provider for OpenMeteo {
                 "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
                  &current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code\
                  &daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max\
-                 &timezone=America%2FLos_Angeles&forecast_days=4");
+                 &timezone=America%2FLos_Angeles&forecast_days=4"
+            );
             if imperial {
                 url.push_str("&temperature_unit=fahrenheit&wind_speed_unit=mph");
             }
@@ -100,14 +106,19 @@ impl Provider for OpenMeteo {
 
             let cur = &raw["current"];
             let daily = &raw["daily"];
-            let days: Vec<Value> = daily["time"].as_array().map(|ts| ts.iter().enumerate().map(|(i, t)| json!({
+            let days: Vec<Value> = daily["time"]
+                .as_array()
+                .map(|ts| {
+                    ts.iter().enumerate().map(|(i, t)| json!({
                 "date": t.as_str().unwrap_or(""),
                 "code": daily["weather_code"][i].as_i64().unwrap_or(-1),
                 "label": wmo_label(daily["weather_code"][i].as_i64().unwrap_or(-1)),
                 "hi": daily["temperature_2m_max"][i].as_f64().unwrap_or(0.0).round(),
                 "lo": daily["temperature_2m_min"][i].as_f64().unwrap_or(0.0).round(),
                 "precip": daily["precipitation_probability_max"][i].as_i64().unwrap_or(0),
-            })).collect()).unwrap_or_default();
+            })).collect()
+                })
+                .unwrap_or_default();
 
             let code = cur["weather_code"].as_i64().unwrap_or(-1);
             Ok(Snapshot::Weather(json!({

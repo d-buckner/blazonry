@@ -9,7 +9,7 @@
 //!   title: string        what we're counting to (e.g. "Housewarming")
 //!   date:  "YYYY-MM-DD"  target date (LA-local)
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::SqlitePool;
 
 pub const COUNTDOWN_TEMPLATE: &str = r##"{
@@ -51,7 +51,13 @@ pub fn countdown_vars(settings: &Value) -> anyhow::Result<Value> {
 }
 
 /// Create a countdown extension: no provider requirement (pure date math).
-pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
+pub async fn create(
+    pool: &SqlitePool,
+    backends: &crate::cache::Backends,
+    cache: &crate::cache::BmpCache,
+    name: &str,
+    settings: Value,
+) -> anyhow::Result<(i64, i64)> {
     let vars = countdown_vars(&settings)?;
     let sid = crate::screens::create(pool, name, COUNTDOWN_TEMPLATE, &vars.to_string()).await?;
     let id = super::insert(pool, "countdown", name, &settings, sid).await?;
@@ -68,7 +74,10 @@ mod tests {
     fn future_date_counts_days_to_go() {
         let tz = crate::providers::la();
         let target = chrono::Utc::now().with_timezone(&tz).date_naive() + chrono::Days::new(10);
-        let v = countdown_vars(&json!({ "title": "Trip", "date": target.format("%Y-%m-%d").to_string() })).unwrap();
+        let v = countdown_vars(
+            &json!({ "title": "Trip", "date": target.format("%Y-%m-%d").to_string() }),
+        )
+        .unwrap();
         assert_eq!(v["days"], "10");
         assert_eq!(v["unit"], "days to go");
         assert_eq!(v["title"], "Trip");

@@ -43,7 +43,10 @@ fn device_mac(headers: &HeaderMap) -> Option<String> {
 }
 
 fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.to_string())
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
 }
 
 fn header_f32(headers: &HeaderMap, name: &str) -> Option<f64> {
@@ -65,10 +68,17 @@ fn content_hash(bytes: &[u8]) -> String {
 }
 
 /// Advance the device's rotation and return (screen_id, poll).
-async fn advance_device(st: &SharedState, device_id: i64, playlist_id: Option<i64>) -> Option<(i64, i64)> {
+async fn advance_device(
+    st: &SharedState,
+    device_id: i64,
+    playlist_id: Option<i64>,
+) -> Option<(i64, i64)> {
     let pl = playlist_id?;
     let poll = db::advance_poll(&st.pool, device_id).await.ok()?;
-    let screen_id = playlists::next_screen_id(&st.pool, pl, poll as u64).await.ok().flatten()?;
+    let screen_id = playlists::next_screen_id(&st.pool, pl, poll as u64)
+        .await
+        .ok()
+        .flatten()?;
     let _ = db::set_current_screen(&st.pool, device_id, screen_id).await;
     Some((screen_id, poll))
 }
@@ -76,7 +86,11 @@ async fn advance_device(st: &SharedState, device_id: i64, playlist_id: Option<i6
 /// Bits-per-pixel the device's panel wants: OG (TRMNL 1) is 1bpp (firmware
 /// hard-checks 48062-byte BMPs); X and newer accept 2bpp greyscale.
 fn device_bpp(headers: &HeaderMap) -> u16 {
-    match header_str(headers, "model").unwrap_or_default().to_ascii_lowercase().as_str() {
+    match header_str(headers, "model")
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         m if m.contains("x") => 2,
         _ => 1,
     }
@@ -94,8 +108,16 @@ fn base_url(headers: &HeaderMap) -> String {
 }
 
 /// Shared payload builder for display + display/current.
-async fn screen_payload(st: &SharedState, screen_id: i64, refresh_secs: i64, base: &str, bpp: u16) -> Option<serde_json::Value> {
-    let bmp = cache::cached_bmp(&st.pool, &st.backends, &st.cache, screen_id, bpp).await.ok()?;
+async fn screen_payload(
+    st: &SharedState,
+    screen_id: i64,
+    refresh_secs: i64,
+    base: &str,
+    bpp: u16,
+) -> Option<serde_json::Value> {
+    let bmp = cache::cached_bmp(&st.pool, &st.backends, &st.cache, screen_id, bpp)
+        .await
+        .ok()?;
     let hash = content_hash(&bmp);
     // bpp lives in the filename: the firmware's image GET sends no headers
     let filename = format!("screen-{screen_id}-{hash}-{bpp}");
@@ -119,15 +141,13 @@ async fn screen_payload(st: &SharedState, screen_id: i64, refresh_secs: i64, bas
     }))
 }
 
-pub async fn display(
-    State(st): State<SharedState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+pub async fn display(State(st): State<SharedState>, headers: HeaderMap) -> impl IntoResponse {
     let Some(mac) = device_mac(&headers) else {
         return (StatusCode::UNAUTHORIZED, "missing ID header").into_response();
     };
     let token = header_str(&headers, "access-token").unwrap_or_default();
-    let (id, api_key, playlist_id, refresh_interval) = match db::upsert_device(&st.pool, &mac).await {
+    let (id, api_key, playlist_id, refresh_interval) = match db::upsert_device(&st.pool, &mac).await
+    {
         Ok(v) => v,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
@@ -141,13 +161,15 @@ pub async fn display(
     }
     // Telemetry: store whatever the firmware reported.
     let _ = db::record_telemetry(
-        &st.pool, id,
+        &st.pool,
+        id,
         header_str(&headers, "fw-version").as_deref(),
         header_i64(&headers, "rssi"),
         header_f32(&headers, "battery-voltage"),
         header_i64(&headers, "width"),
         header_i64(&headers, "height"),
-    ).await;
+    )
+    .await;
 
     let (screen_id, _poll) = match advance_device(&st, id, playlist_id).await {
         Some(v) => v,
@@ -163,7 +185,15 @@ pub async fn display(
             .into_response();
         }
     };
-    match screen_payload(&st, screen_id, refresh_interval, &base_url(&headers), device_bpp(&headers)).await {
+    match screen_payload(
+        &st,
+        screen_id,
+        refresh_interval,
+        &base_url(&headers),
+        device_bpp(&headers),
+    )
+    .await
+    {
         Some(p) => axum::Json(p).into_response(),
         None => (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response(),
     }
@@ -178,9 +208,14 @@ pub async fn display_current(
         return (StatusCode::UNAUTHORIZED, "missing ID header").into_response();
     };
     let token = header_str(&headers, "access-token").unwrap_or_default();
-    let row = db::device_state_by_mac(&st.pool, &mac).await.unwrap_or(None);
+    let row = db::device_state_by_mac(&st.pool, &mac)
+        .await
+        .unwrap_or(None);
     let Some((api_key, mut current, refresh, playlist_id)) = row else {
-        return axum::Json(serde_json::json!({ "status": 404, "message": "No screen currently being displayed" })).into_response();
+        return axum::Json(
+            serde_json::json!({ "status": 404, "message": "No screen currently being displayed" }),
+        )
+        .into_response();
     };
     if !token.is_empty() && token != api_key {
         return axum::Json(serde_json::json!({
@@ -190,19 +225,29 @@ pub async fn display_current(
     }
     // If never polled, peek at the playlist head without advancing.
     if current.is_none()
-        && let Some(pl) = playlist_id {
-            current = playlists::next_screen_id(&st.pool, pl, 0).await.ok().flatten();
-        }
+        && let Some(pl) = playlist_id
+    {
+        current = playlists::next_screen_id(&st.pool, pl, 0)
+            .await
+            .ok()
+            .flatten();
+    }
     match current {
-        Some(sid) => match screen_payload(&st, sid, refresh, &base_url(&headers), device_bpp(&headers)).await {
-            Some(mut p) => {
-                // current-screen contract answers status 200, no advance
-                p["status"] = serde_json::json!(200);
-                axum::Json(p).into_response()
+        Some(sid) => {
+            match screen_payload(&st, sid, refresh, &base_url(&headers), device_bpp(&headers)).await
+            {
+                Some(mut p) => {
+                    // current-screen contract answers status 200, no advance
+                    p["status"] = serde_json::json!(200);
+                    axum::Json(p).into_response()
+                }
+                None => (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response(),
             }
-            None => (StatusCode::INTERNAL_SERVER_ERROR, "render failed").into_response(),
-        },
-        None => axum::Json(serde_json::json!({ "status": 404, "message": "No screen currently being displayed" })).into_response(),
+        }
+        None => axum::Json(
+            serde_json::json!({ "status": 404, "message": "No screen currently being displayed" }),
+        )
+        .into_response(),
     }
 }
 
@@ -229,14 +274,21 @@ pub async fn serve_image(
             Err(_) => (StatusCode::NOT_FOUND, "render failed").into_response(),
         };
     }
-    let Some(id_str) = stem.strip_prefix("screen-").and_then(|r| r.split('-').next()) else {
+    let Some(id_str) = stem
+        .strip_prefix("screen-")
+        .and_then(|r| r.split('-').next())
+    else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let Ok(screen_id) = id_str.parse::<i64>() else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     match cache::cached_bmp(&st.pool, &st.backends, &st.cache, screen_id, bpp).await {
-        Ok(bmp) => ([(axum::http::header::CONTENT_TYPE, "image/bmp")], bmp.to_vec()).into_response(),
+        Ok(bmp) => (
+            [(axum::http::header::CONTENT_TYPE, "image/bmp")],
+            bmp.to_vec(),
+        )
+            .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
@@ -249,7 +301,13 @@ pub async fn setup(State(st): State<SharedState>, headers: HeaderMap) -> impl In
         Ok(v) => v,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
-    let _ = db::record_setup(&st.pool, id, header_str(&headers, "fw-version").as_deref(), header_str(&headers, "model").as_deref()).await;
+    let _ = db::record_setup(
+        &st.pool,
+        id,
+        header_str(&headers, "fw-version").as_deref(),
+        header_str(&headers, "model").as_deref(),
+    )
+    .await;
     tracing::info!(id, %mac, "device setup/pair");
     axum::Json(serde_json::json!({
         "status": 200,
@@ -282,22 +340,41 @@ pub async fn log_create(
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let token = header_str(&headers, "access-token").unwrap_or_default();
-    let device_id = db::device_id_by_token(&st.pool, &token).await.unwrap_or(None);
+    let device_id = db::device_id_by_token(&st.pool, &token)
+        .await
+        .unwrap_or(None);
     let Some(device_id) = device_id else {
-        return (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({
-            "type": "/problem_details#device_id", "status": 404,
-            "detail": "invalid device id", "instance": "/api/log",
-        }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({
+                "type": "/problem_details#device_id", "status": 404,
+                "detail": "invalid device id", "instance": "/api/log",
+            })),
+        )
+            .into_response();
     };
     let Some(entries) = body.get("logs").and_then(|v| v.as_array()) else {
-        return (StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({
-            "type": "/problem_details#log_payload", "status": 422,
-            "detail": "invalid payload", "instance": "/api/log",
-        }))).into_response();
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            axum::Json(serde_json::json!({
+                "type": "/problem_details#log_payload", "status": 422,
+                "detail": "invalid payload", "instance": "/api/log",
+            })),
+        )
+            .into_response();
     };
     for e in entries {
-        let Some(message) = e.get("message").and_then(|v| v.as_str()) else { continue };
-        let _ = db::insert_device_log(&st.pool, device_id, message, e.get("level").and_then(|v| v.as_str()), e.get("source_path").and_then(|v| v.as_str())).await;
+        let Some(message) = e.get("message").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let _ = db::insert_device_log(
+            &st.pool,
+            device_id,
+            message,
+            e.get("level").and_then(|v| v.as_str()),
+            e.get("source_path").and_then(|v| v.as_str()),
+        )
+        .await;
     }
     StatusCode::NO_CONTENT.into_response()
 }
@@ -308,8 +385,14 @@ pub async fn create_screen(
     State(st): State<SharedState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let name = body.get("name").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "name required".into()))?;
-    let template = body.get("template").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "template required".into()))?;
+    let name = body
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "name required".into()))?;
+    let template = body
+        .get("template")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "template required".into()))?;
     // vars may arrive as a JSON object or as a JSON-encoded string (the SPA's
     // textarea); store the raw JSON text either way, validated.
     let vars = match body.get("vars") {
@@ -317,12 +400,16 @@ pub async fn create_screen(
         Some(v) => v.to_string(),
         None => "{}".into(),
     };
-    serde_json::from_str::<serde_json::Value>(&vars)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("vars must be valid JSON: {e}")))?;
+    serde_json::from_str::<serde_json::Value>(&vars).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("vars must be valid JSON: {e}"),
+        )
+    })?;
     // Compile the screen now — a saved screen must always render (#21).
-    validate_screen(template, &vars)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let id = crate::screens::create(&st.pool, name, template, &vars).await
+    validate_screen(template, &vars).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let id = crate::screens::create(&st.pool, name, template, &vars)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     cache::invalidate(&st.cache, id).await;
     Ok(axum::Json(serde_json::json!({ "id": id })))
@@ -332,8 +419,8 @@ pub async fn create_screen(
 /// Returns the human-readable error on failure; bad state must not be
 /// storable (#21 — APoSD: define errors out of existence downstream).
 pub fn validate_screen(template: &str, vars: &str) -> Result<(), String> {
-    let vars: serde_json::Value = serde_json::from_str(vars)
-        .map_err(|e| format!("vars must be valid JSON: {e}"))?;
+    let vars: serde_json::Value =
+        serde_json::from_str(vars).map_err(|e| format!("vars must be valid JSON: {e}"))?;
     crate::template::render_screen(template, &vars)
         .map(|_| ())
         .map_err(|e| format!("template does not compile: {e}"))
@@ -345,16 +432,23 @@ pub async fn preview_draft(
     State(st): State<SharedState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
-    let template = body.get("template").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "template required".into()))?;
+    let template = body
+        .get("template")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "template required".into()))?;
     let vars = match body.get("vars") {
         Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
         Some(v) => v.to_string(),
         None => "{}".into(),
     };
     validate_screen(template, &vars).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let pref = body.get("render_backend").and_then(|v| v.as_str()).unwrap_or("");
+    let pref = body
+        .get("render_backend")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let backend = st.backends.for_pref(pref);
-    let bmp = cache::render_bmp(backend.as_ref(), template, &vars, 2).await
+    let bmp = cache::render_bmp(backend.as_ref(), template, &vars, 2)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let png = bmp_to_png(&bmp).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], png).into_response())
@@ -365,7 +459,8 @@ pub async fn preview_screen(
     State(st): State<SharedState>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
-    let bmp = cache::cached_bmp(&st.pool, &st.backends, &st.cache, id, 2).await
+    let bmp = cache::cached_bmp(&st.pool, &st.backends, &st.cache, id, 2)
+        .await
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
     let png = bmp_to_png(&bmp).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], png).into_response())
@@ -384,14 +479,23 @@ pub fn bmp_to_png(bmp: &[u8]) -> anyhow::Result<Vec<u8>> {
         let r = &bmp[off + y * row..off + (y + 1) * row];
         for x in 0..w {
             let idx = (r[x / 4] >> (6 - 2 * (x % 4))) & 3;
-            img.put_pixel(x as u32, (h - 1 - y) as u32, image::Luma([pal[idx as usize]]));
+            img.put_pixel(
+                x as u32,
+                (h - 1 - y) as u32,
+                image::Luma([pal[idx as usize]]),
+            );
         }
     }
     let mut out = Vec::new();
     {
         use image::ImageEncoder;
         let encoder = image::codecs::png::PngEncoder::new(&mut out);
-        encoder.write_image(img.as_raw(), w as u32, h as u32, image::ExtendedColorType::L8)?;
+        encoder.write_image(
+            img.as_raw(),
+            w as u32,
+            h as u32,
+            image::ExtendedColorType::L8,
+        )?;
     }
     Ok(out)
 }
@@ -402,7 +506,8 @@ pub async fn firmware_latest(
     State(st): State<SharedState>,
     headers: HeaderMap,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let row = firmware::latest(&st.pool).await
+    let row = firmware::latest(&st.pool)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let device_fw = header_str(&headers, "fw-version");
     Ok(axum::Json(match row {
@@ -421,9 +526,17 @@ pub async fn create_playlist(
     State(st): State<SharedState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let name = body.get("name").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "name required".into()))?;
-    let ids: Vec<i64> = body.get("screen_ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_i64()).collect()).unwrap_or_default();
-    let pid = playlists::create(&st.pool, name, &ids).await
+    let name = body
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "name required".into()))?;
+    let ids: Vec<i64> = body
+        .get("screen_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_i64()).collect())
+        .unwrap_or_default();
+    let pid = playlists::create(&st.pool, name, &ids)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(axum::Json(serde_json::json!({ "id": pid })))
 }
@@ -432,10 +545,19 @@ pub async fn assign_device(
     State(st): State<SharedState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
-    let mac = body.get("mac").and_then(|v| v.as_str()).ok_or((StatusCode::BAD_REQUEST, "mac required".into()))?;
-    let playlist_id = body.get("playlist_id").and_then(|v| v.as_i64()).ok_or((StatusCode::BAD_REQUEST, "playlist_id required".into()))?;
-    let n = db::set_device_playlist_by_mac(&st.pool, mac, playlist_id).await
+    let mac = body
+        .get("mac")
+        .and_then(|v| v.as_str())
+        .ok_or((StatusCode::BAD_REQUEST, "mac required".into()))?;
+    let playlist_id = body
+        .get("playlist_id")
+        .and_then(|v| v.as_i64())
+        .ok_or((StatusCode::BAD_REQUEST, "playlist_id required".into()))?;
+    let n = db::set_device_playlist_by_mac(&st.pool, mac, playlist_id)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if n == 0 { return Err((StatusCode::NOT_FOUND, "unknown mac".into())); }
+    if n == 0 {
+        return Err((StatusCode::NOT_FOUND, "unknown mac".into()));
+    }
     Ok(axum::Json(serde_json::json!({ "ok": true })))
 }

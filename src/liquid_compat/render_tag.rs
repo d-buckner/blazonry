@@ -31,7 +31,11 @@ impl TagReflection for RenderTag {
 }
 
 impl ParseTag for RenderTag {
-    fn parse(&self, mut arguments: TagTokenIter<'_>, _options: &Language) -> Result<Box<dyn Renderable>> {
+    fn parse(
+        &self,
+        mut arguments: TagTokenIter<'_>,
+        _options: &Language,
+    ) -> Result<Box<dyn Renderable>> {
         let partial = arguments
             .expect_next("Identifier or literal expected.")?
             .expect_value()
@@ -87,7 +91,12 @@ impl ParseTag for RenderTag {
 
         arguments.expect_nothing()?;
 
-        Ok(Box::new(Render { partial, vars, with_as, for_as }))
+        Ok(Box::new(Render {
+            partial,
+            vars,
+            with_as,
+            for_as,
+        }))
     }
 
     fn reflection(&self) -> &dyn TagReflection {
@@ -95,7 +104,10 @@ impl ParseTag for RenderTag {
     }
 }
 
-fn parse_pairs(arguments: &mut TagTokenIter<'_>, vars: &mut Vec<(String, Expression)>) -> Result<()> {
+fn parse_pairs(
+    arguments: &mut TagTokenIter<'_>,
+    vars: &mut Vec<(String, Expression)>,
+) -> Result<()> {
     let mut token = arguments.next();
     while let Some(t) = token {
         let id = t.expect_identifier().into_result()?.to_owned();

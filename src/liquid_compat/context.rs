@@ -12,7 +12,11 @@ use serde_json::{Map, Value};
 pub fn with_trmnl_context(vars: &Value) -> Value {
     let mut out = vars.clone();
     let Some(map) = out.as_object_mut() else {
-        return Value::Object([("trmnl".to_string(), default_trmnl())].into_iter().collect());
+        return Value::Object(
+            [("trmnl".to_string(), default_trmnl())]
+                .into_iter()
+                .collect(),
+        );
     };
     match map.get_mut("trmnl") {
         Some(existing) => deep_merge(existing, &default_trmnl()),

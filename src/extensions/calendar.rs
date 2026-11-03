@@ -13,7 +13,7 @@
 //!   time_format: "24h" | "12h" (default "12h")
 //!   include_description: bool (default false)
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::SqlitePool;
 
 /// The agenda template: Liquid -> Screen JSON, fed by merged events.
@@ -47,16 +47,32 @@ pub const AGENDA_TEMPLATE: &str = r##"{
 
 /// Merged snapshot rows -> Liquid vars for AGENDA_TEMPLATE.
 /// `rows` items: (start, all_day, title, location, description, source_name).
-pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], settings: &Value) -> Value {
-    let days_window = settings.get("days").and_then(|v| v.as_i64()).unwrap_or(3).max(1);
-    let max_events = settings.get("max_events").and_then(|v| v.as_i64()).unwrap_or(12).max(1) as usize;
+pub fn agenda_vars(
+    rows: &[(String, bool, String, String, String, String)],
+    settings: &Value,
+) -> Value {
+    let days_window = settings
+        .get("days")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(3)
+        .max(1);
+    let max_events = settings
+        .get("max_events")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(12)
+        .max(1) as usize;
     let h24 = settings.get("time_format").and_then(|v| v.as_str()) == Some("24h");
-    let include_desc = settings.get("include_description").and_then(|v| v.as_bool()).unwrap_or(false);
+    let include_desc = settings
+        .get("include_description")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let tz = crate::providers::la();
     let now = chrono::Utc::now();
     let today = now.with_timezone(&tz).date_naive();
-    let win_end = today.checked_add_days(chrono::Days::new(days_window as u64 - 1)).unwrap_or(today);
+    let win_end = today
+        .checked_add_days(chrono::Days::new(days_window as u64 - 1))
+        .unwrap_or(today);
 
     // Group by LA-local date, dropping past timed events (TRMNL behavior:
     // today's agenda starts at "now"; all-day events stay all day).
@@ -66,7 +82,9 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
         let date = if *all_day {
             chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").ok()
         } else {
-            chrono::DateTime::parse_from_rfc3339(start).ok().map(|dt| dt.with_timezone(&tz).date_naive())
+            chrono::DateTime::parse_from_rfc3339(start)
+                .ok()
+                .map(|dt| dt.with_timezone(&tz).date_naive())
         };
         let Some(date) = date else { continue };
         if date < today || date > win_end {
@@ -78,17 +96,23 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
             match chrono::DateTime::parse_from_rfc3339(start) {
                 Ok(dt) => {
                     let l = dt.with_timezone(&tz);
-                    if h24 { l.format("%H:%M").to_string() } else { l.format("%-l:%M %p").to_string().to_lowercase() }
+                    if h24 {
+                        l.format("%H:%M").to_string()
+                    } else {
+                        l.format("%-l:%M %p").to_string().to_lowercase()
+                    }
                 }
                 Err(_) => "?".into(),
             }
         };
         // Past timed events today are history, not agenda.
-        if !*all_day && date == today
+        if !*all_day
+            && date == today
             && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(start)
-                && dt < now {
-                    continue;
-                }
+            && dt < now
+        {
+            continue;
+        }
         let mut extra = location.clone();
         if extra.is_empty() && include_desc {
             extra = description.chars().take(40).collect();
@@ -104,16 +128,19 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
         }
     }
 
-    let days: Vec<Value> = by_day.into_iter().map(|(d, events)| {
-        let label = if d == today {
-            "Today".to_string()
-        } else {
-            d.format("%a %b %-d").to_string()
-        };
-        json!({ "label": label, "events": events,
+    let days: Vec<Value> = by_day
+        .into_iter()
+        .map(|(d, events)| {
+            let label = if d == today {
+                "Today".to_string()
+            } else {
+                d.format("%a %b %-d").to_string()
+            };
+            json!({ "label": label, "events": events,
             "bg": if d == today { 1 } else { 2 },
             "fg": if d == today { 3 } else { 0 } })
-    }).collect();
+        })
+        .collect();
 
     json!({
         "title": settings.get("title").and_then(|v| v.as_str()).unwrap_or("Calendar"),
@@ -127,7 +154,13 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
 /// Create a calendar extension: validates cardinality (1..n), creates
 /// its screen row with the agenda template, and renders it immediately.
 /// Returns (extension_id, screen_id).
-pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache: &crate::cache::BmpCache, name: &str, settings: Value) -> anyhow::Result<(i64, i64)> {
+pub async fn create(
+    pool: &SqlitePool,
+    backends: &crate::cache::Backends,
+    cache: &crate::cache::BmpCache,
+    name: &str,
+    settings: Value,
+) -> anyhow::Result<(i64, i64)> {
     let ids = super::resolved_provider_ids(pool, &settings, "calendar").await?;
     if ids.is_empty() {
         anyhow::bail!("calendar requires 1..n calendar providers; none configured or picked");

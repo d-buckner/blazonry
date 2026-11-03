@@ -3,11 +3,11 @@
 //! -> 2-bit BMP + PNG preview. `cargo run --bin demo`
 
 use base64::Engine as _;
-use serde_json::json;
 use blazonry::bmp::encode_2bit_bmp;
 use blazonry::render::Renderer;
 use blazonry::template::render_screen;
 use blazonry::{HEIGHT, WIDTH};
+use serde_json::json;
 
 const TEMPLATE: &str = r##"{
   "name": "demo",
@@ -44,13 +44,21 @@ fn main() -> anyhow::Result<()> {
     let bmp = encode_2bit_bmp(WIDTH, HEIGHT, &indices);
     std::fs::write("out.bmp", &bmp)?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bmp);
-    println!("BMP {} bytes, base64 {} bytes, render {:.1}ms", bmp.len(), b64.len(), render_ms);
+    println!(
+        "BMP {} bytes, base64 {} bytes, render {:.1}ms",
+        bmp.len(),
+        b64.len(),
+        render_ms
+    );
 
     // PNG preview of the dithered output for eyeballing
     let mut img = image::GrayImage::new(WIDTH as u32, HEIGHT as u32);
     for (i, &v) in indices.iter().enumerate() {
-        img.put_pixel((i % WIDTH) as u32, (i / WIDTH) as u32,
-            image::Luma([blazonry::bmp::LEVELS[v as usize]]));
+        img.put_pixel(
+            (i % WIDTH) as u32,
+            (i / WIDTH) as u32,
+            image::Luma([blazonry::bmp::LEVELS[v as usize]]),
+        );
     }
     img.save("out.png")?;
     println!("wrote out.bmp + out.png");

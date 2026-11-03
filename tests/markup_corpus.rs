@@ -32,8 +32,17 @@ fn corpus_native_render_rate() {
     let mut map_gaps: HashMap<String, usize> = HashMap::new(); // real mapper failures
     let mut liquid_err = 0usize;
     let mut total = 0usize;
-    const BROWSER_ONLY: [&str; 7] = ["img", "svg", "table", "canvas", "iframe", "progress-bar", "video"];
-    let files: Vec<_> = std::fs::read_dir(dir).unwrap()
+    const BROWSER_ONLY: [&str; 7] = [
+        "img",
+        "svg",
+        "table",
+        "canvas",
+        "iframe",
+        "progress-bar",
+        "video",
+    ];
+    let files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.to_string_lossy().ends_with("__markup_full.liquid"))
@@ -43,7 +52,10 @@ fn corpus_native_render_rate() {
         let src = std::fs::read_to_string(path).unwrap();
         let rendered = match blazonry::template::render_str(&src, &vars) {
             Ok(r) => r,
-            Err(_) => { liquid_err += 1; continue; }
+            Err(_) => {
+                liquid_err += 1;
+                continue;
+            }
         };
         match blazonry::markup::markup_to_screen(&rendered, "probe") {
             Ok(s) if !s.parts.is_empty() => ok += 1,
@@ -65,12 +77,18 @@ fn corpus_native_render_rate() {
     println!("\ncorpus: {} recipes (markup_full)", total);
     println!("  liquid render failed (partials/vars): {liquid_err}");
     println!("  browser-required (img/svg/table/...): {browser_required}");
-    println!("  native map OK: {ok} ({:.0}% of mappable)", 100.0 * ok as f64 / mappable.max(1) as f64);
+    println!(
+        "  native map OK: {ok} ({:.0}% of mappable)",
+        100.0 * ok as f64 / mappable.max(1) as f64
+    );
     for (what, n) in top.iter().take(12) {
         println!("  map_gap[{what}]: {n}");
     }
     // Floor assertion on the mappable subset: recipes whose content the native
     // mapper SHOULD express (no browser-only elements) must mostly work.
     // Raise as the mapper grows; never lower it.
-    assert!(ok as f64 / mappable.max(1) as f64 > 0.85, "native rate too low: {ok}/{mappable}");
+    assert!(
+        ok as f64 / mappable.max(1) as f64 > 0.85,
+        "native rate too low: {ok}/{mappable}"
+    );
 }

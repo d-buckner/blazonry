@@ -22,8 +22,8 @@
 mod ldap;
 mod oidc;
 
-pub use ldap::{ldap_verify, LdapCfg};
-pub use oidc::{finish_login, start_login, OidcCfg, OidcError, OidcIdentity, PendingOidc};
+pub use ldap::{LdapCfg, ldap_verify};
+pub use oidc::{OidcCfg, OidcError, OidcIdentity, PendingOidc, finish_login, start_login};
 
 use std::sync::Arc;
 
@@ -55,15 +55,26 @@ fn env_set(key: &str) -> Option<String> {
 
 impl AuthConfig {
     pub fn from_env() -> anyhow::Result<Self> {
-        let mode = match env_or("BLAZONRY_AUTH", "local").to_ascii_lowercase().as_str() {
+        let mode = match env_or("BLAZONRY_AUTH", "local")
+            .to_ascii_lowercase()
+            .as_str()
+        {
             "local" => AuthMode::Local,
             "ldap" => AuthMode::Ldap,
             "oidc" => AuthMode::Oidc,
             "none" => AuthMode::None,
             other => anyhow::bail!("BLAZONRY_AUTH must be local|ldap|oidc|none, got '{other}'"),
         };
-        let ldap = if mode == AuthMode::Ldap { Some(LdapCfg::from_env()?) } else { None };
-        let oidc = if mode == AuthMode::Oidc { Some(OidcCfg::from_env()?) } else { None };
+        let ldap = if mode == AuthMode::Ldap {
+            Some(LdapCfg::from_env()?)
+        } else {
+            None
+        };
+        let oidc = if mode == AuthMode::Oidc {
+            Some(OidcCfg::from_env()?)
+        } else {
+            None
+        };
         Ok(AuthConfig { mode, ldap, oidc })
     }
 
@@ -83,13 +94,19 @@ impl AuthConfig {
 /// CSPRNG on Linux; blazonry targets LAN boxes, so no getrandom crate.
 pub fn rand_bytes(n: usize) -> Vec<u8> {
     let mut bytes = vec![0u8; n];
-    std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom").expect("/dev/urandom"), &mut bytes)
-        .expect("urandom read");
+    std::io::Read::read_exact(
+        &mut std::fs::File::open("/dev/urandom").expect("/dev/urandom"),
+        &mut bytes,
+    )
+    .expect("urandom read");
     bytes
 }
 
 pub fn random_hex(nbytes: usize) -> String {
-    rand_bytes(nbytes).iter().map(|b| format!("{b:02x}")).collect()
+    rand_bytes(nbytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub fn random_b64url(nbytes: usize) -> String {
@@ -105,4 +122,3 @@ impl ContextEnv for Result<String, std::env::VarError> {
         self.map_err(|_| anyhow::anyhow!("missing required env var {key}"))
     }
 }
-
