@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Device plane: the endpoints TRMNL firmware actually calls.
 //!
-//! Wire contract (tests/spec/ — BYOS docs + Terminus source, Oct 2026):
+//! Wire contract (TRMNL BYOS docs + Terminus source, Oct 2026):
 //!   GET /api/setup     headers: ID or idempotency-key = MAC, FW-Version, Model
 //!        -> { status: 200, api_key, friendly_id, image_url, message }
 //!   GET /api/display   headers: ID/idempotency-key, Access-Token, telemetry

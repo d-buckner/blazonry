@@ -134,10 +134,11 @@ plus two Python scripts; no physical hardware required.
   create screen/playlist → device pair/assign/poll → decodes the returned
   BMP and asserts a valid 800×480 2-bit image, playlist rotation, and the
   wrong-token `reset_firmware` path → PNG preview.
-- **spec_conformance** — one test per contract line against
-  ground truth vendored in `tests/spec/`: TRMNL BYOS docs, the private
-  Display API docs, and Terminus `config/routes.rb` + the actual
-  `app/actions/api/{display,setup,log}` sources.
+- **spec_conformance** — one test per contract line against the wire
+  contract: TRMNL BYOS docs, the private Display API docs, and Terminus
+  `config/routes.rb` + the actual `app/actions/api/{display,setup,log}`
+  sources (verified Oct 2026; the assertions encode the contract, the
+  upstream sources are not vendored).
 
 ### 2. Real firmware in QEMU (`scripts/e2e_sim.py`)
 

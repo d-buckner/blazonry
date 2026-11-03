@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Spec conformance suite: one test per contract line from the TRMNL BYOS
-//! wire spec. Ground truth (fetched 2026-10-29, vendored in tests/spec/):
+//! wire spec. Ground truth (verified against the TRMNL BYOS docs, the
+//! private Display API docs, and Terminus sources, Oct 2026 — not vendored;
+//! the assertions below encode the contract):
 //!   - docs.trmnl.com/go/diy/byos.md            (setup/display contract)
 //!   - docs.trmnl.com/go/private-api/screens.md (display, /current, errors)
 //!   - usetrmnl/terminus config/routes.rb + app/actions/api/* (Terminus parity)
