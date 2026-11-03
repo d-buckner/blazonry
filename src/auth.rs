@@ -150,7 +150,7 @@ async fn ldap_login(st: &SharedState, body: &serde_json::Value) -> Result<Json<s
 pub async fn oidc_login(State(st): State<SharedState>) -> Result<axum::response::Response, (StatusCode, String)> {
     let cfg = st.auth.oidc.as_ref().ok_or((StatusCode::INTERNAL_SERVER_ERROR, "oidc not configured".into()))?;
     let url = crate::auth_core::start_login(cfg, &st.pending_oidc).await
-        .map_err(|e| oidc_err(e))?;
+        .map_err(oidc_err)?;
     Ok(axum::response::Redirect::to(&url).into_response())
 }
 

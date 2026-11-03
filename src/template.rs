@@ -11,7 +11,7 @@ use crate::screen::Screen;
 /// (partials, `{% liquid %}`, filter pack, `trmnl.*` context injection).
 pub fn render_str(tmpl: &str, vars: &serde_json::Value) -> anyhow::Result<String> {
     let globals = liquid::to_object(&liquid_compat::with_trmnl_context(vars))?;
-    Ok(liquid_compat::render_str(tmpl, &globals)?)
+    liquid_compat::render_str(tmpl, &globals)
 }
 
 pub fn render_screen(template_src: &str, vars: &serde_json::Value) -> anyhow::Result<Screen> {

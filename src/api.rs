@@ -189,11 +189,10 @@ pub async fn display_current(
         .into_response();
     }
     // If never polled, peek at the playlist head without advancing.
-    if current.is_none() {
-        if let Some(pl) = playlist_id {
+    if current.is_none()
+        && let Some(pl) = playlist_id {
             current = playlists::next_screen_id(&st.pool, pl, 0).await.ok().flatten();
         }
-    }
     match current {
         Some(sid) => match screen_payload(&st, sid, refresh, &base_url(&headers), device_bpp(&headers)).await {
             Some(mut p) => {
@@ -378,7 +377,7 @@ pub fn bmp_to_png(bmp: &[u8]) -> anyhow::Result<Vec<u8>> {
     let off = u32::from_le_bytes(bmp[10..14].try_into()?) as usize;
     let w = i32::from_le_bytes(bmp[18..22].try_into()?) as usize;
     let h = i32::from_le_bytes(bmp[22..26].try_into()?) as usize;
-    let row = (w + 3) / 4;
+    let row = w.div_ceil(4);
     let pal: Vec<u8> = (0..4).map(|i| bmp[54 + 4 * i]).collect();
     let mut img = image::GrayImage::new(w as u32, h as u32);
     for y in 0..h {

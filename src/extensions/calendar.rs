@@ -84,13 +84,11 @@ pub fn agenda_vars(rows: &[(String, bool, String, String, String, String)], sett
             }
         };
         // Past timed events today are history, not agenda.
-        if !*all_day && date == today {
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(start) {
-                if dt < now {
+        if !*all_day && date == today
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(start)
+                && dt < now {
                     continue;
                 }
-            }
-        }
         let mut extra = location.clone();
         if extra.is_empty() && include_desc {
             extra = description.chars().take(40).collect();

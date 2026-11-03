@@ -119,11 +119,10 @@ Brand-visible items only; the git/container mechanics live elsewhere.
       (decided Nov 2026) — keep it in sync with `LICENSE`.
 - [ ] Org avatar and blazonry icon: both already conform to §3's mark grammar;
       no redraw needed.
-- [x] Honesty audit before publish: bloud itself is currently closed source
-      while blazonry ships open (direction: AGPL-3.0 + commercial dual-license).
-      That's a legitimate mix, and the org README says it plainly under
-      "Licensing stance" — the house brand survives on exactly this kind of
-      answer.
+- [x] Honesty audit before publish: resolved Nov 2026 — the engine is AGPL-3.0
+      + commercial dual-license, the same license as blazonry. The org README's
+      "Licensing stance" says so plainly; the house brand survives on exactly
+      this kind of answer.
 
 ## 7. What must never happen
 

@@ -71,7 +71,7 @@ pub async fn template_vars_backend(pool: &SqlitePool, id: i64) -> Result<(String
 }
 
 pub async fn all_ids(pool: &SqlitePool) -> Result<Vec<i64>, sqlx::Error> {
-    Ok(sqlx::query_scalar("SELECT id FROM screens ORDER BY id").fetch_all(pool).await?)
+    sqlx::query_scalar("SELECT id FROM screens ORDER BY id").fetch_all(pool).await
 }
 
 /// Delete a screen and its playlist references. Returns rows deleted from

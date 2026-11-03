@@ -38,7 +38,7 @@ pub fn floyd_steinberg_4(src: &[u8], width: usize, height: usize) -> Vec<u8> {
                 }
                 buf[i + width] += err * 5 / 16;
                 if x + 1 < width {
-                    buf[i + width + 1] += err * 1 / 16;
+                    buf[i + width + 1] += err / 16;
                 }
             }
         }

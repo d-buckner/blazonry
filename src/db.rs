@@ -240,12 +240,12 @@ pub async fn record_setup(pool: &SqlitePool, id: i64, fw_version: Option<&str>, 
 
 /// Advance the rotation counter; returns the new poll_count.
 pub async fn advance_poll(pool: &SqlitePool, id: i64) -> Result<i64, sqlx::Error> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "UPDATE devices SET poll_count = poll_count + 1, last_poll_at = datetime('now') WHERE id = ? RETURNING poll_count",
     )
     .bind(id)
     .fetch_one(pool)
-    .await?)
+    .await
 }
 
 pub async fn set_current_screen(pool: &SqlitePool, id: i64, screen_id: i64) -> Result<(), sqlx::Error> {
@@ -257,17 +257,17 @@ pub async fn set_current_screen(pool: &SqlitePool, id: i64, screen_id: i64) -> R
 
 /// (api_key, current_screen_id, refresh_interval, playlist_id) for /display/current.
 pub async fn device_state_by_mac(pool: &SqlitePool, mac: &str) -> Result<Option<(String, Option<i64>, i64, Option<i64>)>, sqlx::Error> {
-    Ok(sqlx::query_as(
+    sqlx::query_as(
         "SELECT api_key, current_screen_id, refresh_interval, playlist_id FROM devices WHERE mac = ?",
     )
     .bind(mac)
     .fetch_optional(pool)
-    .await?)
+    .await
 }
 
 pub async fn device_id_by_token(pool: &SqlitePool, token: &str) -> Result<Option<i64>, sqlx::Error> {
-    Ok(sqlx::query_scalar("SELECT id FROM devices WHERE api_key = ?").bind(token)
-        .fetch_optional(pool).await?)
+    sqlx::query_scalar("SELECT id FROM devices WHERE api_key = ?").bind(token)
+        .fetch_optional(pool).await
 }
 
 pub async fn insert_device_log(pool: &SqlitePool, device_id: i64, message: &str, level: Option<&str>, source_path: Option<&str>) -> Result<(), sqlx::Error> {

@@ -8,7 +8,7 @@ pub const LEVELS: [u8; 4] = [0, 85, 170, 255]; // index 0 = black .. 3 = white
 /// 0=black per LEVELS). Encodes a bottom-up 2-bit BMP with a greyscale palette.
 pub fn encode_2bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
     assert_eq!(pixels.len(), width * height);
-    let row_bytes = (width + 3) / 4; // 2-bit rows padded to 4-byte boundary
+    let row_bytes = width.div_ceil(4); // 2-bit rows padded to 4-byte boundary
     let image_size = row_bytes * height;
     let palette_size = 4 * 4; // 4 entries BGRA
     let file_size = 14 + 40 + palette_size + image_size;
@@ -45,13 +45,9 @@ pub fn encode_2bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
             }
             out.push(byte);
         }
-        // pad row to 4 bytes
-        let pad = row_bytes - (width + 3) / 4; // always 0 here; row_bytes already padded
-        let _ = pad;
-        let written = (width + 3) / 4;
-        for _ in written..row_bytes {
-            out.push(0);
-        }
+        // pad row to 4 bytes (row_bytes already padded; usually 0 bytes)
+        let written = width.div_ceil(4);
+        out.resize(out.len() + row_bytes - written, 0);
     }
     out
 }
@@ -62,7 +58,7 @@ pub fn encode_2bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
 /// Indices 0,1 (black/dark grey) -> black bit; 2,3 -> white bit.
 pub fn encode_1bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
     assert_eq!(pixels.len(), width * height);
-    let row_bytes = (width + 7) / 8;
+    let row_bytes = width.div_ceil(8);
     let image_size = row_bytes * height;
     let file_size = 14 + 40 + 8 + image_size;
 
@@ -99,10 +95,8 @@ pub fn encode_1bit_bmp(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
             }
             out.push(byte);
         }
-        let written = (width + 7) / 8;
-        for _ in written..row_bytes {
-            out.push(0);
-        }
+        let written = width.div_ceil(8);
+        out.resize(out.len() + row_bytes - written, 0);
     }
     out
 }

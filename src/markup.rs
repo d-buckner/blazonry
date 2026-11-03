@@ -239,7 +239,7 @@ struct El<'a> {
 
 impl<'a> El<'a> {
     fn has(&self, c: &str) -> bool {
-        self.classes.iter().any(|x| *x == c)
+        self.classes.contains(&c)
     }
     fn class_starting_with(&self, p: &str) -> Option<&'a str> {
         self.classes.iter().find(|x| x.starts_with(p) && !is_variant_prefixed(x)).map(|x| &x[p.len()..])
@@ -367,9 +367,9 @@ fn map_el(el: &El, inh: Inherited) -> Result<Option<Node>, Unsupported> {
 
     let direction = if el.has("flex--col") || el.has("layout--col") || el.has("column") {
         Direction::Column
-    } else if el.has("flex--row") || el.has("layout--row") || el.has("columns") || el.class_starting_with("grid--cols-").is_some() {
-        Direction::Row
     } else {
+        // flex--row / layout--row / columns / grid--cols-* all lay out as rows,
+        // and so does the default — one branch is all the semantics need.
         Direction::Row
     };
 
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(*direction, Direction::Column);
         assert_eq!(children.len(), 2);
         assert_eq!(children[0].style.font_px, 30.0); // title--large
-        assert_eq!(children[0].style.bold, true);
+        assert!(children[0].style.bold);
         assert_eq!(children[1].style.font_px, 12.0); // label--small
         assert_eq!(s.parts[0].gap, 7.0); // gap--small
     }

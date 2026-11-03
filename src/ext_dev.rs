@@ -13,9 +13,9 @@
 //!
 //! - `blazonry ext new <name>`      scaffold `ext/<name>/` with a working template
 //! - `blazonry ext check <path>`    validate: vars JSON, Liquid, screen schema,
-//!                              pixel render — machine-readable JSON output
+//!   pixel render — machine-readable JSON output
 //! - `blazonry ext render <path>`   write `<out>.bmp` (panel wire format) +
-//!                              `<out>.png` (eyeball preview)
+//!   `<out>.png` (eyeball preview)
 //!
 //! `check` is designed for agents: one command, exit code + JSON on stdout,
 //! errors carry the stage that failed (`vars|liquid|json|schema|render`) so a
@@ -268,7 +268,7 @@ pub fn cli(args: &[String]) -> i32 {
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     // drop the subcommand word from positionals
     let positional: Vec<&String> = if positional.first().map(|s| s.as_str()) == Some("ext") {
-        positional[1..].iter().copied().collect()
+        positional[1..].to_vec()
     } else {
         positional
     };

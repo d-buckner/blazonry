@@ -60,7 +60,7 @@ fn corpus_native_render_rate() {
         }
     }
     let mut top: Vec<_> = map_gaps.into_iter().collect();
-    top.sort_by(|a, b| b.1.cmp(&a.1));
+    top.sort_by_key(|b| std::cmp::Reverse(b.1));
     let mappable = ok + top.iter().map(|(_, n)| n).sum::<usize>();
     println!("\ncorpus: {} recipes (markup_full)", total);
     println!("  liquid render failed (partials/vars): {liquid_err}");

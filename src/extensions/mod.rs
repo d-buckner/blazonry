@@ -44,7 +44,7 @@ pub async fn resolved_provider_ids(pool: &SqlitePool, settings: &Value, shape: &
             return Ok(ids);
         }
     }
-    Ok(crate::providers::provider_ids_by_shape(pool, shape).await?)
+    crate::providers::provider_ids_by_shape(pool, shape).await
 }
 
 /// The set of provider ids actually referenced by existing extensions.
@@ -204,45 +204,6 @@ pub async fn kind_of(pool: &SqlitePool, id: i64) -> anyhow::Result<String> {
     Ok(sqlx::query_scalar("SELECT kind FROM extensions WHERE id = ?").bind(id).fetch_one(pool).await?)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    async fn test_pool() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::query(crate::providers::MIGRATE).execute(&pool).await.unwrap();
-        pool
-    }
-
-    #[tokio::test]
-    async fn referenced_ids_exclude_orphans_and_honor_explicit_picks() {
-        let pool = test_pool().await;
-        let cal1 = crate::providers::create(&pool, "caldav", "A", &json!({"url": "http://x/"}), 3600).await.unwrap();
-        let cal2 = crate::providers::create(&pool, "caldav", "B", &json!({"url": "http://y/"}), 3600).await.unwrap();
-        let met = crate::providers::create(&pool, "open_meteo", "W", &json!({"latitude": 1.0, "longitude": 2.0}), 3600).await.unwrap();
-
-        // No extensions: nothing is referenced, even though providers exist.
-        assert!(referenced_provider_ids(&pool).await.unwrap().is_empty());
-
-        // A calendar extension with default selector references all calendar
-        // providers but never the weather one.
-        insert(&pool, "calendar", "Cal", &json!({}), 1).await.unwrap();
-        let refs = referenced_provider_ids(&pool).await.unwrap();
-        assert!(refs.contains(&cal1) && refs.contains(&cal2) && !refs.contains(&met));
-
-        // Explicit pick narrows the set; the un-picked provider is orphaned.
-        set_settings(&pool, 1, &json!({"provider_ids": [cal1]})).await.unwrap();
-        let refs = referenced_provider_ids(&pool).await.unwrap();
-        assert!(refs.contains(&cal1) && !refs.contains(&cal2));
-
-        // Weather's singular provider_id is folded into the same set.
-        insert(&pool, "weather", "Wx", &json!({"provider_id": met}), 2).await.unwrap();
-        let refs = referenced_provider_ids(&pool).await.unwrap();
-        assert!(refs.contains(&cal1) && refs.contains(&met) && !refs.contains(&cal2));
-    }
-}
-
 pub async fn list(pool: &SqlitePool) -> anyhow::Result<Vec<Value>> {
     let rows = sqlx::query("SELECT id, kind, name, settings, screen_id FROM extensions ORDER BY id")
         .fetch_all(pool).await?;
@@ -301,5 +262,44 @@ pub async fn create(pool: &SqlitePool, backends: &crate::cache::Backends, cache:
         "weather" => weather::create(pool, backends, cache, name, settings).await,
         "countdown" => countdown::create(pool, backends, cache, name, settings).await,
         other => anyhow::bail!("unknown extension kind '{other}' (supported: calendar, weather, countdown)"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    async fn test_pool() -> SqlitePool {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(crate::providers::MIGRATE).execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn referenced_ids_exclude_orphans_and_honor_explicit_picks() {
+        let pool = test_pool().await;
+        let cal1 = crate::providers::create(&pool, "caldav", "A", &json!({"url": "http://x/"}), 3600).await.unwrap();
+        let cal2 = crate::providers::create(&pool, "caldav", "B", &json!({"url": "http://y/"}), 3600).await.unwrap();
+        let met = crate::providers::create(&pool, "open_meteo", "W", &json!({"latitude": 1.0, "longitude": 2.0}), 3600).await.unwrap();
+
+        // No extensions: nothing is referenced, even though providers exist.
+        assert!(referenced_provider_ids(&pool).await.unwrap().is_empty());
+
+        // A calendar extension with default selector references all calendar
+        // providers but never the weather one.
+        insert(&pool, "calendar", "Cal", &json!({}), 1).await.unwrap();
+        let refs = referenced_provider_ids(&pool).await.unwrap();
+        assert!(refs.contains(&cal1) && refs.contains(&cal2) && !refs.contains(&met));
+
+        // Explicit pick narrows the set; the un-picked provider is orphaned.
+        set_settings(&pool, 1, &json!({"provider_ids": [cal1]})).await.unwrap();
+        let refs = referenced_provider_ids(&pool).await.unwrap();
+        assert!(refs.contains(&cal1) && !refs.contains(&cal2));
+
+        // Weather's singular provider_id is folded into the same set.
+        insert(&pool, "weather", "Wx", &json!({"provider_id": met}), 2).await.unwrap();
+        let refs = referenced_provider_ids(&pool).await.unwrap();
+        assert!(refs.contains(&cal1) && refs.contains(&met) && !refs.contains(&cal2));
     }
 }

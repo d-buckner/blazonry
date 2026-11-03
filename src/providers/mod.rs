@@ -489,6 +489,7 @@ pub const REFRESH_CONCURRENCY: usize = 4;
 /// 3. rebuild only the extension screens whose consumed shape changed —
 ///    a weather refresh never repaints the calendar, and an unchanged
 ///    snapshot never repaints anything.
+///
 /// Date-dependent providerless screens (countdown) repaint once per local-day
 /// rollover — nothing in the core set needs a faster cycle.
 pub fn spawn_provider_loop(pool: SqlitePool, backends: crate::cache::Backends, cache: crate::cache::BmpCache, tick: std::time::Duration) -> tokio::task::JoinHandle<()> {
