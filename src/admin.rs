@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Admin CRUD plane — Terminus `/api/*` parity (config/routes.rb, vendored
-//! in tests/spec/routes.rb). Terminus ids are UUIDs; we use INTEGER rowids
+//! Admin CRUD plane — Terminus `/api/*` parity (their config/routes.rb,
+//! verified Oct 2026). Terminus ids are UUIDs; we use INTEGER rowids
 //! (documented deviation). Everything here is auth-gated in the router.
 //!
 //! This module handles HTTP: parse request, call the table-owner module

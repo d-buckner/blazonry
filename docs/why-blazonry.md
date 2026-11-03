@@ -79,8 +79,8 @@ from **$16** for 2.13" panels.
 ## Relationship to Terminus
 
 Respect to the Terminus team — the wire contract they published is what
-blazonry conforms to, and the vendored spec in `tests/spec/` is their work.
-The container-stack direction is a product choice, not a bug, and my
+blazonry conforms to. The container-stack direction is a product choice,
+not a bug, and my
 constraint (a dashboard that talks to my LAN in one binary on the box that
 already runs everything) isn't compatible with it. Different tool for a
 different constraint.
