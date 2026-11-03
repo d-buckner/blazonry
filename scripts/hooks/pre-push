@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# blazonry pre-push: run the test suite before anything leaves the machine.
+# Skip in an emergency with: git push --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-push: cargo test (this takes a few minutes)"
+# --test-threads=4: many test binaries each spawn servers; more threads starves the box.
+cargo test -- --test-threads=4
