@@ -16,7 +16,7 @@ story didn't hold up:
 | 3 containers: app (649 MB), Postgres (120 MB), Valkey (19 MB) — **~790 MB pulled** | **one 13 MB binary** |
 | Ruby + Hanami + Node + esbuild + Puma + Sidekiq + Overmind + Rodauth | Rust, no runtime deps |
 | Postgres + Valkey/Redis to run, migrate, back up | SQLite file. Copy it, you're backed up |
-| Full **Chromium** install in the image to rasterize screens | native renderer (tiny-skia + fontdue), ~60 ms per 800×480 screen |
+| Full **Chromium** install in the image to rasterize screens | native renderer (tiny-skia + fontdue), ~5 ms per 800×480 screen |
 | Docker Compose, multiple processes, `overmind start` | `blazonry serve` |
 
 Chromium. For a **4-level grayscale, 800×480, 1-bit-class image**. That is

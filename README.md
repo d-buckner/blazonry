@@ -16,7 +16,7 @@ single static binary with an embedded web UI.
 - **One binary.** `blazonry serve` — no Docker, no Postgres, no Redis, no
   asset pipeline. The whole state is one SQLite file, so backups are `cp`.
 - **Native rendering.** Screens are rasterized in-process (tiny-skia +
-  fontdue, ~60 ms per 800×480 frame). No browser anywhere in the stack.
+  fontdue, ~5 ms per 800×480 frame, release build). No browser anywhere in the stack.
 - **Your LAN works.** The device talks directly to your server. No cloud
   round-trip, no vendor in the middle.
 
