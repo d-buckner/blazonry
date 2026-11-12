@@ -8,10 +8,10 @@ name: container
 # No secrets needed: GITHUB_TOKEN has write:packages for this repo's registry.
 on:
   push:
-    branches: [master]
+    branches: [main]
     tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 jobs:
   build:
