@@ -201,8 +201,7 @@ screens are Liquid you control.
 
 blazonry is licensed under the **GNU AGPL v3** (see `LICENSE`).
 
-The AGPL is the whole point: blazonry stays free and open, and anyone who runs a
-modified version as a network service has to give the source back. If you
-want to embed blazonry in something that can't carry AGPL (a commercial product,
-a closed appliance), commercial dual-licensing is available — open an issue
-and ask.
+Anyone who runs a modified version as a network service must publish the source
+of that version. If you want to embed blazonry in something that cannot carry
+AGPL, such as a commercial product or a closed appliance, commercial
+dual-licensing is available. Open an issue and ask.
