@@ -19,11 +19,21 @@ ARG TARGETPLATFORM
 # musl linking for both amd64 and arm64 (Debian's musl-tools is x86_64-only).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       cmake perl ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -sSL https://musl.cc/x86_64-linux-musl-cross.tgz | tar xz -C /opt \
-    && curl -sSL https://musl.cc/aarch64-linux-musl-cross.tgz | tar xz -C /opt \
-    && ln -s /opt/x86_64-linux-musl-cross/bin/* /usr/local/bin/ \
-    && ln -s /opt/aarch64-linux-musl-cross/bin/* /usr/local/bin/
+    && rm -rf /var/lib/apt/lists/*
+# buildx runs this stage once per target platform, so fetch only that toolchain.
+# musl.cc drops connections from CI runners often enough to redden the build,
+# so retry rather than failing on the first timeout.
+RUN set -e; \
+    case "$TARGETPLATFORM" in \
+      linux/amd64) TC=x86_64-linux-musl-cross ;; \
+      linux/arm64) TC=aarch64-linux-musl-cross ;; \
+      *) echo "unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --connect-timeout 15 --retry 5 --retry-delay 5 --retry-all-errors \
+      -o /tc.tgz "https://musl.cc/$TC.tgz"; \
+    tar xzf /tc.tgz -C /opt; \
+    rm /tc.tgz; \
+    ln -s /opt/$TC/bin/* /usr/local/bin/
 RUN rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
