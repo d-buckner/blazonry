@@ -31,10 +31,6 @@ terminus, Postgres, Valkey):
 ~118× smaller to pull, and where Terminus's compose file budgets up to 4.5 GB
 of memory across its services, blazonry idles in the tens of megabytes.
 
-The longer story — why this exists, how the hardware economics work, and
-where blazonry stands relative to Terminus — is in
-[docs/why-blazonry.md](docs/why-blazonry.md).
-
 ## Quick start
 
 ```bash
@@ -193,11 +189,6 @@ walk every tab → assert **zero JS console errors** (the pre-login
 
 <p align="center"><img src="docs/img/ui_users.png" width="960" alt="Users tab"></p>
 <p align="center"><sub>Users: self-registration, admin verification, argon2 passwords.</sub></p>
-
-## Design notes
-
-Why a hand-driven software renderer, why taffy, and how blazonry relates to
-Terminus: [docs/design-notes.md](docs/design-notes.md).
 
 ## Status
 

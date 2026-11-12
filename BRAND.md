@@ -87,8 +87,7 @@ organization, never for a product.
   not export it to other bloud-os products.
 - **Split voice:** admin UI is warm, calm, plain (family surface); README and
   marketing carry the opinionated register. This split is blazonry's, and it
-  survives the move unchanged. Do/don't pairs for UI strings:
-  [`docs/microcopy.md`](docs/microcopy.md).
+  survives the move unchanged.
 
 ## 5. The accent question, decided
 
@@ -103,8 +102,7 @@ A future third product picks its own accent under the same rule.
 Brand-visible items only; the git/container mechanics live elsewhere.
 
 - [x] Org profile: name "Bloud OS", description "your friendly personal
-      cloud" (already set). Org README drafted in
-      [`docs/org-readme.md`](docs/org-readme.md) — publish it as the
+      cloud" (already set) — publish the org README as the
       `bloud-os/.github` profile repo (house position in §1's voice, voice
       rules §2, token spec, one-accent rule §5).
 - [x] Repo name `blazonry` (lowercase), description in house voice, one line,

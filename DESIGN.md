@@ -81,8 +81,8 @@ The primary button is **ink**, not red. Selection is ink (border + subtle offset
 
 ## 6. Components
 
-UI string voice (do/don't pairs for every string class below):
-[`docs/microcopy.md`](docs/microcopy.md).
+UI string voice: warm, plain, never cute — errors blame the situation, never
+the user.
 
 - **Header** — sticky, hairline bottom rule. Bitmap wordmark + small mono tagline; text nav (active = ink + 2px ink underline); ink `+ Add display` button with a 2px `--line2` offset shadow; family chip (ink avatar square).
 - **Hero** — `1.5fr / 1fr`. Left: a large e-ink preview (5:3) of the featured display, `NOW ON KITCHEN` ink tag + "updated N min ago". Right: bordered **Status** panel — hairline rows, `label / value`, needs-attention in red.

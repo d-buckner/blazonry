@@ -53,7 +53,7 @@ It does not try to be TRMNL (no curated plugin catalog, no hosted mobile apps). 
 ## Evidence on Hand
 
 - `README.md`: detailed product narrative with measured comparisons (image size, memory) against the official Terminus stack. Those measured numbers are real; do not invent additional benchmarks.
-- `docs/screens/family-calendar-caldav.png` and `docs/poc-browser/*`: real native screen renders (CalDAV family calendar, TRMNL recipe screenshots).
+- `docs/img/`: real native screen renders and admin UI captures used by the README.
 - `tests/`: `cargo test` (unit + e2e + spec_conformance), `scripts/e2e_sim.py` (real firmware in QEMU), `scripts/ui_check.py` (headless-Chromium UI e2e).
 - `prototypes/`: four prior admin-UX directions (The Wall, Composing Room, Poll Desk, Proof Room) with captures in `.taste-skill/`. The prototype notes record a prior verdict: dither used as UI chrome was rejected for fighting readability, and Direction 4 "Proof Room" (paper/ink discipline, one accent, dither only inside the screen proofs) was the concluded direction. Treat this as prior exploration to confirm in new-work, not a locked decision.
 - **Absences future work must not fabricate:** no customers, testimonials, case studies, pricing, or press; no license decision yet.
