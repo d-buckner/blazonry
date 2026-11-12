@@ -4,7 +4,7 @@
   <img src="docs/img/social-card.png" alt="blazonry — a TRMNL BYOS server in Rust" width="860">
 </p>
 
-**A TRMNL BYOS server in Rust. One 13 MB binary, zero containers, no Chrome.**
+**A TRMNL BYOS server in Rust. One 13 MB binary, no Chrome.**
 
 Point your TRMNL (or any TRMNL-compatible ESP32 e-ink
 display) at `http://your-server:2301` and you own the whole stack: screens,
@@ -200,8 +200,3 @@ screens are Liquid you control.
 ## License
 
 blazonry is licensed under the **GNU AGPL v3** (see `LICENSE`).
-
-Anyone who runs a modified version as a network service must publish the source
-of that version. If you want to embed blazonry in something that cannot carry
-AGPL, such as a commercial product or a closed appliance, commercial
-dual-licensing is available. Open an issue and ask.
