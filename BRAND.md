@@ -115,7 +115,8 @@ Brand-visible items only; the git/container mechanics live elsewhere.
       CLI — set in the repo settings UI or via API token.
 - [x] README: keep as-is except (a) container image path
       `ghcr.io/bloud-os/blazonry` → the bloud-os registry path once the
-      image moves; (b) License section now states AGPL-3.0 + dual-licensing
+      image moves — done: images now publish to `ghcr.io/bloud-os/blazonry`;
+      (b) License section now states AGPL-3.0 + dual-licensing
       (decided Nov 2026) — keep it in sync with `LICENSE`.
 - [ ] Org avatar and blazonry icon: both already conform to §3's mark grammar;
       no redraw needed.
