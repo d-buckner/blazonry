@@ -21,15 +21,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       cmake perl ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 # buildx runs this stage once per target platform, so fetch only that toolchain.
-# musl.cc drops connections from CI runners often enough to redden the build,
-# so retry rather than failing on the first timeout.
+# Force IPv4: musl.cc advertises an AAAA record that does not answer, and a
+# runner with a black-holed IPv6 route times out on it instead of falling back.
 RUN set -e; \
     case "$TARGETPLATFORM" in \
       linux/amd64) TC=x86_64-linux-musl-cross ;; \
       linux/arm64) TC=aarch64-linux-musl-cross ;; \
       *) echo "unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL --connect-timeout 15 --retry 5 --retry-delay 5 --retry-all-errors \
+    curl -4 -fsSL --connect-timeout 15 --retry 5 --retry-delay 5 --retry-all-errors \
       -o /tc.tgz "https://musl.cc/$TC.tgz"; \
     tar xzf /tc.tgz -C /opt; \
     rm /tc.tgz; \
