@@ -1,9 +1,11 @@
 name: container
 
-# Builds the multi-arch (amd64+arm64) images and publishes them to GHCR:
-#   core    -> ghcr.io/<org>/blazonry:latest    (FROM scratch, native only)
-#   browser -> ghcr.io/<org>/blazonry:browser   (Chromium render backend)
-# On v* tags the same images publish as :<tag> and :<tag>-browser.
+# Builds the multi-arch (amd64+arm64) core image and publishes it to GHCR:
+#   ghcr.io/<owner>/blazonry:latest   (FROM scratch, native only)
+# On v* tags the same image publishes as :<tag>.
+#
+# Dockerfile.browser is not published here. Build it by hand if you need the
+# Chromium render backend.
 #
 # No secrets needed: GITHUB_TOKEN has write:packages for this repo's registry.
 on:
@@ -19,36 +21,17 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: core
-            file: Dockerfile
-            suffix: ""
-          - variant: browser
-            file: Dockerfile.browser
-            suffix: "-browser"
-    name: ${{ matrix.variant }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Docker meta
         id: meta
-        env:
-          SUFFIX: ${{ matrix.suffix }}
         run: |
           IMAGE="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_OUTPUT"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "TAGS=${IMAGE}:${GITHUB_REF_NAME}${SUFFIX}" >> "$GITHUB_OUTPUT"
+            echo "TAGS=${IMAGE}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
-            {
-              echo "TAGS<<EOF"
-              echo "${IMAGE}:latest${SUFFIX}"
-              [[ "${SUFFIX}" == "-browser" ]] && echo "${IMAGE}:browser"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
+            echo "TAGS=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up QEMU
@@ -61,12 +44,12 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
-          file: ${{ matrix.file }}
+          file: Dockerfile
           platforms: linux/amd64
           load: true
-          tags: blazonry:${{ matrix.variant }}-pr
-          cache-from: type=gha,scope=${{ matrix.variant }}
-          cache-to: type=gha,scope=${{ matrix.variant }},mode=max
+          tags: blazonry:pr
+          cache-from: type=gha,scope=core
+          cache-to: type=gha,scope=core,mode=max
 
       - name: Login to GHCR
         if: github.event_name == 'push'
@@ -80,9 +63,9 @@ jobs:
         if: github.event_name == 'push'
         uses: docker/build-push-action@v6
         with:
-          file: ${{ matrix.file }}
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.TAGS }}
-          cache-from: type=gha,scope=${{ matrix.variant }}
-          cache-to: type=gha,scope=${{ matrix.variant }},mode=max
+          cache-from: type=gha,scope=core
+          cache-to: type=gha,scope=core,mode=max
