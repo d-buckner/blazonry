@@ -190,6 +190,25 @@ walk every tab → assert **zero JS console errors** (the pre-login
 <p align="center"><img src="docs/img/ui_users.png" width="960" alt="Users tab"></p>
 <p align="center"><sub>Users: self-registration, admin verification, argon2 passwords.</sub></p>
 
+## Admin auth
+
+`BLAZONRY_AUTH` selects the admin plane's auth mode. The device plane is
+unaffected: a display authenticates every poll with its own Access-Token.
+
+| Mode | Sign-in | Notes |
+|---|---|---|
+| `local` (default) | email + password, argon2 | Self-registration is open. The first account becomes admin. |
+| `ldap` | directory bind | Registration is off. Users are provisioned on first bind. |
+| `oidc` | authorization-code + PKCE | Registration is off. Users are provisioned on first callback. |
+| `none` | nobody | The admin plane is open. LAN-trust deployments only. |
+
+`BLAZONRY_ADMIN_TOKEN` adds a static bearer that the admin API accepts in every
+mode. It exists for a machine caller that provisions a server over the admin API
+and has no browser: under `oidc` and `ldap` no route mints a session from a
+password, so such a caller has nothing else to use. The value must be at least 32
+characters, and startup refuses anything shorter. It is a full admin credential:
+treat it like a password, and do not hand it to a person who can sign in.
+
 ## Status
 
 Wire-compatible with TRMNL firmware 1.6.10+ (OG and X panels). The admin

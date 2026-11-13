@@ -371,7 +371,8 @@ pub async fn list_users(
 }
 
 /// Admin middleware: requires `Authorization: Bearer <session token>` for a
-/// user whose role is admin or user. 401 otherwise.
+/// user whose role is admin or user, or the `BLAZONRY_ADMIN_TOKEN` bearer.
+/// 401 otherwise.
 pub async fn require_admin(
     State(st): State<SharedState>,
     req: Request,
@@ -389,6 +390,9 @@ pub async fn require_admin(
         .unwrap_or("");
     if token.is_empty() {
         return Err((StatusCode::UNAUTHORIZED, "missing bearer token".into()));
+    }
+    if st.auth.admin_token_matches(token) {
+        return Ok(next.run(req).await);
     }
     let ok: Option<i64> = sqlx::query_scalar(
         "SELECT s.user_id FROM sessions s JOIN users u ON u.id = s.user_id
