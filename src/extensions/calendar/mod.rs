@@ -38,7 +38,7 @@ impl super::Extension for Calendar {
         req: super::VarsRequest,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
         Box::pin(async move {
-            let now = req.local_time()?;
+            let now = super::strict(req.local_time())?;
             Ok(agenda_vars(
                 &merged_rows(&req.snapshots)?,
                 &req.settings,

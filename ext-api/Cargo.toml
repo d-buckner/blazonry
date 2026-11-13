@@ -1,0 +1,11 @@
+[package]
+name = "blazonry-ext-api"
+version = "0.1.0"
+license = "AGPL-3.0-only"
+edition = "2024"
+description = "The API a blazonry extension exchanges with the server, and the C ABI it exports."
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"

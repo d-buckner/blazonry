@@ -440,7 +440,7 @@ impl super::Extension for HomeAssistantTab {
         req: super::VarsRequest,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
         Box::pin(async move {
-            let now = req.local_time()?;
+            let now = super::strict(req.local_time())?;
             let Some(snap) = req.snapshots.first() else {
                 return Ok(no_data_vars(if req.provider_ids.is_empty() {
                     "No dashboard source is connected."

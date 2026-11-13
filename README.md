@@ -140,6 +140,8 @@ src/extensions/  one folder per extension; each owns its manifest, template,
                  fixture, tests, and the provider modules it introduced
 src/admin.rs     admin API (Terminus parity)
 src/auth.rs      argon2 accounts, bearer sessions
+ext-api/         the extension ABI: request types, the plugin trait, the C entry
+                 points a compiled extension exports
 web-app/         Svelte 5 source → node build.js → web/index.html
 docs/adr/        architecture decision records: why a decision was made
 ```

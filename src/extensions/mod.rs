@@ -31,8 +31,6 @@
 //! and a new one is a framework change.
 
 use crate::providers::Provider;
-use chrono::{DateTime, FixedOffset};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::future::Future;
@@ -49,52 +47,15 @@ pub use manifest::{Cardinality, ExtensionManifest, Field, FieldKind, ProviderMan
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
-/// One stored provider snapshot handed to an extension. The framework fetched
-/// it. An extension never fetches, so it needs no database handle and no
-/// network path.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SnapshotInput {
-    pub provider_id: i64,
-    /// The name the operator gave the provider; a calendar shows it as the
-    /// event source.
-    pub name: String,
-    pub shape: String,
-    pub fetched_at: String,
-    /// The shape's canonical payload, envelope-free.
-    pub payload: Value,
-}
+/// The request an extension reads, and the snapshot type inside it, come from
+/// the extension API crate. The server and a compiled extension cannot disagree
+/// about either, because there is one definition.
+pub use blazonry_ext_api::{SnapshotInput, VarsRequest};
 
-/// Everything one [`Extension::vars`] call may read. This is also the request
-/// body between the server and an extension host, so it carries no handles:
-/// the clock arrives stamped, and an extension needs no timezone database.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VarsRequest {
-    pub kind: String,
-    /// Stored settings, completed with the manifest's defaults.
-    pub settings: Value,
-    /// The local wall clock at rebuild time, RFC 3339 with offset.
-    pub local_now: String,
-    /// The providers resolved for the consumed shape, in resolution order.
-    /// Empty only for an extension that consumes no shape, or when a picked
-    /// provider was deleted since.
-    pub provider_ids: Vec<i64>,
-    /// The snapshots those providers published. A provider that has not
-    /// refreshed yet is absent, so an extension tells "nothing connected" from
-    /// "waiting for a first refresh" by comparing the two lists.
-    pub snapshots: Vec<SnapshotInput>,
-}
-
-impl VarsRequest {
-    /// The stamped instant, with the offset it was stamped at.
-    pub fn local_time(&self) -> anyhow::Result<DateTime<FixedOffset>> {
-        DateTime::parse_from_rfc3339(&self.local_now)
-            .map_err(|e| anyhow::anyhow!("local_now '{}' is not RFC 3339: {e}", self.local_now))
-    }
-
-    /// The local date this rebuild is for.
-    pub fn local_date(&self) -> anyhow::Result<chrono::NaiveDate> {
-        Ok(self.local_time()?.date_naive())
-    }
+/// ext-api reports a failure as a plain string, because a string is what crosses
+/// the ABI. The framework carries anyhow errors.
+fn strict<T>(r: Result<T, String>) -> anyhow::Result<T> {
+    r.map_err(|e| anyhow::anyhow!(e))
 }
 
 /// One extension kind: the template it paints and the vars it feeds it.

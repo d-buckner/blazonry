@@ -50,7 +50,7 @@ impl super::Extension for Countdown {
         &self,
         req: super::VarsRequest,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
-        Box::pin(async move { countdown_vars(&req.settings, req.local_date()?) })
+        Box::pin(async move { countdown_vars(&req.settings, super::strict(req.local_date())?) })
     }
 }
 
