@@ -98,6 +98,61 @@ impl Provider for HomeAssistant {
         "dashboard"
     }
 
+    /// The one kind with something to browse: Lovelace config is exposed over
+    /// no REST endpoint, so this is the only way to offer real tab names
+    /// instead of free text. The answer fills this kind's own `dashboard` and
+    /// `view` fields, and says which one drives the other.
+    fn browse(
+        &self,
+        config: Value,
+    ) -> Option<Pin<Box<dyn std::future::Future<Output = anyhow::Result<Value>> + Send>>> {
+        Some(Box::pin(async move {
+            let want = |key: &str| -> anyhow::Result<String> {
+                config[key]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow::anyhow!("Fill in the {} field first.", key))
+            };
+            let base = want("url")?;
+            let token = want("token")?;
+            let dashboard = config["dashboard"].as_str().unwrap_or("lovelace");
+            let raw = browse(&base, &token, dashboard).await?;
+
+            let dashboards: Vec<Value> = raw["dashboards"]
+                .as_array()
+                .map(|ds| {
+                    ds.iter()
+                        .map(|d| {
+                            let path = d["url_path"].as_str().unwrap_or("");
+                            json!({ "value": path, "label": format!("{} ({})", d["title"].as_str().unwrap_or(path), path) })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let tabs: Vec<Value> = raw["tabs"]
+                .as_array()
+                .map(|ts| {
+                    ts.iter()
+                        .map(|t| {
+                            json!({ "value": t["path"], "label": t["title"].as_str().unwrap_or("(untitled)") })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(json!({
+                "ok": true,
+                "driver": "dashboard",
+                "fields": { "dashboard": dashboards, "view": tabs },
+                "note": format!(
+                    "Found {} tab(s) in “{}”.",
+                    tabs.len(),
+                    raw["dashboard_title"].as_str().unwrap_or(dashboard)
+                ),
+            }))
+        }))
+    }
+
     fn validate(&self, config: &Value) -> anyhow::Result<()> {
         validate(config)
     }

@@ -172,30 +172,48 @@ pub trait Provider: Send + Sync {
         &self,
         config: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Snapshot>> + Send>>;
+    /// Optional live lookup the admin UI can offer while the operator is still
+    /// filling the form — "list the tabs this dashboard has". `None`, the
+    /// default, means this kind has nothing to browse and the UI shows no
+    /// button.
+    ///
+    /// The response body belongs to the provider, with three keys held to a
+    /// framework contract so the UI stays generic: `fields` maps a config key
+    /// to `[{value, label}]` choices for that field, `driver` names the field
+    /// whose change should re-run the browse, and `note` is a line to show.
+    fn browse(
+        &self,
+        _config: serde_json::Value,
+    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>>> {
+        None
+    }
 }
 
-/// The provider registry: kind string -> impl. One line per provider module.
-pub fn registry() -> &'static std::collections::HashMap<&'static str, Box<dyn Provider>> {
+/// The provider registry: kind string -> impl.
+///
+/// Built from the extension folders, because that is where providers live: a
+/// folder declares the sources it ships, so a new plugin is one line in
+/// [`crate::extensions::registry`] and nothing else.
+pub fn registry() -> &'static std::collections::HashMap<&'static str, &'static dyn Provider> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
-    static REGISTRY: OnceLock<HashMap<&'static str, Box<dyn Provider>>> = OnceLock::new();
+    static REGISTRY: OnceLock<HashMap<&'static str, &'static dyn Provider>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        let providers: Vec<Box<dyn Provider>> = vec![
-            Box::new(crate::extensions::calendar::caldav::CalDav),
-            Box::new(crate::extensions::dashboard::home_assistant::HomeAssistant),
-            Box::new(crate::extensions::weather::open_meteo::OpenMeteo),
-        ];
-        providers.into_iter().map(|p| (p.kind(), p)).collect()
+        crate::extensions::registry()
+            .iter()
+            .flat_map(|p| p.providers.iter())
+            .map(|p| (p.kind(), *p))
+            .collect()
     })
 }
 
 pub fn lookup(kind: &str) -> Option<&'static dyn Provider> {
-    registry().get(kind).map(|b| b.as_ref())
+    registry().get(kind).copied()
 }
 
 /// Per-kind metadata for the admin UI: each registered kind's manifest plus
-/// the shape its Rust impl publishes. The shape comes from the impl, not the
-/// manifest, so the two cannot drift apart in the response.
+/// the shape its Rust impl publishes and whether it offers a live browse.
+/// These come from the impl, so the response cannot drift from the registry.
 pub fn kind_metadata() -> Vec<Value> {
     let mut out: Vec<Value> = registry()
         .values()
@@ -203,11 +221,25 @@ pub fn kind_metadata() -> Vec<Value> {
             let mut m =
                 serde_json::to_value(p.manifest()).expect("manifest is JSON by construction");
             m["shape"] = json!(p.shape());
+            m["browse"] = json!(p.browse(Value::Null).is_some());
             m
         })
         .collect();
     out.sort_by(|a, b| a["kind"].as_str().cmp(&b["kind"].as_str()));
     out
+}
+
+/// Run a kind's live browse for the admin API. An unreachable instance comes
+/// back as a failed request; the caller turns it into `{ok: false, error}` so
+/// the dialog can show the reason inline instead of a thrown fetch.
+pub async fn browse(kind: &str, config: Value) -> anyhow::Result<Value> {
+    let Some(p) = lookup(kind) else {
+        anyhow::bail!("unknown provider kind '{kind}'");
+    };
+    let Some(fut) = p.browse(config) else {
+        anyhow::bail!("'{kind}' has nothing to browse");
+    };
+    fut.await
 }
 
 /// The refresh interval a new instance of this kind starts with. Each kind's

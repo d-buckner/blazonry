@@ -31,6 +31,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub mod home_assistant;
+#[cfg(test)]
+#[path = "mapping_tests.rs"]
+mod mapping_tests;
 
 use crate::render::{fit, fit_size, text_width};
 

@@ -30,6 +30,7 @@
 //! new provider *shape* — shapes are the [`crate::providers::Snapshot`] enum,
 //! and a new one is a framework change.
 
+use crate::providers::Provider;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::future::Future;
@@ -68,23 +69,33 @@ pub trait Extension: Send + Sync {
     fn vars(&self, cx: Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>>;
 }
 
-/// A manifest paired with the code that implements it.
+/// A manifest paired with the code that implements it, plus the source kinds
+/// the folder ships. Each extension folder contributes one entry, so the
+/// framework never names a kind's internals and a folder owns everything about
+/// that kind.
 pub struct Plugin {
     pub manifest: ExtensionManifest,
     pub extension: &'static dyn Extension,
+    pub providers: &'static [&'static dyn Provider],
 }
 
-fn plugin(src: &str, path: &str, extension: &'static dyn Extension) -> Plugin {
+fn plugin(
+    src: &str,
+    path: &str,
+    extension: &'static dyn Extension,
+    providers: &'static [&'static dyn Provider],
+) -> Plugin {
     let manifest = ExtensionManifest::parse(src, path)
         .unwrap_or_else(|e| panic!("bundled manifest is unreadable: {e}"));
     Plugin {
         manifest,
         extension,
+        providers,
     }
 }
 
 /// The core set: the extensions this build ships with. A community extension
-/// adds one entry here.
+/// adds one entry here, and its providers come along with it.
 pub fn registry() -> &'static [Plugin] {
     static REGISTRY: OnceLock<Vec<Plugin>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
@@ -93,21 +104,25 @@ pub fn registry() -> &'static [Plugin] {
                 calendar::MANIFEST,
                 "calendar/manifest.json",
                 &calendar::Calendar,
+                &[&calendar::caldav::CalDav],
             ),
             plugin(
                 weather::MANIFEST,
                 "weather/manifest.json",
                 &weather::Weather,
+                &[&weather::open_meteo::OpenMeteo],
             ),
             plugin(
                 dashboard::MANIFEST,
                 "dashboard/manifest.json",
                 &dashboard::Dashboard,
+                &[&dashboard::home_assistant::HomeAssistant],
             ),
             plugin(
                 countdown::MANIFEST,
                 "countdown/manifest.json",
                 &countdown::Countdown,
+                &[],
             ),
         ]
     })

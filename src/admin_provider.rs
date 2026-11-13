@@ -52,7 +52,18 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
         .get("kind")
         .and_then(|v| v.as_str())
         .ok_or_else(|| bad("kind required"))?;
-    let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("calendar");
+    // A name is optional; the kind's own manifest label stands in, so no
+    // default is hardcoded per kind here.
+    let name = b
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            providers::lookup(kind)
+                .map(|p| p.manifest().label.clone())
+                .unwrap_or_else(|| kind.to_string())
+        });
     let config = b
         .get("config")
         .cloned()
@@ -65,7 +76,7 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
         .and_then(|v| v.as_i64())
         .unwrap_or_else(|| providers::default_refresh_secs(kind))
         .max(60);
-    let id = providers::create(&st.pool, kind, name, &config, refresh_secs)
+    let id = providers::create(&st.pool, kind, &name, &config, refresh_secs)
         .await
         .map_err(err)?;
     // First refresh inline so the admin sees success/failure immediately.
@@ -152,24 +163,12 @@ pub async fn refresh_provider_now(State(st): State<SharedState>, Path(id): Path<
     }
 }
 
-/// Probe a Home Assistant instance for its dashboards and tabs. Lovelace
-/// config is WebSocket-only, so this is how the admin UI offers real tabs
-/// instead of asking for a tab id typed by hand.
-pub async fn ha_tabs(Json(b): Json<Value>) -> Res {
-    let want = |key: &str| -> Option<String> {
-        b.get(key)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-    };
-    let Some(url) = want("url") else {
-        return Err(bad("url required"));
-    };
-    let Some(token) = want("token") else {
-        return Err(bad("token required"));
-    };
-    let dashboard = want("dashboard").unwrap_or_else(|| "lovelace".to_string());
-    let out = crate::extensions::dashboard::home_assistant::browse(&url, &token, &dashboard)
+/// Run a provider kind's live browse ("which tabs does this dashboard have?").
+/// Which kinds offer one, and which fields the answer fills, is the kind's own
+/// business; this handler only routes it. A failure comes back as
+/// `{ok: false, error}` so the dialog can show the reason inline.
+pub async fn browse_provider(Path(kind): Path<String>, Json(b): Json<Value>) -> Res {
+    let out = providers::browse(&kind, b)
         .await
         .unwrap_or_else(|e| json!({ "ok": false, "error": e.to_string() }));
     Ok(Json(out))
@@ -186,9 +185,19 @@ pub async fn create_extension(State(st): State<SharedState>, Json(b): Json<Value
         .get("kind")
         .and_then(|v| v.as_str())
         .ok_or_else(|| bad("kind required"))?;
-    let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("Calendar");
+    // Optional name, same rule as providers: the manifest label stands in.
+    let name = b
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            extensions::lookup(kind)
+                .map(|p| p.manifest.label.clone())
+                .unwrap_or_else(|| kind.to_string())
+        });
     let settings = b.get("settings").cloned().unwrap_or(json!({}));
-    match extensions::create(&st.pool, &st.backends, &st.cache, kind, name, settings).await {
+    match extensions::create(&st.pool, &st.backends, &st.cache, kind, &name, settings).await {
         Ok((id, screen_id)) => Ok(Json(json!({ "id": id, "screen_id": screen_id }))),
         Err(e) => Err(bad(e.to_string())),
     }
