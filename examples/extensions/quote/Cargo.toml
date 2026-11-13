@@ -1,0 +1,26 @@
+[package]
+name = "quote"
+version = "0.1.0"
+license = "AGPL-3.0-only"
+edition = "2024"
+description = "A daily quote, as a blazonry runtime extension."
+
+# Its own workspace root, so building this example does not join the blazonry
+# workspace or get built by its build.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# A version, not a path: the folder has to build wherever it lands in the data
+# volume. `ext_host build --ext-api DIR` points cargo at the source with a
+# `[patch]`, so nothing here depends on where blazonry is checked out.
+blazonry-ext-api = "0.1.0"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+serde_json = "1.0.154"
+
+# An extension must unwind. A panic has to reach the host as an error, and
+# panic = "abort" would take the host process down instead.
+[profile.release]
+panic = "unwind"

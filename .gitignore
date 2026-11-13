@@ -27,5 +27,10 @@ web-app/node_modules/
 .impeccable/
 .taste-skill/
 
+# builder output for a runtime extension folder, and for the extension ABI crate
+ext-api/build/
+examples/extensions/*/build/
+examples/extensions/*/Cargo.lock
+
 # vendored framework assets are tracked even when raw (brotli only when it shrinks)
 !assets/framework/**

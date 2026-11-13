@@ -75,12 +75,23 @@ pub async fn touch(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
 }
 
 /// Replace a screen's vars wholesale (extension repaint path).
-pub async fn set_vars(pool: &SqlitePool, id: i64, vars_json: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE screens SET vars = ?, updated_at = datetime('now') WHERE id = ?")
-        .bind(vars_json)
-        .bind(id)
-        .execute(pool)
-        .await?;
+/// Store what a rebuild painted with. The template travels with the vars because
+/// a runtime extension's template changes on every apply, and a stale copy paints
+/// the previous screen.
+pub async fn set_paint(
+    pool: &SqlitePool,
+    id: i64,
+    template: &str,
+    vars_json: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE screens SET template = ?, vars = ?, updated_at = datetime('now') WHERE id = ?",
+    )
+    .bind(template)
+    .bind(vars_json)
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

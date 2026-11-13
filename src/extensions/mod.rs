@@ -35,7 +35,7 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 pub mod calendar;
 pub mod countdown;
@@ -137,6 +137,23 @@ impl Registry {
         }
     }
 
+    /// The bundled set plus a host's extensions. Bundled wins a name clash, and
+    /// a kind the host dropped is gone: the bundled set starts fresh each sync.
+    fn merged(host: Vec<Arc<Plugin>>) -> (Self, usize) {
+        let mut base = Self::bundled();
+        let mut joined = 0;
+        for plugin in host {
+            let kind = plugin.manifest.kind.as_str();
+            if base.find(kind).is_some() {
+                tracing::warn!("extensions: refused '{kind}': a bundled extension owns that kind");
+                continue;
+            }
+            base.plugins.push(plugin);
+            joined += 1;
+        }
+        (base, joined)
+    }
+
     pub fn find(&self, kind: &str) -> Option<Arc<Plugin>> {
         self.plugins
             .iter()
@@ -145,12 +162,26 @@ impl Registry {
     }
 }
 
-/// The live registry.
+/// The one place the live registry lives.
+fn slot() -> &'static RwLock<Arc<Registry>> {
+    static REGISTRY: OnceLock<RwLock<Arc<Registry>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| RwLock::new(Arc::new(Registry::bundled())))
+}
+
+/// The live registry: the bundled set, plus whatever the extension host reported
+/// at the last sync.
 pub fn registry() -> Arc<Registry> {
-    static REGISTRY: OnceLock<Arc<Registry>> = OnceLock::new();
-    REGISTRY
-        .get_or_init(|| Arc::new(Registry::bundled()))
-        .clone()
+    slot().read().expect("registry lock").clone()
+}
+
+/// Replace the runtime part of the registry with what the host reports, and
+/// return how many joined. The bundled set is rebuilt rather than kept, so a
+/// kind the host dropped really does disappear. A host extension may not shadow a
+/// bundled kind: the build's own extensions are the ones the tests describe.
+pub fn merge_host(host: Vec<Arc<Plugin>>) -> usize {
+    let (registry, joined) = Registry::merged(host);
+    *slot().write().expect("registry lock") = Arc::new(registry);
+    joined
 }
 
 pub fn lookup(kind: &str) -> Option<Arc<Plugin>> {
@@ -414,7 +445,8 @@ async fn rebuild_extension(
             .extension
             .vars(request_for(pool, &kind, settings, &ids).await?)
             .await?;
-        crate::screens::set_vars(pool, sid, &vars.to_string()).await?;
+        crate::screens::set_paint(pool, sid, &plugin.extension.template(), &vars.to_string())
+            .await?;
         repaint(pool, backends, cache, sid).await;
         return Ok(true);
     }
@@ -609,6 +641,62 @@ pub async fn create(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A host extension with no behaviour: the merge rules do not depend on it.
+    struct Noop;
+
+    impl Extension for Noop {
+        fn template(&self) -> String {
+            "{}".to_string()
+        }
+        fn vars(
+            &self,
+            _req: VarsRequest,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+            Box::pin(async { Ok(json!({})) })
+        }
+    }
+
+    fn host_plugin(kind: &str) -> Arc<Plugin> {
+        plugin(
+            &json!({"kind": kind, "label": kind, "blurb": "a host extension"}).to_string(),
+            "the extension host",
+            Arc::new(Noop),
+            vec![],
+        )
+    }
+
+    #[test]
+    fn a_host_extension_joins_the_bundled_set() {
+        let (registry, joined) = Registry::merged(vec![host_plugin("quote")]);
+        assert_eq!(joined, 1);
+        assert!(registry.find("quote").is_some());
+        assert!(registry.find("countdown").is_some());
+    }
+
+    #[test]
+    fn a_host_extension_cannot_shadow_a_bundled_kind() {
+        let (registry, joined) = Registry::merged(vec![host_plugin("countdown")]);
+        assert_eq!(joined, 0);
+        assert_eq!(registry.find("countdown").unwrap().providers.len(), 0);
+        assert!(
+            registry
+                .plugins
+                .iter()
+                .filter(|p| p.manifest.kind == "countdown")
+                .count()
+                == 1
+        );
+    }
+
+    #[test]
+    fn a_sync_with_nothing_leaves_only_the_bundled_set() {
+        // A reload that finds fewer folders must not keep the old kinds alive.
+        let (registry, joined) = Registry::merged(vec![]);
+        assert_eq!(joined, 0);
+        assert!(registry.find("quote").is_none());
+        assert!(registry.find("calendar").is_some());
+    }
 
     async fn test_pool() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();

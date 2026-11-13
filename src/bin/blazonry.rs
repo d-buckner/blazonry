@@ -93,6 +93,28 @@ async fn main() -> anyhow::Result<()> {
         std::time::Duration::from_secs(60),
     );
 
+    // Runtime extensions (ADR-0001, ADR-0002): the server asks a host process for
+    // kinds it cannot see. Off unless the operator names the socket, because code
+    // from the data volume is code the operator chose to run.
+    if let Some(socket) = arg_after(&args, "--ext-host") {
+        let socket = std::path::PathBuf::from(socket);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(job_secs));
+            let mut last = usize::MAX;
+            loop {
+                tick.tick().await;
+                match blazonry::ext_link::sync(&socket).await {
+                    Ok(n) if n == last => tracing::debug!(kinds = n, "extension host synced"),
+                    Ok(n) => {
+                        tracing::info!(kinds = n, "extension host synced");
+                        last = n;
+                    }
+                    Err(e) => tracing::warn!(%e, "extension host sync failed"),
+                }
+            }
+        });
+    }
+
     let admin = Router::new()
         .route(
             "/screens",

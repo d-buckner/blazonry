@@ -28,6 +28,7 @@ image = "0.25.10"
 # `aws_lc_rs` would need a C toolchain in the musl cross build.
 jsonwebtoken = { version = "11", default-features = false, features = ["use_pem", "rust_crypto"] }
 ldap3 = { version = "0.12", default-features = false, features = ["sync"] }
+libloading = "0.8.8"
 liquid = "0.26.11"
 liquid-core = { version = "0.26.11", features = ["derive"] }
 liquid-lib = { version = "0.26.11", features = ["stdlib"] }
@@ -41,7 +42,7 @@ sha2 = "0.11.1"
 sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
 taffy = "0.15.1"
 tiny-skia = "0.12.0"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "process", "io-util"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "process", "io-util", "signal"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"

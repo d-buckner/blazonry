@@ -41,14 +41,15 @@ pub const ARCH: &str = std::env::consts::ARCH;
 
 /// The symbols a host looks up in a compiled extension.
 pub mod symbol {
+    /// The names as a dynamic loader wants them: bytes, no trailing NUL.
     /// `fn () -> *mut c_char`. JSON [`Meta`][super::Meta] plus the manifest.
-    pub const META: &str = "blazonry_ext_meta";
+    pub const META: &[u8] = b"blazonry_ext_meta";
     /// `fn () -> *mut c_char`. The template, as raw text.
-    pub const TEMPLATE: &str = "blazonry_ext_template";
+    pub const TEMPLATE: &[u8] = b"blazonry_ext_template";
     /// `fn (*const c_char) -> *mut c_char`. Vars for one request.
-    pub const VARS: &str = "blazonry_ext_vars";
+    pub const VARS: &[u8] = b"blazonry_ext_vars";
     /// `fn (*mut c_char)`. Frees a string the extension returned.
-    pub const FREE: &str = "blazonry_ext_free";
+    pub const FREE: &[u8] = b"blazonry_ext_free";
 }
 
 /// One stored provider snapshot handed to an extension. The server fetched it.
@@ -190,7 +191,7 @@ pub unsafe fn call_vars<E: Extension + ?Sized>(ext: &E, req: *const c_char) -> *
 macro_rules! export_extension {
     ($ext:expr) => {
         /// The ABI check plus the manifest, in one call.
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_meta() -> *mut ::std::os::raw::c_char {
             $crate::json_to_c(&$crate::Meta {
                 abi: $crate::ABI_VERSION,
@@ -201,13 +202,13 @@ macro_rules! export_extension {
         }
 
         /// The folder's template, as raw text.
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_template() -> *mut ::std::os::raw::c_char {
             $crate::text_to_c($ext.template())
         }
 
         /// Vars for one rebuild. `req` is a `VarsRequest` as JSON text.
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_vars(
             req: *const ::std::os::raw::c_char,
         ) -> *mut ::std::os::raw::c_char {
@@ -217,7 +218,7 @@ macro_rules! export_extension {
 
         /// Frees a string this extension returned. The host must call this
         /// instead of its own deallocator, because this extension allocated it.
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_free(p: *mut ::std::os::raw::c_char) {
             // SAFETY: the pointer came from this extension's own allocator.
             unsafe { $crate::free(p) }
