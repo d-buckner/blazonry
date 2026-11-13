@@ -141,6 +141,7 @@ src/extensions/  one folder per extension; each owns its manifest, template,
 src/admin.rs     admin API (Terminus parity)
 src/auth.rs      argon2 accounts, bearer sessions
 web-app/         Svelte 5 source → node build.js → web/index.html
+docs/adr/        architecture decision records: why a decision was made
 ```
 
 ## Extension folders
@@ -197,6 +198,14 @@ publishes, and every bundled template renders against its bundled fixture.
    it in that entry's `providers`.
 
 `cargo test` then tells you if anything is missing.
+
+### Design records
+
+`docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0003 record
+the accepted design for loading a Rust extension from the `/data` volume at
+runtime, so an author or an MCP can write, build, and apply an extension without
+a new image. That design is agreed and not built yet. Everything above describes
+what ships.
 
 ## Authoring templates
 
