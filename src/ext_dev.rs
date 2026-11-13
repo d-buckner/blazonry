@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! `blazonry ext` — the extension-authoring dev loop.
 //!
-//! An extension's authoring surface is a directory:
+//! An extension's authoring surface is a directory, the same shape a built-in
+//! extension folder has:
 //!
 //! ```text
 //! ext/mything/
+//!   manifest.json     # kind, label, blurb, consumes, settings schema
 //!   template.liquid   # Liquid -> JSON screen tree
 //!   vars.json         # fixture vars (the same shape the Rust half emits)
 //! ```
@@ -12,14 +14,20 @@
 //! Three commands, all headless (no server, no DB, no device):
 //!
 //! - `blazonry ext new <name>`      scaffold `ext/<name>/` with a working template
-//! - `blazonry ext check <path>`    validate: vars JSON, Liquid, screen schema,
-//!   pixel render — machine-readable JSON output
+//! - `blazonry ext check <path>`    validate: manifest, vars JSON, Liquid,
+//!   screen schema, pixel render — machine-readable JSON output
 //! - `blazonry ext render <path>`   write `<out>.bmp` (panel wire format) +
 //!   `<out>.png` (eyeball preview)
 //!
+//! `check` takes any folder with a `template.liquid`, so it doubles as the
+//! end-to-end check of a built-in folder: `blazonry ext check
+//! src/extensions/calendar` validates that folder's manifest and renders its
+//! bundled template against its fixture.
+//!
 //! `check` is designed for agents: one command, exit code + JSON on stdout,
-//! errors carry the stage that failed (`vars|liquid|json|schema|render`) so a
-//! loop can branch on it. Humans get the same loop with a file watcher.
+//! errors carry the stage that failed (`manifest|vars|liquid|json|schema|
+//! markup|render`) so a loop can branch on it. Humans get the same loop with a
+//! file watcher.
 
 use std::path::{Path, PathBuf};
 
@@ -27,22 +35,37 @@ use std::path::{Path, PathBuf};
 struct ExtPaths {
     template: PathBuf,
     vars: PathBuf,
+    /// Present when the folder declares its manifest, as every built-in
+    /// extension folder does.
+    manifest: Option<PathBuf>,
 }
 
 impl ExtPaths {
     fn resolve(arg: &Path, vars_override: Option<&Path>) -> anyhow::Result<Self> {
-        let (template, vars) = if arg.is_dir() {
-            (arg.join("template.liquid"), arg.join("vars.json"))
+        let (template, vars, manifest) = if arg.is_dir() {
+            (
+                arg.join("template.liquid"),
+                arg.join("vars.json"),
+                Some(arg.join("manifest.json")),
+            )
         } else {
             // bare template file; vars default to sibling vars.json
             let dir = arg.parent().unwrap_or(Path::new("."));
-            (arg.to_path_buf(), dir.join("vars.json"))
+            (
+                arg.to_path_buf(),
+                dir.join("vars.json"),
+                Some(dir.join("manifest.json")),
+            )
         };
         let vars = vars_override.map(Path::to_path_buf).unwrap_or(vars);
         if !template.exists() {
             anyhow::bail!("template not found: {}", template.display());
         }
-        Ok(Self { template, vars })
+        Ok(Self {
+            template,
+            vars,
+            manifest: manifest.filter(|p| p.exists()),
+        })
     }
 }
 
@@ -50,7 +73,8 @@ impl ExtPaths {
 #[derive(Debug)]
 pub struct CheckReport {
     pub ok: bool,
-    /// Failed stage: "vars" | "liquid" | "json" | "schema" | "markup" | "render" (None if ok).
+    /// Failed stage: "manifest" | "vars" | "liquid" | "json" | "schema" |
+    /// "markup" | "render" (None if ok).
     pub stage: Option<&'static str>,
     pub error: Option<String>,
     pub parts: Option<usize>,
@@ -155,6 +179,30 @@ pub fn cmd_check(path: &Path, vars_override: Option<&Path>) -> i32 {
             return 1;
         }
     };
+    // The manifest first: it is what the admin UI and settings validation read,
+    // and a folder whose manifest will not parse is not an extension.
+    if let Some(mp) = &paths.manifest {
+        match std::fs::read_to_string(mp) {
+            Err(e) => {
+                println!(
+                    "{}",
+                    serde_json::json!({"ok": false, "stage": "manifest", "error": format!("{}: {e}", mp.display())})
+                );
+                return 1;
+            }
+            Ok(src) => {
+                if let Err(e) =
+                    crate::extensions::ExtensionManifest::parse(&src, &mp.display().to_string())
+                {
+                    println!(
+                        "{}",
+                        serde_json::json!({"ok": false, "stage": "manifest", "error": e.to_string()})
+                    );
+                    return 1;
+                }
+            }
+        }
+    }
     let template = std::fs::read_to_string(&paths.template).unwrap_or_default();
     let vars = match std::fs::read_to_string(&paths.vars) {
         Ok(v) => v,

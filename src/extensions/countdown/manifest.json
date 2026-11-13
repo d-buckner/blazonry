@@ -1,0 +1,20 @@
+{
+  "kind": "countdown",
+  "label": "Countdown",
+  "blurb": "Days remaining until a date, in big type. Repaints once a day.",
+  "consumes": null,
+  "settings": [
+    {
+      "key": "title",
+      "type": "string",
+      "label": "What you are counting to",
+      "default": "Countdown"
+    },
+    {
+      "key": "date",
+      "type": "date",
+      "label": "Target date",
+      "hint": "YYYY-MM-DD, counted in the household timezone."
+    }
+  ]
+}

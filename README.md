@@ -73,7 +73,7 @@ The SQLite DB lives in the `/data` volume. To build locally:
   progress, bars, divider) cover the TRMNL screen families; Liquid is the
   authoring surface, a JSON screen tree is the compile target.
 - **Live sources** — providers pull data (CalDAV, Open-Meteo, Home Assistant);
-  extensions turn it into screens (agenda, weather, dashboard tab).
+  extensions turn it into screens (agenda, weather, a Home Assistant tab).
 - **OTA gating** — `update_firmware` only when the device's reported version
   differs from the newest firmware row (no OTA loops).
 - **Battery-friendly** — stable filenames so devices skip unchanged
@@ -117,9 +117,9 @@ is stored as plain JSON in the database and returned by `GET /admin/providers`,
 so the admin session protects it. Mint it for a LAN device, and rotate it with
 your other Home Assistant tokens.
 
-`tests/ha_dashboard.rs` pins the mapping to a captured live config under
-`tests/fixtures/`, with the household edited out. Upstream schema changes fail
-a test instead of blanking the wall.
+`src/extensions/home_assistant/mapping_tests.rs` pins the mapping to a captured
+live config under `src/extensions/home_assistant/fixtures/`, with the household
+edited out. Upstream schema changes fail a test instead of blanking the wall.
 
 ## Layout
 
@@ -135,14 +135,70 @@ src/bmp.rs       2-bit bottom-up BMP writer (device wire format)
 src/backend.rs   render backend trait (native; browser behind `browser` feature)
 src/browser/     headless-Chromium backend + embedded framework assets
 src/api.rs       device plane (TRMNL wire contract)
-src/providers/   live sources (CalDAV, Open-Meteo, Home Assistant)
-src/extensions/  ready-made screens built from provider snapshots
+src/providers/   the source contract: Snapshot shapes, refresh loop, registry
+src/extensions/  one folder per extension; each owns its manifest, template,
+                 fixture, tests, and the provider modules it introduced
 src/admin.rs     admin API (Terminus parity)
 src/auth.rs      argon2 accounts, bearer sessions
 web-app/         Svelte 5 source → node build.js → web/index.html
 ```
 
-## Authoring extensions
+## Extension folders
+
+Every extension is one folder under `src/extensions/`, and the folder holds
+everything that belongs to that kind:
+
+```text
+src/extensions/calendar/
+  mod.rs                     the Extension impl: template() and vars()
+  manifest.json              kind, label, blurb, consumes, settings schema
+  template.liquid            the screen, as Liquid
+  vars.json                  fixture vars for `blazonry ext check`
+  caldav.rs                  the provider this folder introduced
+  caldav.manifest.json       that provider's config schema
+```
+
+Two rules fix the filenames. `manifest.json` describes the folder's own
+extension, and there is exactly one per folder. Every other `*.manifest.json` in
+the folder describes a source it ships, and its filename stem is that source's
+kind. So `calendar/` holds `manifest.json` (kind `calendar`) and
+`caldav.manifest.json` (kind `caldav`).
+
+Weather and Home Assistant follow the same shape with `open_meteo.rs` and
+`home_assistant.rs`. Countdown ships no provider, so it has no provider files.
+
+Two rules keep this a plugin system rather than a switch statement:
+
+- **No kind is named outside its folder.** Nothing in `src/` has a table of
+  kinds, per-kind settings, or per-kind defaults. The admin UI builds both of
+  its forms from `GET /admin/kinds`, which serves the manifests.
+- **A provider answers a shape, not an extension.** Shapes are the
+  `providers::Snapshot` enum: `calendar`, `weather`, `home_assistant`. A
+  calendar extension can read any provider that publishes `calendar`. A plugin
+  cannot invent a shape; that is a framework change.
+
+`src/extensions/mod.rs::registry()` is the one list. Each entry names a folder
+and the providers that folder ships, so adding a plugin is one line there and
+nothing else. `providers::registry()` is built from it.
+
+`tests/plugin_folders.rs` enforces the layout: every folder is registered, every
+manifest kind matches its folder, every `consumes` names a shape some provider
+publishes, and every bundled template renders against its bundled fixture.
+
+### Adding an extension
+
+1. Create `src/extensions/<kind>/` with `manifest.json`, `template.liquid`, and
+   `vars.json`. Run `blazonry ext check src/extensions/<kind>` until it is green.
+2. Write `mod.rs` with a unit struct that implements `Extension`: `template()`
+   returns `include_str!("template.liquid")`, and `vars(Ctx)` reads the
+   snapshots for the shape your manifest declares.
+3. Add one line to `extensions::registry()`. If the extension needs a new
+   source, add the provider module and its manifest to the same folder and list
+   it in that entry's `providers`.
+
+`cargo test` then tells you if anything is missing.
+
+## Authoring templates
 
 Screens are HTML + Liquid using the TRMNL framework class vocabulary
 (`layout--col`, `flex--row`, `gap--large`, `title--small`, …) — existing
@@ -154,9 +210,14 @@ blazonry ext check ext/weather  # validate; JSON diagnostics on stdout, exit cod
 blazonry ext render ext/weather # write the 800x480 2-bit BMP + PNG preview
 ```
 
-`check` runs the full pipeline (vars → Liquid → front-end detect → IR →
-pixel render) and names the failing stage (`vars|liquid|json|schema|markup|render`),
-so agents can iterate headlessly. `tests/markup_corpus.rs` sweeps the
+`check` takes any folder with a `template.liquid`, so it also checks a built-in
+folder end to end: `blazonry ext check src/extensions/calendar` parses that
+folder's manifest and renders its bundled template.
+
+`check` runs the full pipeline (manifest → vars → Liquid → front-end detect →
+IR → pixel render) and names the failing stage
+(`manifest|vars|liquid|json|schema|markup|render`), so agents can iterate
+headlessly. `tests/markup_corpus.rs` sweeps the
 published-recipe corpus for parse coverage; `tests/markup_parity.rs`
 (`--features browser` + a Chromium via `BLAZONRY_BROWSER_PATH`) asserts the
 native renderer matches headless Chromium on the framework CSS
@@ -181,8 +242,9 @@ plus two Python scripts; no physical hardware required.
   `config/routes.rb` + the actual `app/actions/api/{display,setup,log}`
   sources (verified Oct 2026; the assertions encode the contract, the
   upstream sources are not vendored).
-- **ha_dashboard** — drives the Home Assistant mapping against a captured
-  live dashboard config (`tests/fixtures/`, household edited out): tab
+- **Home Assistant mapping** — drives the mapping against a captured
+  live dashboard config (`src/extensions/home_assistant/fixtures/`, household
+  edited out): tab
   selection, container flattening, per-card mapping, state humanization, and
   a full render at every column count. Schema drift upstream fails here rather
   than blanking a screen.

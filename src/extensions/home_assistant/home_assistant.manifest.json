@@ -1,0 +1,24 @@
+{
+  "kind": "home_assistant",
+  "label": "Home Assistant",
+  "blurb": "One dashboard tab from your Home Assistant instance, redrawn for the e-ink panel. Needs a long-lived access token.",
+  "default_refresh_secs": 900,
+  "config": [
+    { "key": "url", "type": "string", "label": "URL" },
+    { "key": "token", "type": "string", "label": "Long-lived access token", "secret": true },
+    {
+      "key": "dashboard",
+      "type": "string",
+      "label": "Dashboard",
+      "optional": true,
+      "hint": "Blank uses the default dashboard."
+    },
+    {
+      "key": "view",
+      "type": "string",
+      "label": "Tab",
+      "optional": true,
+      "hint": "Blank uses the first tab."
+    }
+  ]
+}

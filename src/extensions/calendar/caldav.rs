@@ -6,12 +6,14 @@
 //! text/calendar. Servers that answer PROPFIND-style XML instead get the
 //! fallback: enumerate item hrefs and GET each.
 
-use super::{CalendarEvent, Provider, Snapshot};
+use crate::providers::{CalendarEvent, Provider, Snapshot};
 use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use std::str::FromStr;
 
 pub struct CalDav;
+
+pub const MANIFEST: &str = include_str!("caldav.manifest.json");
 
 #[derive(Debug, Deserialize)]
 pub struct CalDavConfig {
@@ -29,6 +31,15 @@ const WINDOW_DAYS: i64 = 8;
 impl Provider for CalDav {
     fn kind(&self) -> &'static str {
         "caldav"
+    }
+
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest {
+        static M: std::sync::OnceLock<crate::extensions::ProviderManifest> =
+            std::sync::OnceLock::new();
+        M.get_or_init(|| {
+            crate::extensions::ProviderManifest::parse(MANIFEST, "calendar/caldav.manifest.json")
+                .expect("bundled provider manifest is unreadable")
+        })
     }
 
     fn shape(&self) -> &'static str {
@@ -137,7 +148,7 @@ fn in_window(
     win_end: chrono::DateTime<icalendar::Tz>,
 ) -> bool {
     use icalendar::{CalendarDateTime, DatePerhapsTime};
-    let tz = super::la();
+    let tz = crate::providers::la();
     let start: chrono::DateTime<Utc> = match dt {
         DatePerhapsTime::Date(d) => tz
             .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
@@ -170,7 +181,7 @@ fn in_window(
 pub fn parse_ics_events(ics: &str, window_days: i64) -> anyhow::Result<Vec<CalendarEvent>> {
     use icalendar::{Component, DatePerhapsTime};
     let cal = icalendar::Calendar::from_str(ics).map_err(|e| anyhow::anyhow!("ics parse: {e}"))?;
-    let tz = super::la();
+    let tz = crate::providers::la();
     let today = Utc::now().with_timezone(&tz).date_naive();
     let win_end_date = today
         .checked_add_days(chrono::Days::new(window_days.max(1) as u64))
@@ -279,7 +290,7 @@ mod tests {
     /// so hardcoded dates would silently age out (they did, on 2026-10-30).
     fn fixture_ics() -> (String, String) {
         let today = chrono::Utc::now()
-            .with_timezone(&super::super::la())
+            .with_timezone(&crate::providers::la())
             .date_naive();
         let day = |d: chrono::NaiveDate| d.format("%Y%m%d").to_string();
         let ics = format!(

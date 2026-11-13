@@ -10,22 +10,14 @@
 //!   date:  "YYYY-MM-DD"  target date (LA-local)
 
 use serde_json::{Value, json};
-use sqlx::SqlitePool;
+use std::future::Future;
+use std::pin::Pin;
 
-pub const COUNTDOWN_TEMPLATE: &str = r##"{
-  "name": "Countdown",
-  "parts": [
-    { "type": "flex", "direction": "row", "align": "center", "height": 480, "children": [
-      { "type": "flex", "direction": "column", "align": "center", "gap": 10, "grow": 1, "children": [
-        { "type": "text", "text": "{{ title }}", "style": { "font_px": 30, "fg": 1 } },
-        { "type": "text", "text": "{{ days }}", "style": { "font_px": 150, "bold": true } },
-        { "type": "flex", "direction": "row", "style": { "bg": 0 }, "padding": [8, 22, 8, 22], "children": [
-          { "type": "text", "text": "{{ unit }}", "style": { "font_px": 28, "bold": true, "fg": 3 } }
-        ] }
-      ] }
-    ] }
-  ]
-}"##;
+pub const MANIFEST: &str = include_str!("manifest.json");
+
+pub const COUNTDOWN_TEMPLATE: &str = include_str!("template.liquid");
+
+pub struct Countdown;
 
 /// Target date vs today (LA-local) -> Liquid vars.
 pub fn countdown_vars(settings: &Value) -> anyhow::Result<Value> {
@@ -50,19 +42,15 @@ pub fn countdown_vars(settings: &Value) -> anyhow::Result<Value> {
     }))
 }
 
-/// Create a countdown extension: no provider requirement (pure date math).
-pub async fn create(
-    pool: &SqlitePool,
-    backends: &crate::cache::Backends,
-    cache: &crate::cache::BmpCache,
-    name: &str,
-    settings: Value,
-) -> anyhow::Result<(i64, i64)> {
-    let vars = countdown_vars(&settings)?;
-    let sid = crate::screens::create(pool, name, COUNTDOWN_TEMPLATE, &vars.to_string()).await?;
-    let id = super::insert(pool, "countdown", name, &settings, sid).await?;
-    super::rebuild_extensions(pool, backends, cache).await?;
-    Ok((id, sid))
+/// No provider: the framework calls this once per local-day rollover.
+impl super::Extension for Countdown {
+    fn template(&self) -> &'static str {
+        COUNTDOWN_TEMPLATE
+    }
+
+    fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+        Box::pin(async move { countdown_vars(&cx.settings) })
+    }
 }
 
 #[cfg(test)]

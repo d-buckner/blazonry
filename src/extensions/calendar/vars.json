@@ -1,0 +1,49 @@
+{
+  "days": [
+    {
+      "bg": 1,
+      "events": [
+        {
+          "extra": "Cafe Ozone",
+          "time": "12:00 pm",
+          "title": "Lunch with R."
+        },
+        {
+          "extra": "Personal",
+          "time": "4:00 pm",
+          "title": "Dentist"
+        }
+      ],
+      "fg": 3,
+      "label": "Today"
+    },
+    {
+      "bg": 2,
+      "events": [
+        {
+          "extra": "Home",
+          "time": "All day",
+          "title": "Trash day"
+        }
+      ],
+      "fg": 0,
+      "label": "Sat Nov 14"
+    },
+    {
+      "bg": 2,
+      "events": [
+        {
+          "extra": "Zoom",
+          "time": "10:00 am",
+          "title": "One on one"
+        }
+      ],
+      "fg": 0,
+      "label": "Sun Nov 15"
+    }
+  ],
+  "empty": false,
+  "footer": "Updated 11:32 am",
+  "title": "Calendar",
+  "today": "Fri Nov 13"
+}

@@ -16,8 +16,17 @@
 //! registry line, and adding a *shape* costs one `Snapshot` variant with its
 //! payload round-trip — no tables, no vendor literals in SQL.
 //!
-//! One module per provider under `providers/` (today: `caldav`, `home_assistant`,
-//! `open_meteo`).
+//! This module is the provider *framework*: the shape vocabulary, the
+//! [`Provider`] trait, the registry, the two tables, and the refresh loop. It
+//! holds no vendor code. A provider implementation lives in the extension
+//! folder that introduced it (`extensions/calendar/caldav.rs`,
+//! `extensions/weather/open_meteo.rs`, `extensions/home_assistant/home_assistant.rs`)
+//! and joins through [`registry`].
+//!
+//! Location is not coupling. A provider answers a *shape*, never an extension:
+//! any extension that consumes `calendar` reads a CalDAV snapshot, and the
+//! refresh loop still walks extensions to providers, so a provider no
+//! extension consumes stays an orphan that costs nothing.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -26,10 +35,6 @@ use sqlx::Row;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::pin::Pin;
-
-pub mod caldav;
-pub mod home_assistant;
-pub mod open_meteo;
 
 pub const DEFAULT_REFRESH_SECS: i64 = 3600;
 
@@ -56,17 +61,19 @@ pub enum Snapshot {
     Calendar(Vec<CalendarEvent>),
     /// WeatherSource: one JSON object (current + days), see open_meteo.
     Weather(serde_json::Value),
-    /// DashboardSource: one display-ready dashboard tab, see home_assistant.
-    Dashboard(serde_json::Value),
+    /// HomeAssistant shape: one display-ready Home Assistant tab, see
+    /// home_assistant.
+    HomeAssistant(serde_json::Value),
 }
 
 impl Snapshot {
-    /// Shape string this snapshot publishes ("calendar" | "weather" | "dashboard").
+    /// Shape string this snapshot publishes
+    /// ("calendar" | "weather" | "home_assistant").
     pub fn shape(&self) -> &'static str {
         match self {
             Snapshot::Calendar(_) => "calendar",
             Snapshot::Weather(_) => "weather",
-            Snapshot::Dashboard(_) => "dashboard",
+            Snapshot::HomeAssistant(_) => "home_assistant",
         }
     }
 
@@ -77,7 +84,7 @@ impl Snapshot {
                 serde_json::to_value(events).expect("CalendarEvent is Serialize by construction")
             }
             Snapshot::Weather(v) => v.clone(),
-            Snapshot::Dashboard(v) => v.clone(),
+            Snapshot::HomeAssistant(v) => v.clone(),
         }
     }
 
@@ -86,18 +93,18 @@ impl Snapshot {
         match shape {
             "calendar" => Ok(Snapshot::Calendar(serde_json::from_value(payload)?)),
             "weather" => Ok(Snapshot::Weather(payload)),
-            "dashboard" => Ok(Snapshot::Dashboard(payload)),
+            "home_assistant" => Ok(Snapshot::HomeAssistant(payload)),
             other => anyhow::bail!("unknown snapshot shape '{other}'"),
         }
     }
 
     /// Rows this snapshot holds (admin display: events for calendar, 1 for
-    /// weather and dashboard).
+    /// weather, tiles for a Home Assistant tab).
     pub fn item_count(&self) -> usize {
         match self {
             Snapshot::Calendar(events) => events.len(),
             Snapshot::Weather(_) => 1,
-            Snapshot::Dashboard(v) => v["tiles"].as_array().map(|t| t.len()).unwrap_or(0),
+            Snapshot::HomeAssistant(v) => v["tiles"].as_array().map(|t| t.len()).unwrap_or(0),
         }
     }
 
@@ -146,13 +153,19 @@ pub fn la() -> chrono_tz::Tz {
 }
 
 /// A provider kind (not an instance): validates config and fetches snapshots.
-/// Implementations live one-per-module (see [`caldav`]). A provider returns
+/// Implementations live one per extension folder and join in [`registry`].
+/// A provider returns
 /// ONLY its normalized payload — the framework owns freshness, provenance,
 /// and change detection (see module docs).
 pub trait Provider: Send + Sync {
     fn kind(&self) -> &'static str;
-    /// Shape this kind publishes: "calendar" | "weather" | "dashboard".
+    /// Shape this kind publishes: "calendar" | "weather" | "home_assistant".
     fn shape(&self) -> &'static str;
+    /// The manifest bundled with this provider's module: label, blurb, config
+    /// fields, and the refresh interval a new instance starts with. The admin
+    /// UI builds its form from it. A manifest that will not parse is a
+    /// build-time bug, so this panics instead of returning a Result.
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest;
     /// Validate a config JSON at create/patch time — bad config fails in the
     /// admin UI, not at render time.
     fn validate(&self, config: &serde_json::Value) -> anyhow::Result<()>;
@@ -161,25 +174,83 @@ pub trait Provider: Send + Sync {
         &self,
         config: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Snapshot>> + Send>>;
+    /// Optional live lookup the admin UI can offer while the operator is still
+    /// filling the form — "list the tabs this dashboard has". `None`, the
+    /// default, means this kind has nothing to browse and the UI shows no
+    /// button.
+    ///
+    /// The response body belongs to the provider, with three keys held to a
+    /// framework contract so the UI stays generic: `fields` maps a config key
+    /// to `[{value, label}]` choices for that field, `driver` names the field
+    /// whose change should re-run the browse, and `note` is a line to show.
+    fn browse(
+        &self,
+        _config: serde_json::Value,
+    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>>> {
+        None
+    }
 }
 
-/// The provider registry: kind string -> impl. One line per provider module.
-pub fn registry() -> &'static std::collections::HashMap<&'static str, Box<dyn Provider>> {
+/// The provider registry: kind string -> impl.
+///
+/// Built from the extension folders, because that is where providers live: a
+/// folder declares the sources it ships, so a new plugin is one line in
+/// [`crate::extensions::registry`] and nothing else.
+pub fn registry() -> &'static std::collections::HashMap<&'static str, &'static dyn Provider> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
-    static REGISTRY: OnceLock<HashMap<&'static str, Box<dyn Provider>>> = OnceLock::new();
+    static REGISTRY: OnceLock<HashMap<&'static str, &'static dyn Provider>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        let providers: Vec<Box<dyn Provider>> = vec![
-            Box::new(caldav::CalDav),
-            Box::new(home_assistant::HomeAssistant),
-            Box::new(open_meteo::OpenMeteo),
-        ];
-        providers.into_iter().map(|p| (p.kind(), p)).collect()
+        crate::extensions::registry()
+            .iter()
+            .flat_map(|p| p.providers.iter())
+            .map(|p| (p.kind(), *p))
+            .collect()
     })
 }
 
 pub fn lookup(kind: &str) -> Option<&'static dyn Provider> {
-    registry().get(kind).map(|b| b.as_ref())
+    registry().get(kind).copied()
+}
+
+/// Per-kind metadata for the admin UI: each registered kind's manifest plus
+/// the shape its Rust impl publishes and whether it offers a live browse.
+/// These come from the impl, so the response cannot drift from the registry.
+pub fn kind_metadata() -> Vec<Value> {
+    let mut out: Vec<Value> = registry()
+        .values()
+        .map(|p| {
+            let mut m =
+                serde_json::to_value(p.manifest()).expect("manifest is JSON by construction");
+            m["shape"] = json!(p.shape());
+            m["browse"] = json!(p.browse(Value::Null).is_some());
+            m
+        })
+        .collect();
+    out.sort_by(|a, b| a["kind"].as_str().cmp(&b["kind"].as_str()));
+    out
+}
+
+/// Run a kind's live browse for the admin API. An unreachable instance comes
+/// back as a failed request; the caller turns it into `{ok: false, error}` so
+/// the dialog can show the reason inline instead of a thrown fetch.
+pub async fn browse(kind: &str, config: Value) -> anyhow::Result<Value> {
+    let Some(p) = lookup(kind) else {
+        anyhow::bail!("unknown provider kind '{kind}'");
+    };
+    let Some(fut) = p.browse(config) else {
+        anyhow::bail!("'{kind}' has nothing to browse");
+    };
+    fut.await
+}
+
+/// The refresh interval a new instance of this kind starts with. Each kind's
+/// manifest declares it (Home Assistant is 15 minutes; a wall display goes
+/// stale fast), so the server does not need a per-kind table.
+pub fn default_refresh_secs(kind: &str) -> i64 {
+    lookup(kind)
+        .map(|p| p.manifest().default_refresh_secs)
+        .unwrap_or(DEFAULT_REFRESH_SECS)
 }
 
 /// Validate a provider config for a kind (admin API entry point).

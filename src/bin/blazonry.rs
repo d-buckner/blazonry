@@ -178,14 +178,15 @@ async fn main() -> anyhow::Result<()> {
             post(blazonry::admin_provider::refresh_provider_now),
         )
         .route(
-            "/providers/ha/tabs",
-            post(blazonry::admin_provider::ha_tabs),
+            "/providers/{kind}/browse",
+            post(blazonry::admin_provider::browse_provider),
         )
         .route(
             "/extensions",
             get(blazonry::admin_provider::list_extensions)
                 .post(blazonry::admin_provider::create_extension),
         )
+        .route("/kinds", get(blazonry::admin_provider::kinds))
         .route(
             "/extensions/{id}",
             patch(blazonry::admin_provider::patch_extension)

@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Pins the Home Assistant mapping to a captured live dashboard config.
 //!
-//! The fixtures under `tests/fixtures/` came from a real Home Assistant
-//! instance with the household edited out. If upstream changes the shape of a
-//! Lovelace config, or a state stops mapping to a word a person would say, a
-//! test here fails instead of the wall display going quietly blank.
+//! The fixtures in `fixtures/` came from a real Home Assistant instance with
+//! the household edited out. If upstream changes the shape of a Lovelace
+//! config, or a state stops mapping to a word a person would say, a test here
+//! fails instead of the wall display going quietly blank.
 
-use blazonry::extensions::dashboard::{DASHBOARD_TEMPLATE, dashboard_vars};
-use blazonry::providers::home_assistant::{build_tiles, flatten_cards, pick_view, tile_json};
+use super::home_assistant::{build_tiles, flatten_cards, pick_view, tile_json};
+use super::{HOME_ASSISTANT_TEMPLATE, tab_vars};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 fn fixture(name: &str) -> Value {
-    let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
-    let raw = std::fs::read_to_string(&path).expect("fixture missing — see tests/fixtures/");
+    let path = format!(
+        "{}/src/extensions/home_assistant/fixtures/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let raw = std::fs::read_to_string(&path).expect("fixture missing — see fixtures/ here");
     serde_json::from_str(&raw).expect("fixture is not valid JSON")
 }
 
@@ -193,8 +196,8 @@ fn every_captured_tab_renders_a_screen() {
     for v in views() {
         let p = payload(&v);
         for cols in [2u64, 3, 4] {
-            let vars = dashboard_vars(&p, &json!({ "columns": cols }));
-            let report = blazonry::ext_dev::check(DASHBOARD_TEMPLATE, &vars.to_string());
+            let vars = tab_vars(&p, &json!({ "columns": cols }));
+            let report = crate::ext_dev::check(HOME_ASSISTANT_TEMPLATE, &vars.to_string());
             assert!(
                 report.ok,
                 "tab {} at {cols} columns: {:?} {}",
@@ -212,7 +215,7 @@ fn nothing_is_lost_between_the_payload_and_the_panel() {
     // tile in the payload, so the footer can never under-report.
     let v = views().into_iter().find(|v| v["path"] == "home").unwrap();
     let p = payload(&v);
-    let vars = dashboard_vars(&p, &json!({ "columns": 4 }));
+    let vars = tab_vars(&p, &json!({ "columns": 4 }));
     let placed: usize = vars["rows"]
         .as_array()
         .unwrap()
@@ -247,7 +250,7 @@ fn nothing_is_lost_between_the_payload_and_the_panel() {
 
     // The same accounting when the panel is deliberately too small, so the
     // "did not fit" figure is exercised rather than always zero.
-    let vars = dashboard_vars(&p, &json!({ "columns": 4, "max_tiles": 3 }));
+    let vars = tab_vars(&p, &json!({ "columns": 4, "max_tiles": 3 }));
     let footer = vars["footer"].as_str().unwrap();
     let placed: usize = vars["rows"]
         .as_array()

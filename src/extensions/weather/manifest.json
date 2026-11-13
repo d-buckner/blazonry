@@ -1,0 +1,31 @@
+{
+  "kind": "weather",
+  "label": "Weather",
+  "blurb": "Current conditions and a few days of forecast for one place.",
+  "consumes": "weather",
+  "cardinality": "exactly_one",
+  "setup_hint": "Connect Open-Meteo in Connections first.",
+  "settings": [
+    {
+      "key": "title",
+      "type": "string",
+      "label": "Title",
+      "optional": true,
+      "hint": "Blank uses the place name from the source."
+    },
+    {
+      "key": "days",
+      "type": "int",
+      "label": "Forecast days",
+      "default": 3,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "key": "provider_id",
+      "type": "provider_id",
+      "label": "Weather source",
+      "optional": true
+    }
+  ]
+}

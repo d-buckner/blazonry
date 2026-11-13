@@ -19,17 +19,19 @@
 //! Config: { url, token, dashboard?: url_path, view?: path | title | index }
 //!
 //! This module is the only place in blazonry that reads Lovelace card config.
-//! `tests/ha_dashboard.rs` pins the shapes against a captured HA 2026.11.1
+//! `mapping_tests.rs` pins the shapes against a captured HA 2026.11.1
 //! config, so an upstream change fails a test here rather than the wall at 7am.
 //! Lovelace `grid_options` is deliberately NOT read: it sizes a scrollable web
 //! page whose width the operator chose, and a panel is always 800x480.
 
-use super::{Provider, Snapshot};
+use crate::providers::{Provider, Snapshot};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::pin::Pin;
 
 pub struct HomeAssistant;
+
+pub const MANIFEST: &str = include_str!("home_assistant.manifest.json");
 
 /// What one card contributes to the screen. `heading` is a section label,
 /// `tile` a title/value pair, `group` a block of key/value rows, `progress` a
@@ -80,8 +82,75 @@ impl Provider for HomeAssistant {
         "home_assistant"
     }
 
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest {
+        static M: std::sync::OnceLock<crate::extensions::ProviderManifest> =
+            std::sync::OnceLock::new();
+        M.get_or_init(|| {
+            crate::extensions::ProviderManifest::parse(
+                MANIFEST,
+                "dashboard/home_assistant.manifest.json",
+            )
+            .expect("bundled provider manifest is unreadable")
+        })
+    }
+
     fn shape(&self) -> &'static str {
-        "dashboard"
+        "home_assistant"
+    }
+
+    /// The one kind with something to browse: Lovelace config is exposed over
+    /// no REST endpoint, so this is the only way to offer real tab names
+    /// instead of free text. The answer fills this kind's own `dashboard` and
+    /// `view` fields, and says which one drives the other.
+    fn browse(
+        &self,
+        config: Value,
+    ) -> Option<Pin<Box<dyn std::future::Future<Output = anyhow::Result<Value>> + Send>>> {
+        Some(Box::pin(async move {
+            let want = |key: &str| -> anyhow::Result<String> {
+                config[key]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow::anyhow!("Fill in the {} field first.", key))
+            };
+            let base = want("url")?;
+            let token = want("token")?;
+            let dashboard = config["dashboard"].as_str().unwrap_or("lovelace");
+            let raw = browse(&base, &token, dashboard).await?;
+
+            let dashboards: Vec<Value> = raw["dashboards"]
+                .as_array()
+                .map(|ds| {
+                    ds.iter()
+                        .map(|d| {
+                            let path = d["url_path"].as_str().unwrap_or("");
+                            json!({ "value": path, "label": format!("{} ({})", d["title"].as_str().unwrap_or(path), path) })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let tabs: Vec<Value> = raw["tabs"]
+                .as_array()
+                .map(|ts| {
+                    ts.iter()
+                        .map(|t| {
+                            json!({ "value": t["path"], "label": t["title"].as_str().unwrap_or("(untitled)") })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(json!({
+                "ok": true,
+                "driver": "dashboard",
+                "fields": { "dashboard": dashboards, "view": tabs },
+                "note": format!(
+                    "Found {} tab(s) in “{}”.",
+                    tabs.len(),
+                    raw["dashboard_title"].as_str().unwrap_or(dashboard)
+                ),
+            }))
+        }))
     }
 
     fn validate(&self, config: &Value) -> anyhow::Result<()> {
@@ -150,7 +219,7 @@ impl Provider for HomeAssistant {
                 );
             }
 
-            Ok(Snapshot::Dashboard(json!({
+            Ok(Snapshot::HomeAssistant(json!({
                 "dashboard": dashboard,
                 "dashboard_title": dash_title,
                 "view": view.get("path").and_then(|v| v.as_str()).unwrap_or(""),
