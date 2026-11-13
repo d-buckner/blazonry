@@ -24,6 +24,35 @@ pub struct OidcCfg {
     pub redirect_uri: String,
     pub scopes: String,
     pub admin_emails: Vec<String>,
+    pub admin_claim: Option<AdminClaim>,
+}
+
+/// An ID-token claim that grants admin: `BLAZONRY_OIDC_ADMIN_CLAIM=name=value`.
+///
+/// An identity provider that carries a role can say "this person is an admin"
+/// once, in its own directory, and every app that trusts the provider reads the
+/// same answer. An email allowlist has to be edited per app and drifts the moment
+/// a person's address changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdminClaim {
+    pub name: String,
+    pub value: String,
+}
+
+impl AdminClaim {
+    /// Parses `name=value`. A name or a value that is empty is not a claim, and
+    /// a value may itself contain `=`: only the first separator splits.
+    fn parse(raw: &str) -> Option<AdminClaim> {
+        let (name, value) = raw.split_once('=')?;
+        let (name, value) = (name.trim(), value.trim());
+        if name.is_empty() || value.is_empty() {
+            return None;
+        }
+        Some(AdminClaim {
+            name: name.to_string(),
+            value: value.to_string(),
+        })
+    }
 }
 
 impl OidcCfg {
@@ -43,11 +72,36 @@ impl OidcCfg {
                 .map(|s| s.trim().to_ascii_lowercase())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            admin_claim: AdminClaim::parse(
+                &std::env::var("BLAZONRY_OIDC_ADMIN_CLAIM").unwrap_or_default(),
+            ),
         })
     }
 
     fn is_admin_email(&self, email: &str) -> bool {
         self.admin_emails.contains(&email.to_ascii_lowercase())
+    }
+
+    /// Whether a verified ID token carries the admin grant. Either half is
+    /// enough, so an operator who already listed addresses keeps working when a
+    /// claim is added beside them.
+    fn is_admin(&self, claims: &IdClaims) -> bool {
+        if self.is_admin_email(&claims.email.clone().unwrap_or_default()) {
+            return true;
+        }
+        let Some(claim) = &self.admin_claim else {
+            return false;
+        };
+        match claims.extra.get(&claim.name) {
+            // A scalar claim compares as text. A list claim (`groups`, Bloud's
+            // `groups` scope) matches when any member equals the value.
+            Some(serde_json::Value::String(got)) => got == &claim.value,
+            Some(serde_json::Value::Array(members)) => members.iter().any(|m| match m {
+                serde_json::Value::String(got) => got == &claim.value,
+                _ => false,
+            }),
+            _ => false,
+        }
     }
 }
 
@@ -159,7 +213,7 @@ pub async fn finish_login(
         _ => return Err(OidcError::Auth("id_token has no verified email".into())),
     };
     Ok(OidcIdentity {
-        force_admin: cfg.is_admin_email(&email),
+        force_admin: cfg.is_admin(&claims),
         email,
         sub: claims.sub,
     })
@@ -295,6 +349,10 @@ struct IdClaims {
     email_verified: Option<bool>,
     #[allow(dead_code)] // reserved: display name once the SPA shows it
     name: Option<String>,
+    /// Every claim the struct does not name, so an admin grant can be read from
+    /// a provider's own role claim without a release per provider.
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 /// OIDC aud may be a string or an array.
@@ -380,14 +438,15 @@ mod tests {
     const TEST_MODULUS: &str = "wpcwkxW8TDM6LI79iImBt1EWq0Zro3OWrU2EW2exdiY9yevxEn7GvE1mPVhsoyCzBtTlJ9GNaC5ivohHpQOGQ2_fiiuPvPtqSqjjnz3TIFLYowM8kKzGbH_Ay6OgfMFMddMJ-63UigWp78d3Yhc_UsxmE1n2ZYwc26gZ2epP6QMokEO6unRKXDXXX5YFLwNarO0Ya56rxjCJKzSggXXVG5J5TaSG5FGo8Ibe3uP2uDkc7v4qzryyCWtTtmNrLyrRUEDemP91pas-JHaMwFsgLUuIYAQ_sh2uqImlu_hjDSyQ1Od9Yv5iUx-Yj3r9mr2wgSwnAtlsF5rdmRGW3YgHqQ";
     const TEST_EXPONENT: &str = "AQAB";
 
-    fn cfg() -> OidcCfg {
+    fn cfg_with(admin_emails: Vec<&str>, admin_claim: Option<&str>) -> OidcCfg {
         OidcCfg {
             issuer: "https://issuer.test".into(),
             client_id: "client".into(),
             client_secret: "secret".into(),
             redirect_uri: "https://app.test/cb".into(),
             scopes: "openid email profile".into(),
-            admin_emails: vec![],
+            admin_emails: admin_emails.into_iter().map(String::from).collect(),
+            admin_claim: admin_claim.and_then(AdminClaim::parse),
         }
     }
 
@@ -425,6 +484,27 @@ mod tests {
         )
     }
 
+    fn claims(extra: serde_json::Value) -> IdClaims {
+        let mut value = serde_json::json!({
+            "iss": "https://issuer.test",
+            "aud": "client",
+            "exp": 1,
+            "iat": 1,
+            "sub": "user-1",
+            "email": "operator@example.test",
+            "email_verified": true,
+        });
+        if let Some(map) = extra.as_object() {
+            for (key, claim) in map {
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .insert(key.clone(), claim.clone());
+            }
+        }
+        serde_json::from_value(value).expect("claims deserialize")
+    }
+
     // The property this pins: a token that fails verification is an error the
     // handler turns into a 401. It is not a panic. jsonwebtoken panics instead
     // of returning when the process has no CryptoProvider, which happens when
@@ -432,9 +512,9 @@ mod tests {
     // panic takes the server down in the middle of a sign-in.
     #[test]
     fn a_bad_token_is_an_error_and_not_a_panic() {
-        let result = std::panic::catch_unwind(|| {
-            verify_idtoken(&unsigned_token("n1"), &jwks(), &cfg(), "n1")
-        });
+        let cfg = cfg_with(vec![], None);
+        let result =
+            std::panic::catch_unwind(|| verify_idtoken(&unsigned_token("n1"), &jwks(), &cfg, "n1"));
         let outcome = match result {
             Ok(Ok(claims)) => panic!("a garbage signature verified as {claims:?}"),
             Ok(Err(e)) => format!("rejected: {e}"),
@@ -461,5 +541,68 @@ mod tests {
         let _: serde_json::Value = jsonwebtoken::decode(&token, &dec, &validation)
             .expect("HS256 decode needs a CryptoProvider")
             .claims;
+    }
+
+    #[test]
+    fn admin_claim_needs_both_sides_of_the_separator() {
+        assert_eq!(
+            AdminClaim::parse("bloud_role=admin"),
+            Some(AdminClaim {
+                name: "bloud_role".into(),
+                value: "admin".into()
+            })
+        );
+        assert_eq!(AdminClaim::parse(""), None);
+        assert_eq!(AdminClaim::parse("no_separator"), None);
+        assert_eq!(AdminClaim::parse("=admin"), None);
+        assert_eq!(AdminClaim::parse("name="), None);
+        assert_eq!(
+            AdminClaim::parse("claim=a=value"),
+            Some(AdminClaim {
+                name: "claim".into(),
+                value: "a=value".into()
+            }),
+            "only the first separator splits, so a value may contain one"
+        );
+    }
+
+    #[test]
+    fn a_matching_scalar_claim_grants_admin() {
+        let cfg = cfg_with(vec![], Some("bloud_role=admin"));
+        assert!(cfg.is_admin(&claims(serde_json::json!({"bloud_role": "admin"}))));
+    }
+
+    #[test]
+    fn a_different_claim_value_does_not_grant_admin() {
+        let cfg = cfg_with(vec![], Some("bloud_role=admin"));
+        assert!(!cfg.is_admin(&claims(serde_json::json!({"bloud_role": "user"}))));
+        assert!(
+            !cfg.is_admin(&claims(serde_json::json!({}))),
+            "a missing claim is not admin"
+        );
+    }
+
+    // A provider that publishes group membership rather than a role answers the
+    // same question with a list. Bloud sends `groups` from the managed profile
+    // scope, and its admin is in `authentik Admins`.
+    #[test]
+    fn a_list_claim_matches_when_any_member_equals_the_value() {
+        let cfg = cfg_with(vec![], Some("groups=authentik Admins"));
+        assert!(cfg.is_admin(&claims(
+            serde_json::json!({"groups": ["everyone", "authentik Admins"]})
+        )));
+        assert!(!cfg.is_admin(&claims(serde_json::json!({"groups": ["everyone"]}))));
+    }
+
+    #[test]
+    fn the_email_allowlist_keeps_working_beside_a_claim() {
+        let cfg = cfg_with(vec!["operator@example.test"], Some("bloud_role=admin"));
+        assert!(cfg.is_admin(&claims(serde_json::json!({}))));
+    }
+
+    #[test]
+    fn with_neither_grant_nobody_is_forced_to_admin() {
+        let cfg = cfg_with(vec![], None);
+        assert!(!cfg.is_admin(&claims(serde_json::json!({"bloud_role": "admin"}))));
     }
 }

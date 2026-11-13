@@ -209,6 +209,35 @@ password, so such a caller has nothing else to use. The value must be at least 3
 characters, and startup refuses anything shorter. It is a full admin credential:
 treat it like a password, and do not hand it to a person who can sign in.
 
+### Who is an admin under `oidc`
+
+Two variables grant admin on a verified ID token. Either one is enough.
+
+| Variable | Form | Grants admin when |
+|---|---|---|
+| `BLAZONRY_OIDC_ADMIN_EMAILS` | comma-separated addresses | the token's verified email is on the list |
+| `BLAZONRY_OIDC_ADMIN_CLAIM` | `name=value` | the token carries that claim with that value |
+
+A claim is the one that scales. An identity provider can say "this person is an
+admin" once, in its own directory, and every app that trusts the provider reads
+the same answer. An email allowlist is edited per app and goes stale when an
+address changes.
+
+A scalar claim compares as text. A list claim matches when any member equals the
+value, so `groups=admins` works against a provider that publishes group
+membership. Only the first `=` splits, so a value may contain one.
+
+```sh
+# A provider that sends a role claim.
+BLAZONRY_OIDC_ADMIN_CLAIM=bloud_role=admin
+
+# A provider that sends group membership instead.
+BLAZONRY_OIDC_ADMIN_CLAIM=groups=authentik\ Admins
+```
+
+With neither variable set, the first person to sign in becomes admin and
+everyone after them waits for verification.
+
 ## Status
 
 Wire-compatible with TRMNL firmware 1.6.10+ (OG and X panels). The admin
