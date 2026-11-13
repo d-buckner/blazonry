@@ -369,3 +369,97 @@ fn verify_idtoken(
     }
     Ok(claims)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Public half of a throwaway 2048-bit RSA key. Only n and e appear here, so
+    // nothing secret is committed; the private half exists only to prove these
+    // values are a real key rather than filler.
+    const TEST_MODULUS: &str = "wpcwkxW8TDM6LI79iImBt1EWq0Zro3OWrU2EW2exdiY9yevxEn7GvE1mPVhsoyCzBtTlJ9GNaC5ivohHpQOGQ2_fiiuPvPtqSqjjnz3TIFLYowM8kKzGbH_Ay6OgfMFMddMJ-63UigWp78d3Yhc_UsxmE1n2ZYwc26gZ2epP6QMokEO6unRKXDXXX5YFLwNarO0Ya56rxjCJKzSggXXVG5J5TaSG5FGo8Ibe3uP2uDkc7v4qzryyCWtTtmNrLyrRUEDemP91pas-JHaMwFsgLUuIYAQ_sh2uqImlu_hjDSyQ1Od9Yv5iUx-Yj3r9mr2wgSwnAtlsF5rdmRGW3YgHqQ";
+    const TEST_EXPONENT: &str = "AQAB";
+
+    fn cfg() -> OidcCfg {
+        OidcCfg {
+            issuer: "https://issuer.test".into(),
+            client_id: "client".into(),
+            client_secret: "secret".into(),
+            redirect_uri: "https://app.test/cb".into(),
+            scopes: "openid email profile".into(),
+            admin_emails: vec![],
+        }
+    }
+
+    fn jwks() -> Jwks {
+        Jwks {
+            keys: vec![Jwk {
+                kid: Some("test-key".into()),
+                kty: "RSA".into(),
+                n: Some(TEST_MODULUS.into()),
+                e: Some(TEST_EXPONENT.into()),
+            }],
+        }
+    }
+
+    /// A well-formed RS256 token whose signature is not valid for `jwks`.
+    fn unsigned_token(nonce: &str) -> String {
+        use base64::Engine as _;
+        let enc = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let header = serde_json::json!({"alg": "RS256", "typ": "JWT", "kid": "test-key"});
+        let now = chrono::Utc::now().timestamp();
+        let payload = serde_json::json!({
+            "iss": "https://issuer.test",
+            "aud": "client",
+            "exp": now + 600,
+            "iat": now,
+            "sub": "user-1",
+            "nonce": nonce,
+            "email": "operator@example.test",
+            "email_verified": true,
+        });
+        format!(
+            "{}.{}.not-a-signature",
+            enc.encode(header.to_string()),
+            enc.encode(payload.to_string())
+        )
+    }
+
+    // The property this pins: a token that fails verification is an error the
+    // handler turns into a 401. It is not a panic. jsonwebtoken panics instead
+    // of returning when the process has no CryptoProvider, which happens when
+    // the crate is built with neither `rust_crypto` nor `aws_lc_rs`, and that
+    // panic takes the server down in the middle of a sign-in.
+    #[test]
+    fn a_bad_token_is_an_error_and_not_a_panic() {
+        let result = std::panic::catch_unwind(|| {
+            verify_idtoken(&unsigned_token("n1"), &jwks(), &cfg(), "n1")
+        });
+        let outcome = match result {
+            Ok(Ok(claims)) => panic!("a garbage signature verified as {claims:?}"),
+            Ok(Err(e)) => format!("rejected: {e}"),
+            Err(_) => panic!("verify_idtoken panicked; no CryptoProvider is installed"),
+        };
+        assert!(outcome.starts_with("rejected:"));
+    }
+
+    // The same missing-provider failure seen from the other side: with no
+    // provider, even an HS256 round trip panics. Kept separate from the test
+    // above because it names the cause a reader can act on.
+    #[test]
+    fn the_process_can_sign_and_verify() {
+        let key = jsonwebtoken::EncodingKey::from_secret(b"test-secret");
+        let dec = jsonwebtoken::DecodingKey::from_secret(b"test-secret");
+        let validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+        let exp = chrono::Utc::now().timestamp() + 600;
+        let token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+            &serde_json::json!({"sub": "user-1", "exp": exp}),
+            &key,
+        )
+        .expect("HS256 encode needs a CryptoProvider");
+        let _: serde_json::Value = jsonwebtoken::decode(&token, &dec, &validation)
+            .expect("HS256 decode needs a CryptoProvider")
+            .claims;
+    }
+}

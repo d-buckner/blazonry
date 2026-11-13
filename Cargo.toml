@@ -16,7 +16,12 @@ fontdue = "0.9.5"
 http-body-util = "0.1.5"
 icalendar = { version = "0.17.17", features = ["chrono-tz", "recurrence"] }
 image = "0.25.10"
-jsonwebtoken = "11"
+# `rust_crypto` is not a default feature, and with neither it nor `aws_lc_rs`
+# enabled jsonwebtoken panics instead of returning an error the first time
+# anything verifies a signature. That panic lands in the middle of an OIDC
+# sign-in and takes the server down. `rust_crypto` is the pure-Rust provider;
+# `aws_lc_rs` would need a C toolchain in the musl cross build.
+jsonwebtoken = { version = "11", default-features = false, features = ["use_pem", "rust_crypto"] }
 ldap3 = { version = "0.12", default-features = false, features = ["sync"] }
 liquid = "0.26.11"
 liquid-core = { version = "0.26.11", features = ["derive"] }
