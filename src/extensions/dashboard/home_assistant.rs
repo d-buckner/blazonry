@@ -19,7 +19,7 @@
 //! Config: { url, token, dashboard?: url_path, view?: path | title | index }
 //!
 //! This module is the only place in blazonry that reads Lovelace card config.
-//! `tests/ha_dashboard.rs` pins the shapes against a captured HA 2026.11.1
+//! `mapping_tests.rs` pins the shapes against a captured HA 2026.11.1
 //! config, so an upstream change fails a test here rather than the wall at 7am.
 //! Lovelace `grid_options` is deliberately NOT read: it sizes a scrollable web
 //! page whose width the operator chose, and a panel is always 800x480.
