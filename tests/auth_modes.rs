@@ -542,3 +542,78 @@ async fn auth_oidc_bad_credentials_rejected() {
     assert_eq!(s, 401);
     child.kill().await.unwrap();
 }
+
+// --------------------------------------------------------- admin token ----
+
+/// The provisioning case: the server is in `oidc` mode, so no route mints a
+/// session from a password, and a machine caller has no browser to sign in
+/// with. The static bearer opens the admin plane anyway; a wrong one does not.
+#[tokio::test]
+async fn admin_token_opens_admin_plane_under_oidc() {
+    let mut envs = oidc_envs(2395);
+    envs.push((
+        "BLAZONRY_ADMIN_TOKEN",
+        "0123456789abcdef0123456789abcdef".into(),
+    ));
+    let envs_ref: Vec<(&str, String)> = envs.iter().map(|(k, v)| (*k, v.clone())).collect();
+    let (mut child, addr) = spawn_server_env("auth-admin-token", 2395, &envs_ref).await;
+    let cli = reqwest::Client::new();
+
+    let s = cli
+        .get(format!("http://{addr}/admin/devices"))
+        .header("authorization", "Bearer 0123456789abcdef0123456789abcdef")
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(s, 200);
+
+    // A near miss is refused, so the comparison is not a prefix match.
+    let s = cli
+        .get(format!("http://{addr}/admin/devices"))
+        .header("authorization", "Bearer 0123456789abcdef0123456789abcdee")
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(s, 401);
+
+    // The token is not an account: OIDC mode still refuses a password login,
+    // and the token grants no more than any other admin bearer.
+    let s = cli
+        .post(format!("http://{addr}/admin/login"))
+        .json(&serde_json::json!({"email": "x@y.z", "password": "x"}))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(s, 400);
+    child.kill().await.unwrap();
+}
+
+/// A short static bearer is a weak credential, and a server that starts with one
+/// looks healthy while it is guessable. Startup refuses it instead.
+#[tokio::test]
+async fn admin_token_refuses_a_short_value() {
+    let dir = std::env::temp_dir().join(format!("blazonry-test-{}-short-tok", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = tokio::process::Command::new(env!("CARGO_BIN_EXE_blazonry"))
+        .args([
+            "serve",
+            "--db",
+            dir.join("t.db").to_str().unwrap(),
+            "--addr",
+            "127.0.0.1:2396",
+        ])
+        .env("BLAZONRY_ADMIN_TOKEN", "tooshort")
+        .env_remove("BLAZONRY_AUTH")
+        .output()
+        .await
+        .unwrap();
+    assert!(!out.status.success(), "a short admin token must not start");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("BLAZONRY_ADMIN_TOKEN"),
+        "startup should name the rejected var, got: {err}"
+    );
+}

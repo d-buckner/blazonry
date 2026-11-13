@@ -14,6 +14,11 @@
 //!   JWKS (RS256).
 //! - `none`: admin plane is open (LAN-trust deployments). No accounts exist.
 //!
+//! `BLAZONRY_ADMIN_TOKEN` adds a static bearer the admin plane accepts in every
+//! mode. It exists for a machine caller that provisions the server over the
+//! admin API and has no browser to sign in with; under `oidc` and `ldap` there is
+//! no password route it could use.
+//!
 //! Module layout: `config` concerns live here (AuthConfig::from_env, fail-fast
 //! at startup); protocol logic lives in `ldap` and `oidc`. Each protocol
 //! module exposes a narrow surface: ldap = one verify call, oidc = start_login
@@ -40,6 +45,9 @@ pub struct AuthConfig {
     pub mode: AuthMode,
     pub ldap: Option<LdapCfg>,
     pub oidc: Option<OidcCfg>,
+    /// A static bearer the admin plane accepts in every mode, for a machine
+    /// caller that cannot drive a browser sign-in. `None` when unset.
+    pub admin_token: Option<String>,
 }
 
 pub type Shared = Arc<AuthConfig>;
@@ -75,7 +83,25 @@ impl AuthConfig {
         } else {
             None
         };
-        Ok(AuthConfig { mode, ldap, oidc })
+        let admin_token = env_set("BLAZONRY_ADMIN_TOKEN");
+        if admin_token.as_deref().is_some_and(|t| t.len() < 32) {
+            anyhow::bail!("BLAZONRY_ADMIN_TOKEN must be at least 32 characters");
+        }
+        Ok(AuthConfig {
+            mode,
+            ldap,
+            oidc,
+            admin_token,
+        })
+    }
+
+    /// True when `bearer` is the configured admin token. Constant-time so a
+    /// caller who can time the response learns nothing about the value.
+    pub fn admin_token_matches(&self, bearer: &str) -> bool {
+        match &self.admin_token {
+            Some(expected) => constant_time_eq(expected.as_bytes(), bearer.as_bytes()),
+            None => false,
+        }
     }
 
     pub fn mode_str(&self) -> &'static str {
@@ -86,6 +112,19 @@ impl AuthConfig {
             AuthMode::None => "none",
         }
     }
+}
+
+// ------------------------------------------------------------- comparison ----
+
+/// Compare two byte slices without leaking their equality through timing: every
+/// byte is examined and the differences are accumulated rather than returned
+/// early. Lengths differ, so no early return is available anyway.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    let mut diff = a.len() ^ b.len();
+    for i in 0..a.len().min(b.len()) {
+        diff |= (a[i] ^ b[i]) as usize;
+    }
+    diff == 0
 }
 
 // ------------------------------------------------------------ randomness ----
