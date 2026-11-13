@@ -158,6 +158,12 @@ src/extensions/calendar/
   caldav.manifest.json       that provider's config schema
 ```
 
+Two rules fix the filenames. `manifest.json` describes the folder's own
+extension, and there is exactly one per folder. Every other `*.manifest.json` in
+the folder describes a source it ships, and its filename stem is that source's
+kind. So `calendar/` holds `manifest.json` (kind `calendar`) and
+`caldav.manifest.json` (kind `caldav`).
+
 Weather and Home Assistant follow the same shape with `open_meteo.rs` and
 `home_assistant.rs`. Countdown ships no provider, so it has no provider files.
 

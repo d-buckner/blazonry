@@ -51,7 +51,8 @@ fn extension_manifests() -> Vec<(String, PathBuf, ExtensionManifest)> {
         .collect()
 }
 
-/// Every `<provider>.manifest.json` shipped by any folder.
+/// Every `<provider>.manifest.json` shipped by any folder. The folder's own
+/// `manifest.json` is excluded by the leading dot: it has no kind stem.
 fn provider_manifests() -> Vec<(PathBuf, ProviderManifest)> {
     let mut out = Vec::new();
     for dir in folders() {
