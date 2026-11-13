@@ -137,6 +137,29 @@ pub async fn refresh_provider_now(State(st): State<SharedState>, Path(id): Path<
     }
 }
 
+/// Probe a Home Assistant instance for its dashboards and tabs. Lovelace
+/// config is WebSocket-only, so this is how the admin UI offers real tabs
+/// instead of asking for a tab id typed by hand.
+pub async fn ha_tabs(Json(b): Json<Value>) -> Res {
+    let want = |key: &str| -> Option<String> {
+        b.get(key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let Some(url) = want("url") else {
+        return Err(bad("url required"));
+    };
+    let Some(token) = want("token") else {
+        return Err(bad("token required"));
+    };
+    let dashboard = want("dashboard").unwrap_or_else(|| "lovelace".to_string());
+    let out = providers::home_assistant::browse(&url, &token, &dashboard)
+        .await
+        .unwrap_or_else(|e| json!({ "ok": false, "error": e.to_string() }));
+    Ok(Json(out))
+}
+
 // ---------- extensions ----------
 
 pub async fn list_extensions(State(st): State<SharedState>) -> Res {
