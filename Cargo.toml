@@ -13,6 +13,7 @@ base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 fontdue = "0.9.5"
+futures-util = "0.3"
 http-body-util = "0.1.5"
 icalendar = { version = "0.17.17", features = ["chrono-tz", "recurrence"] }
 image = "0.25.10"
@@ -32,22 +33,19 @@ sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
 taffy = "0.15.1"
 tiny-skia = "0.12.0"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "process", "io-util"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [features]
 default = []
-browser = ["dep:chromiumoxide", "dep:futures-util", "dep:brotli"]
+browser = ["dep:chromiumoxide", "dep:brotli"]
 
 [dependencies.chromiumoxide]
 version = "0.9"
 default-features = false
 features = ["rustls", "zip8"]
-optional = true
-
-[dependencies.futures-util]
-version = "0.3"
 optional = true
 
 [dependencies.brotli]
