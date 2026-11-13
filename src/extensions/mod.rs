@@ -31,10 +31,13 @@
 //! and a new one is a framework change.
 
 use crate::providers::Provider;
+use chrono::{DateTime, FixedOffset};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 
 pub mod calendar;
 pub mod countdown;
@@ -46,27 +49,66 @@ pub use manifest::{Cardinality, ExtensionManifest, Field, FieldKind, ProviderMan
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
-/// What one rebuild hands an extension. Owned, so an extension may keep it
-/// across awaits (same shape as [`crate::providers::Provider::fetch`]).
-pub struct Ctx {
-    pub pool: SqlitePool,
+/// One stored provider snapshot handed to an extension. The framework fetched
+/// it. An extension never fetches, so it needs no database handle and no
+/// network path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotInput {
+    pub provider_id: i64,
+    /// The name the operator gave the provider; a calendar shows it as the
+    /// event source.
+    pub name: String,
+    pub shape: String,
+    pub fetched_at: String,
+    /// The shape's canonical payload, envelope-free.
+    pub payload: Value,
+}
+
+/// Everything one [`Extension::vars`] call may read. This is also the request
+/// body between the server and an extension host, so it carries no handles:
+/// the clock arrives stamped, and an extension needs no timezone database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VarsRequest {
+    pub kind: String,
     /// Stored settings, completed with the manifest's defaults.
     pub settings: Value,
-    /// Providers resolved for the consumed shape. Empty only for an extension
-    /// that consumes no shape, or when a picked provider was deleted since.
+    /// The local wall clock at rebuild time, RFC 3339 with offset.
+    pub local_now: String,
+    /// The providers resolved for the consumed shape, in resolution order.
+    /// Empty only for an extension that consumes no shape, or when a picked
+    /// provider was deleted since.
     pub provider_ids: Vec<i64>,
+    /// The snapshots those providers published. A provider that has not
+    /// refreshed yet is absent, so an extension tells "nothing connected" from
+    /// "waiting for a first refresh" by comparing the two lists.
+    pub snapshots: Vec<SnapshotInput>,
+}
+
+impl VarsRequest {
+    /// The stamped instant, with the offset it was stamped at.
+    pub fn local_time(&self) -> anyhow::Result<DateTime<FixedOffset>> {
+        DateTime::parse_from_rfc3339(&self.local_now)
+            .map_err(|e| anyhow::anyhow!("local_now '{}' is not RFC 3339: {e}", self.local_now))
+    }
+
+    /// The local date this rebuild is for.
+    pub fn local_date(&self) -> anyhow::Result<chrono::NaiveDate> {
+        Ok(self.local_time()?.date_naive())
+    }
 }
 
 /// One extension kind: the template it paints and the vars it feeds it.
 /// Everything else — settings, cardinality, which shape it reads — comes from
 /// its manifest, so the framework can drive it without knowing the kind.
 pub trait Extension: Send + Sync {
-    /// The Liquid template bundled in the extension folder.
-    fn template(&self) -> &'static str;
+    /// The Liquid template from the extension folder. Owned, because a folder
+    /// loaded at runtime reads its template off disk.
+    fn template(&self) -> String;
     /// Liquid vars for one rebuild, from the snapshots on hand. An extension
     /// with no snapshot yet returns its own "waiting for data" vars rather
     /// than failing, so the screen says something true.
-    fn vars(&self, cx: Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>>;
+    fn vars(&self, req: VarsRequest)
+    -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>>;
 }
 
 /// A manifest paired with the code that implements it, plus the source kinds
@@ -75,73 +117,143 @@ pub trait Extension: Send + Sync {
 /// that kind.
 pub struct Plugin {
     pub manifest: ExtensionManifest,
-    pub extension: &'static dyn Extension,
-    pub providers: &'static [&'static dyn Provider],
+    pub extension: Arc<dyn Extension>,
+    pub providers: Vec<Arc<dyn Provider>>,
 }
 
 fn plugin(
     src: &str,
     path: &str,
-    extension: &'static dyn Extension,
-    providers: &'static [&'static dyn Provider],
-) -> Plugin {
+    extension: Arc<dyn Extension>,
+    providers: Vec<Arc<dyn Provider>>,
+) -> Arc<Plugin> {
     let manifest = ExtensionManifest::parse(src, path)
         .unwrap_or_else(|e| panic!("bundled manifest is unreadable: {e}"));
-    Plugin {
+    Arc::new(Plugin {
         manifest,
         extension,
         providers,
-    }
-}
-
-/// The core set: the extensions this build ships with. A community extension
-/// adds one entry here, and its providers come along with it.
-pub fn registry() -> &'static [Plugin] {
-    static REGISTRY: OnceLock<Vec<Plugin>> = OnceLock::new();
-    REGISTRY.get_or_init(|| {
-        vec![
-            plugin(
-                calendar::MANIFEST,
-                "calendar/manifest.json",
-                &calendar::Calendar,
-                &[&calendar::caldav::CalDav],
-            ),
-            plugin(
-                weather::MANIFEST,
-                "weather/manifest.json",
-                &weather::Weather,
-                &[&weather::open_meteo::OpenMeteo],
-            ),
-            plugin(
-                home_assistant::MANIFEST,
-                "home_assistant/manifest.json",
-                &home_assistant::HomeAssistantTab,
-                &[&home_assistant::home_assistant::HomeAssistant],
-            ),
-            plugin(
-                countdown::MANIFEST,
-                "countdown/manifest.json",
-                &countdown::Countdown,
-                &[],
-            ),
-        ]
     })
 }
 
-pub fn lookup(kind: &str) -> Option<&'static Plugin> {
-    registry().iter().find(|p| p.manifest.kind == kind)
+/// The extensions one rebuild dispatch may choose from.
+#[derive(Default)]
+pub struct Registry {
+    pub plugins: Vec<Arc<Plugin>>,
+}
+
+impl Registry {
+    /// The core set: the extensions this build ships with. A community
+    /// extension adds one entry here, and its providers come along with it.
+    fn bundled() -> Self {
+        Registry {
+            plugins: vec![
+                plugin(
+                    calendar::MANIFEST,
+                    "calendar/manifest.json",
+                    Arc::new(calendar::Calendar),
+                    vec![Arc::new(calendar::caldav::CalDav)],
+                ),
+                plugin(
+                    weather::MANIFEST,
+                    "weather/manifest.json",
+                    Arc::new(weather::Weather),
+                    vec![Arc::new(weather::open_meteo::OpenMeteo)],
+                ),
+                plugin(
+                    home_assistant::MANIFEST,
+                    "home_assistant/manifest.json",
+                    Arc::new(home_assistant::HomeAssistantTab),
+                    vec![Arc::new(home_assistant::home_assistant::HomeAssistant)],
+                ),
+                plugin(
+                    countdown::MANIFEST,
+                    "countdown/manifest.json",
+                    Arc::new(countdown::Countdown),
+                    vec![],
+                ),
+            ],
+        }
+    }
+
+    pub fn find(&self, kind: &str) -> Option<Arc<Plugin>> {
+        self.plugins
+            .iter()
+            .find(|p| p.manifest.kind == kind)
+            .cloned()
+    }
+}
+
+/// The live registry.
+pub fn registry() -> Arc<Registry> {
+    static REGISTRY: OnceLock<Arc<Registry>> = OnceLock::new();
+    REGISTRY
+        .get_or_init(|| Arc::new(Registry::bundled()))
+        .clone()
+}
+
+pub fn lookup(kind: &str) -> Option<Arc<Plugin>> {
+    registry().find(kind)
+}
+
+/// The local wall clock stamped into every [`VarsRequest`].
+fn local_now_stamp() -> String {
+    chrono::Utc::now()
+        .with_timezone(&crate::providers::la())
+        .to_rfc3339()
+}
+
+/// The snapshots the resolved providers published, in resolution order. A
+/// provider with no snapshot yet is absent, which is how an extension sees
+/// "waiting for first refresh".
+async fn load_inputs(pool: &SqlitePool, ids: &[i64]) -> anyhow::Result<Vec<SnapshotInput>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    use sqlx::Row;
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT ps.provider_id, p.name, ps.shape, ps.payload, ps.fetched_at \
+         FROM provider_snapshots ps JOIN providers p ON p.id = ps.provider_id \
+         WHERE ps.provider_id IN ({placeholders})"
+    )));
+    for id in ids {
+        q = q.bind(*id);
+    }
+    let fetched: std::collections::HashMap<i64, SnapshotInput> = q
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|r| {
+            Ok((
+                r.get(0),
+                SnapshotInput {
+                    provider_id: r.get(0),
+                    name: r.get(1),
+                    shape: r.get(2),
+                    payload: serde_json::from_str(r.get(3))?,
+                    fetched_at: r.get(4),
+                },
+            ))
+        })
+        .collect::<anyhow::Result<_>>()?;
+    Ok(ids
+        .iter()
+        .filter_map(|id| fetched.get(id).cloned())
+        .collect())
 }
 
 /// The shape an extension kind consumes, if any (countdown computes from the
 /// calendar date; no provider). Single source: the manifest.
-pub fn consumes_shape(kind: &str) -> Option<&'static str> {
-    lookup(kind)?.manifest.consumes.as_deref()
+pub fn consumes_shape(kind: &str) -> Option<String> {
+    lookup(kind)?.manifest.consumes.clone()
 }
 
 fn unknown_kind(kind: &str) -> anyhow::Error {
     anyhow::anyhow!(
         "unknown extension kind '{kind}' (known: {})",
         registry()
+            .plugins
             .iter()
             .map(|p| p.manifest.kind.as_str())
             .collect::<Vec<_>>()
@@ -238,6 +350,23 @@ pub async fn referenced_provider_ids(
     Ok(set)
 }
 
+/// The one request an extension sees for one rebuild: its completed settings,
+/// the snapshots its resolved providers published, and the local clock.
+async fn request_for(
+    pool: &SqlitePool,
+    kind: &str,
+    settings: Value,
+    ids: &[i64],
+) -> anyhow::Result<VarsRequest> {
+    Ok(VarsRequest {
+        kind: kind.to_string(),
+        settings,
+        local_now: local_now_stamp(),
+        provider_ids: ids.to_vec(),
+        snapshots: load_inputs(pool, ids).await?,
+    })
+}
+
 /// Re-render one extension screen into the BMP cache (both panel depths).
 async fn repaint(
     pool: &SqlitePool,
@@ -282,7 +411,7 @@ pub async fn rebuild_extensions_shapes(
     let exts = all_rows(pool).await?;
     let mut n = 0;
     for ext in exts {
-        let consumed = consumes_shape(&ext.kind).map(str::to_string);
+        let consumed = consumes_shape(&ext.kind);
         let Some(consumed) = consumed else { continue };
         if !shapes.contains(&consumed) {
             continue;
@@ -322,11 +451,7 @@ async fn rebuild_extension(
     if !ids.is_empty() || plugin.manifest.consumes.is_none() {
         let vars = plugin
             .extension
-            .vars(Ctx {
-                pool: pool.clone(),
-                settings,
-                provider_ids: ids,
-            })
+            .vars(request_for(pool, &kind, settings, &ids).await?)
             .await?;
         crate::screens::set_vars(pool, sid, &vars.to_string()).await?;
         repaint(pool, backends, cache, sid).await;
@@ -509,21 +634,15 @@ pub async fn create(
     }
     let vars = plugin
         .extension
-        .vars(Ctx {
-            pool: pool.clone(),
-            settings: settings.clone(),
-            provider_ids: ids,
-        })
+        .vars(request_for(pool, kind, settings.clone(), &ids).await?)
         .await?;
     let sid =
-        crate::screens::create(pool, name, plugin.extension.template(), &vars.to_string()).await?;
+        crate::screens::create(pool, name, &plugin.extension.template(), &vars.to_string()).await?;
     let id = insert(pool, kind, name, &settings, sid).await?;
     // First paint of this screen only, from the snapshots already stored.
     repaint(pool, backends, cache, sid).await;
     Ok((id, sid))
 }
-
-use std::sync::OnceLock;
 
 #[cfg(test)]
 mod tests {

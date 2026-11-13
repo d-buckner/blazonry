@@ -35,6 +35,11 @@ use std::pin::Pin;
 #[allow(clippy::module_inception)]
 pub mod home_assistant;
 #[cfg(test)]
+pub(crate) fn test_now() -> chrono::DateTime<chrono::FixedOffset> {
+    chrono::DateTime::parse_from_rfc3339("2026-11-13T07:15:00-08:00").unwrap()
+}
+
+#[cfg(test)]
 #[path = "mapping_tests.rs"]
 mod mapping_tests;
 
@@ -109,8 +114,13 @@ fn wrap2(text: &str, max_px: f32, px: f32) -> Option<Vec<String>> {
 }
 
 /// Snapshot payload -> Liquid vars. Fills rows until the panel is full, then
-/// counts what is left over instead of dropping it silently.
-pub fn tab_vars(snap: &Value, settings: &Value) -> Value {
+/// counts what is left over instead of dropping it silently. `now` is the local
+/// instant the rebuild is for, so the footer does not read a clock of its own.
+pub fn tab_vars(
+    snap: &Value,
+    settings: &Value,
+    now: chrono::DateTime<chrono::FixedOffset>,
+) -> Value {
     let cols = settings
         .get("columns")
         .and_then(|v| v.as_i64())
@@ -388,8 +398,6 @@ pub fn tab_vars(snap: &Value, settings: &Value) -> Value {
         }
     }
 
-    let tz = crate::providers::la();
-    let now = chrono::Utc::now().with_timezone(&tz);
     let view = snap["view_title"].as_str().unwrap_or("Dashboard");
     let mut footer = format!(
         "Home Assistant · {view} · updated {}",
@@ -423,24 +431,28 @@ pub fn no_data_vars(message: &str) -> Value {
 /// The provider data one rebuild reads is resolved by the framework; this only
 /// turns the snapshot on hand into panel rows.
 impl super::Extension for HomeAssistantTab {
-    fn template(&self) -> &'static str {
-        HOME_ASSISTANT_TEMPLATE
+    fn template(&self) -> String {
+        HOME_ASSISTANT_TEMPLATE.to_string()
     }
 
-    fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+    fn vars(
+        &self,
+        req: super::VarsRequest,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
         Box::pin(async move {
-            let Some(pid) = cx.provider_ids.first().copied() else {
-                return Ok(no_data_vars("No dashboard source is connected."));
+            let now = req.local_time()?;
+            let Some(snap) = req.snapshots.first() else {
+                return Ok(no_data_vars(if req.provider_ids.is_empty() {
+                    "No dashboard source is connected."
+                } else {
+                    "Waiting for first dashboard refresh..."
+                }));
             };
-            Ok(
-                match crate::providers::load_snapshot(&cx.pool, pid).await? {
-                    Some(crate::providers::Snapshot::HomeAssistant(snap)) => {
-                        tab_vars(&snap, &cx.settings)
-                    }
-                    Some(_) => no_data_vars("Resolved provider does not publish a dashboard"),
-                    None => no_data_vars("Waiting for first dashboard refresh..."),
-                },
-            )
+            Ok(if snap.shape != "home_assistant" {
+                no_data_vars("Resolved provider does not publish a dashboard")
+            } else {
+                tab_vars(&snap.payload, &req.settings, now)
+            })
         })
     }
 }
@@ -462,7 +474,7 @@ mod tests {
             tiles.push(tile("tile", &format!("Light {i}"), "On"));
         }
         let snap = json!({"view_title": "Home", "tiles": tiles, "omitted": {"map": 2}});
-        let v = tab_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}), test_now());
         assert!(v["have_data"].as_bool().unwrap());
         let rows = v["rows"].as_array().unwrap();
         let placed: usize = rows
@@ -485,7 +497,7 @@ mod tests {
             .map(|i| tile("tile", &format!("T{i}"), "On"))
             .collect();
         let snap = json!({"view_title": "Home", "tiles": tiles, "omitted": {}});
-        let v = tab_vars(&snap, &json!({"columns": 3}));
+        let v = tab_vars(&snap, &json!({"columns": 3}), test_now());
         let rows = v["rows"].as_array().unwrap();
         // header + rows + footer must stay inside 480px.
         let mut used = HEADER_H + FOOTER_H;
@@ -510,7 +522,7 @@ mod tests {
             {"kind": "tile", "title": "Bedroom Skylight Left Hand Side", "value": "Unverifiable",
              "unit": "", "sub": "Some long secondary line", "on": false, "progress": null, "rows": []}
         ]});
-        let v = tab_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}), test_now());
         let t = &v["rows"][0]["tiles"][0];
         let cell_w = (WIDTH - 2.0 * PAD - GAP * 3.0) / 4.0 - 2.0 * TILE_PAD_X;
         assert!(
@@ -531,7 +543,7 @@ mod tests {
             {"kind": "group", "title": "Sensors", "value": "", "unit": "", "sub": "",
              "on": false, "progress": null, "rows": rows}
         ]});
-        let v = tab_vars(&snap, &json!({}));
+        let v = tab_vars(&snap, &json!({}), test_now());
         let kept = v["rows"][0]["rows"].as_array().unwrap().len();
         assert!(kept > 0 && kept < 40, "kept {kept} of 40 rows");
     }
@@ -542,7 +554,7 @@ mod tests {
             .map(|i| tile("tile", &format!("T{i}"), "On"))
             .collect();
         let snap = json!({"view_title": "Home", "tiles": tiles, "omitted": {}});
-        let v = tab_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}), test_now());
         let rows = v["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 2);
         let last = rows[1]["tiles"].as_array().unwrap();
@@ -576,7 +588,7 @@ mod tests {
              "on": true, "progress": null, "rows": []}
         ]});
         for cols in [2u64, 3, 4] {
-            let vars = tab_vars(&snap, &json!({"columns": cols}));
+            let vars = tab_vars(&snap, &json!({"columns": cols}), test_now());
             let report = crate::ext_dev::check(HOME_ASSISTANT_TEMPLATE, &vars.to_string());
             assert!(
                 report.ok,
@@ -607,7 +619,7 @@ mod tests {
             {"kind": "tile", "title": "Today", "value": "Partly cloudy", "unit": "", "sub": "55\u{b0}F",
              "on": false, "progress": null, "rows": []}
         ]});
-        let v = tab_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}), test_now());
         let row = &v["rows"][0];
         let t = &row["tiles"][0];
         assert_eq!(t["lines"].as_array().map(|l| l.len()), Some(2), "{t}");
@@ -647,7 +659,7 @@ mod tests {
             {"kind": "tile", "title": "C", "value": "3", "unit": "", "sub": "",
              "on": false, "progress": null, "rows": []}
         ]});
-        let v = tab_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}), test_now());
         let rows = v["rows"].as_array().unwrap();
         let shape: Vec<String> = rows
             .iter()
@@ -679,7 +691,7 @@ mod tests {
     #[test]
     fn footer_names_the_tab_and_the_source() {
         let snap = json!({"view_title": "Security", "tiles": [tile("tile", "Alarm", "Armed away")], "omitted": {}});
-        let v = tab_vars(&snap, &json!({"title": "Wall"}));
+        let v = tab_vars(&snap, &json!({"title": "Wall"}), test_now());
         assert_eq!(v["title"], "Wall", "settings.title overrides the tab name");
         assert!(v["footer"].as_str().unwrap().contains("Security"));
         assert!(v["footer"].as_str().unwrap().starts_with("Home Assistant"));

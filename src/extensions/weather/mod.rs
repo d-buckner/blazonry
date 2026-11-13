@@ -23,37 +23,45 @@ pub const WEATHER_TEMPLATE: &str = include_str!("template.liquid");
 pub struct Weather;
 
 impl super::Extension for Weather {
-    fn template(&self) -> &'static str {
-        WEATHER_TEMPLATE
+    fn template(&self) -> String {
+        WEATHER_TEMPLATE.to_string()
     }
 
-    fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+    fn vars(
+        &self,
+        req: super::VarsRequest,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
         Box::pin(async move {
-            let Some(pid) = cx.provider_ids.first().copied() else {
-                return Ok(no_data_vars("No weather source is connected."));
+            let now = req.local_time()?;
+            let Some(snap) = req.snapshots.first() else {
+                return Ok(no_data_vars(if req.provider_ids.is_empty() {
+                    "No weather source is connected."
+                } else {
+                    "Waiting for first weather refresh..."
+                }));
             };
-            Ok(
-                match crate::providers::load_snapshot(&cx.pool, pid).await? {
-                    Some(crate::providers::Snapshot::Weather(payload)) => {
-                        weather_vars(&payload, &cx.settings)
-                    }
-                    Some(_) => no_data_vars("Resolved provider does not publish weather"),
-                    None => no_data_vars("Waiting for first weather refresh..."),
-                },
-            )
+            Ok(if snap.shape != "weather" {
+                no_data_vars("Resolved provider does not publish weather")
+            } else {
+                weather_vars(&snap.payload, &req.settings, now)
+            })
         })
     }
 }
 
-/// Snapshot payload (open_meteo shape) -> Liquid vars.
-pub fn weather_vars(snap: &Value, settings: &Value) -> Value {
+/// Snapshot payload (open_meteo shape) -> Liquid vars. `now` is the local
+/// instant the rebuild is for, so the day labels and the footer do not read a
+/// clock of their own.
+pub fn weather_vars(
+    snap: &Value,
+    settings: &Value,
+    now: chrono::DateTime<chrono::FixedOffset>,
+) -> Value {
     let max_days = settings
         .get("days")
         .and_then(|v| v.as_i64())
         .unwrap_or(3)
         .clamp(0, 4) as usize;
-    let tz = crate::providers::la();
-    let now = chrono::Utc::now().with_timezone(&tz);
     let days: Vec<Value> = snap["days"]
         .as_array()
         .map(|ds| {

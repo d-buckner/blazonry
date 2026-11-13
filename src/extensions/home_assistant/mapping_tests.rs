@@ -7,7 +7,7 @@
 //! fails instead of the wall display going quietly blank.
 
 use super::home_assistant::{build_tiles, flatten_cards, pick_view, tile_json};
-use super::{HOME_ASSISTANT_TEMPLATE, tab_vars};
+use super::{HOME_ASSISTANT_TEMPLATE, tab_vars, test_now};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -196,7 +196,7 @@ fn every_captured_tab_renders_a_screen() {
     for v in views() {
         let p = payload(&v);
         for cols in [2u64, 3, 4] {
-            let vars = tab_vars(&p, &json!({ "columns": cols }));
+            let vars = tab_vars(&p, &json!({ "columns": cols }), test_now());
             let report = crate::ext_dev::check(HOME_ASSISTANT_TEMPLATE, &vars.to_string());
             assert!(
                 report.ok,
@@ -215,7 +215,7 @@ fn nothing_is_lost_between_the_payload_and_the_panel() {
     // tile in the payload, so the footer can never under-report.
     let v = views().into_iter().find(|v| v["path"] == "home").unwrap();
     let p = payload(&v);
-    let vars = tab_vars(&p, &json!({ "columns": 4 }));
+    let vars = tab_vars(&p, &json!({ "columns": 4 }), test_now());
     let placed: usize = vars["rows"]
         .as_array()
         .unwrap()
@@ -250,7 +250,7 @@ fn nothing_is_lost_between_the_payload_and_the_panel() {
 
     // The same accounting when the panel is deliberately too small, so the
     // "did not fit" figure is exercised rather than always zero.
-    let vars = tab_vars(&p, &json!({ "columns": 4, "max_tiles": 3 }));
+    let vars = tab_vars(&p, &json!({ "columns": 4, "max_tiles": 3 }), test_now());
     let footer = vars["footer"].as_str().unwrap();
     let placed: usize = vars["rows"]
         .as_array()

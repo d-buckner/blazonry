@@ -38,6 +38,7 @@ pub async fn list_providers(State(st): State<SharedState>) -> Res {
 /// forms from this response, so a new extension needs no front-end change.
 pub async fn kinds() -> Res {
     let ext: Vec<Value> = extensions::registry()
+        .plugins
         .iter()
         .map(|p| serde_json::to_value(&p.manifest).map_err(err))
         .collect::<Result<_, _>>()?;
