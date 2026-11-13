@@ -1,0 +1,31 @@
+{
+  "name": "Quote",
+  "parts": [
+    {
+      "type": "flex",
+      "direction": "column",
+      "align": "center",
+      "height": 480,
+      "gap": 18,
+      "padding": [36, 64, 36, 64],
+      "children": [
+        { "type": "text", "text": "{{ title }}", "style": { "font_px": 24, "fg": 1 } },
+        {
+          "type": "flex",
+          "direction": "column",
+          "align": "center",
+          "grow": 1,
+          "children": [
+            {% for line in lines %}{
+              "type": "text",
+              "text": "{{ line }}",
+              "style": { "font_px": 38, "bold": true }
+            }{% unless forloop.last %},{% endunless %}{% endfor %}
+          ]
+        },
+        { "type": "text", "text": "{{ author }}", "style": { "font_px": 22, "fg": 2 } },
+        { "type": "text", "text": "{{ footer }}", "style": { "font_px": 18, "fg": 2 } }
+      ]
+    }
+  ]
+}

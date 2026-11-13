@@ -40,6 +40,7 @@ ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-buildroot-linux-musl-gc
 WORKDIR /app
 # only what the build actually reads (include_str!/include_bytes! targets + manifests)
 COPY Cargo.toml Cargo.lock ./
+COPY ext-api ./ext-api
 COPY src ./src
 COPY assets ./assets
 COPY web ./web

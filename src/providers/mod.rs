@@ -196,21 +196,27 @@ pub trait Provider: Send + Sync {
 /// Built from the extension folders, because that is where providers live: a
 /// folder declares the sources it ships, so a new plugin is one line in
 /// [`crate::extensions::registry`] and nothing else.
-pub fn registry() -> &'static std::collections::HashMap<&'static str, &'static dyn Provider> {
+pub fn registry() -> std::sync::Arc<std::collections::HashMap<String, std::sync::Arc<dyn Provider>>>
+{
     use std::collections::HashMap;
-    use std::sync::OnceLock;
-    static REGISTRY: OnceLock<HashMap<&'static str, &'static dyn Provider>> = OnceLock::new();
-    REGISTRY.get_or_init(|| {
-        crate::extensions::registry()
-            .iter()
-            .flat_map(|p| p.providers.iter())
-            .map(|p| (p.kind(), *p))
-            .collect()
-    })
+    use std::sync::{Arc, OnceLock};
+    static REGISTRY: OnceLock<Arc<HashMap<String, Arc<dyn Provider>>>> = OnceLock::new();
+    REGISTRY
+        .get_or_init(|| {
+            Arc::new(
+                crate::extensions::registry()
+                    .plugins
+                    .iter()
+                    .flat_map(|p| p.providers.iter().cloned())
+                    .map(|p| (p.kind().to_string(), p))
+                    .collect(),
+            )
+        })
+        .clone()
 }
 
-pub fn lookup(kind: &str) -> Option<&'static dyn Provider> {
-    registry().get(kind).copied()
+pub fn lookup(kind: &str) -> Option<std::sync::Arc<dyn Provider>> {
+    registry().get(kind).cloned()
 }
 
 /// Per-kind metadata for the admin UI: each registered kind's manifest plus
@@ -425,49 +431,6 @@ pub async fn ids_with_shape_exist(
     }
     let n: i64 = q.fetch_one(pool).await?.get(0);
     Ok(n == ids.len() as i64)
-}
-
-/// Merged calendar events across providers, sorted by start (all-day first
-/// within a day falls out of the `start` sort: `YYYY-MM-DD` < any datetime).
-/// Rows: (start, all_day, title, location, description, source_name).
-pub async fn merged_calendar_rows(
-    pool: &SqlitePool,
-    ids: &[i64],
-) -> anyhow::Result<Vec<(String, bool, String, String, String, String)>> {
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let placeholders = vec!["?"; ids.len()].join(",");
-    let mut q = sqlx::query(AssertSqlSafe(format!(
-        "SELECT ps.payload, p.name FROM provider_snapshots ps \
-         JOIN providers p ON p.id = ps.provider_id \
-         WHERE ps.provider_id IN ({placeholders}) AND ps.shape = 'calendar'"
-    )));
-    for id in ids {
-        q = q.bind(id);
-    }
-    let rows = q.fetch_all(pool).await?;
-    let mut out: Vec<(String, bool, String, String, String, String)> = Vec::new();
-    for r in rows {
-        let payload: String = r.get(0);
-        let source: String = r.get(1);
-        let snap = Snapshot::from_payload("calendar", serde_json::from_str(&payload)?)?;
-        let Snapshot::Calendar(events) = snap else {
-            unreachable!("shape-filtered query")
-        };
-        for e in events {
-            out.push((
-                e.start,
-                e.all_day,
-                e.title,
-                e.location,
-                e.description,
-                source.clone(),
-            ));
-        }
-    }
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(out)
 }
 
 pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<()> {
@@ -929,38 +892,5 @@ mod tests {
                 .unwrap()
         );
         assert!(ids_with_shape_exist(&pool, "calendar", &[]).await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn merged_calendar_rows_merges_and_sorts_across_providers() {
-        let pool = test_pool().await;
-        let a = create(&pool, "caldav", "Work", &json!({"url": "http://x/"}), 3600)
-            .await
-            .unwrap();
-        let b = create(&pool, "caldav", "Home", &json!({"url": "http://y/"}), 3600)
-            .await
-            .unwrap();
-        store_snapshot(
-            &pool,
-            a,
-            &Snapshot::Calendar(vec![cal("standup", "2026-11-01T14:00:00Z")]),
-        )
-        .await
-        .unwrap();
-        store_snapshot(
-            &pool,
-            b,
-            &Snapshot::Calendar(vec![
-                cal("checkup", "2026-11-01"),
-                cal("dinner", "2026-11-01T01:00:00Z"),
-            ]),
-        )
-        .await
-        .unwrap();
-        let rows = merged_calendar_rows(&pool, &[a, b]).await.unwrap();
-        let titles: Vec<&str> = rows.iter().map(|r| r.2.as_str()).collect();
-        // all-day (date-only start) sorts first, then timed by start
-        assert_eq!(titles, vec!["checkup", "dinner", "standup"]);
-        assert_eq!(rows[0].5, "Home");
     }
 }

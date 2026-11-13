@@ -143,6 +143,7 @@ fn every_folder_is_registered_and_vice_versa() {
         .map(|(_, _, m)| m.kind)
         .collect();
     let registered: BTreeSet<String> = blazonry::extensions::registry()
+        .plugins
         .iter()
         .map(|p| p.manifest.kind.clone())
         .collect();
@@ -150,7 +151,7 @@ fn every_folder_is_registered_and_vice_versa() {
         on_disk, registered,
         "folders and the extension registry disagree"
     );
-    for p in blazonry::extensions::registry() {
+    for p in &blazonry::extensions::registry().plugins {
         assert!(
             blazonry::extensions::lookup(&p.manifest.kind).is_some(),
             "{} not reachable through lookup",

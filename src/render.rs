@@ -192,6 +192,22 @@ pub struct Renderer {
     text_cache: Mutex<HashMap<(String, u32, bool), TextAdvance>>,
 }
 
+/// Template text plus vars, to the pixels a panel eats. The dev CLI and the
+/// extension check both come through here, so "it renders" means one thing.
+///
+/// A template is screen JSON or TRMNL HTML + Liquid, whichever the rendered text
+/// turns out to be.
+pub fn paint_indices(template: &str, vars: &serde_json::Value) -> anyhow::Result<Vec<u8>> {
+    let rendered = crate::template::render_str(template, vars)?;
+    let screen = if rendered.trim_start().starts_with('<') {
+        crate::markup::markup_to_screen(&rendered, "paint")?
+    } else {
+        serde_json::from_str::<Screen>(&rendered)
+            .map_err(|e| anyhow::anyhow!("{e}\nrendered output:\n{rendered}"))?
+    };
+    Ok(Renderer::new()?.render(&screen))
+}
+
 impl Renderer {
     pub fn new() -> anyhow::Result<Self> {
         Ok(Renderer {

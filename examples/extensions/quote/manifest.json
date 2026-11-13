@@ -1,0 +1,21 @@
+{
+  "kind": "quote",
+  "label": "Quote",
+  "blurb": "One quote a day from a list you type in. Repaints once a day.",
+  "consumes": null,
+  "settings": [
+    {
+      "key": "title",
+      "type": "string",
+      "label": "Heading",
+      "default": "Quote of the day"
+    },
+    {
+      "key": "quotes",
+      "type": "string",
+      "label": "Quotes",
+      "optional": true,
+      "hint": "One per line. End a line with \" | name\" to credit the author."
+    }
+  ]
+}

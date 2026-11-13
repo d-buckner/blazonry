@@ -19,16 +19,14 @@ pub const COUNTDOWN_TEMPLATE: &str = include_str!("template.liquid");
 
 pub struct Countdown;
 
-/// Target date vs today (LA-local) -> Liquid vars.
-pub fn countdown_vars(settings: &Value) -> anyhow::Result<Value> {
+/// Target date vs `today` -> Liquid vars.
+pub fn countdown_vars(settings: &Value, today: chrono::NaiveDate) -> anyhow::Result<Value> {
     let date = settings
         .get("date")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("countdown requires a \"date\" setting (YYYY-MM-DD)"))?;
     let target = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|e| anyhow::anyhow!("countdown date '{date}' is not YYYY-MM-DD: {e}"))?;
-    let tz = crate::providers::la();
-    let today = chrono::Utc::now().with_timezone(&tz).date_naive();
     let delta = target.signed_duration_since(today).num_days();
     let (days, unit) = match delta {
         d if d > 0 => (d.to_string(), "days to go".to_string()),
@@ -44,12 +42,15 @@ pub fn countdown_vars(settings: &Value) -> anyhow::Result<Value> {
 
 /// No provider: the framework calls this once per local-day rollover.
 impl super::Extension for Countdown {
-    fn template(&self) -> &'static str {
-        COUNTDOWN_TEMPLATE
+    fn template(&self) -> String {
+        COUNTDOWN_TEMPLATE.to_string()
     }
 
-    fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
-        Box::pin(async move { countdown_vars(&cx.settings) })
+    fn vars(
+        &self,
+        req: super::VarsRequest,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+        Box::pin(async move { countdown_vars(&req.settings, super::strict(req.local_date())?) })
     }
 }
 
@@ -58,12 +59,15 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn date(s: &str) -> chrono::NaiveDate {
+        chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
     #[test]
     fn future_date_counts_days_to_go() {
-        let tz = crate::providers::la();
-        let target = chrono::Utc::now().with_timezone(&tz).date_naive() + chrono::Days::new(10);
         let v = countdown_vars(
-            &json!({ "title": "Trip", "date": target.format("%Y-%m-%d").to_string() }),
+            &json!({ "title": "Trip", "date": "2027-01-01" }),
+            date("2026-12-22"),
         )
         .unwrap();
         assert_eq!(v["days"], "10");
@@ -73,19 +77,16 @@ mod tests {
 
     #[test]
     fn today_and_past_dates() {
-        let tz = crate::providers::la();
-        let today = chrono::Utc::now().with_timezone(&tz).date_naive();
-        let v = countdown_vars(&json!({ "date": today.format("%Y-%m-%d").to_string() })).unwrap();
+        let v = countdown_vars(&json!({ "date": "2026-12-22" }), date("2026-12-22")).unwrap();
         assert_eq!(v["unit"], "today");
-        let past = today - chrono::Days::new(3);
-        let v = countdown_vars(&json!({ "date": past.format("%Y-%m-%d").to_string() })).unwrap();
+        let v = countdown_vars(&json!({ "date": "2026-12-19" }), date("2026-12-22")).unwrap();
         assert_eq!(v["days"], "3");
         assert_eq!(v["unit"], "days ago");
     }
 
     #[test]
     fn missing_or_bad_date_is_a_config_error() {
-        assert!(countdown_vars(&json!({})).is_err());
-        assert!(countdown_vars(&json!({ "date": "Feb 3 2027" })).is_err());
+        assert!(countdown_vars(&json!({}), date("2026-12-22")).is_err());
+        assert!(countdown_vars(&json!({ "date": "Feb 3 2027" }), date("2026-12-22")).is_err());
     }
 }

@@ -243,38 +243,13 @@ pub fn cmd_render(path: &Path, vars_override: Option<&Path>, out: Option<&str>, 
             return 1;
         }
     };
-    let rendered = match crate::template::render_str(&template, &vars) {
-        Ok(o) => o,
+    let indices = match crate::render::paint_indices(&template, &vars) {
+        Ok(i) => i,
         Err(e) => {
             eprintln!("error: {e:#}");
             return 1;
         }
     };
-    let screen = if rendered.trim_start().starts_with('<') {
-        match crate::markup::markup_to_screen(&rendered, "render") {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("error: {e}");
-                return 1;
-            }
-        }
-    } else {
-        match serde_json::from_str(&rendered) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("error: {e}\nrendered output:\n{rendered}");
-                return 1;
-            }
-        }
-    };
-    let renderer = match crate::render::Renderer::new() {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("error: {e:#}");
-            return 1;
-        }
-    };
-    let indices = renderer.render(&screen);
     let prefix = out.map(str::to_string).unwrap_or_else(|| {
         // prefer the extension dir name (ext/birthday -> birthday); bare
         // template files fall back to their own stem

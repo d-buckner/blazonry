@@ -140,7 +140,10 @@ src/extensions/  one folder per extension; each owns its manifest, template,
                  fixture, tests, and the provider modules it introduced
 src/admin.rs     admin API (Terminus parity)
 src/auth.rs      argon2 accounts, bearer sessions
+ext-api/         the extension ABI: request types, the plugin trait, the C entry
+                 points a compiled extension exports
 web-app/         Svelte 5 source → node build.js → web/index.html
+docs/adr/        architecture decision records: why a decision was made
 ```
 
 ## Extension folders
@@ -197,6 +200,55 @@ publishes, and every bundled template renders against its bundled fixture.
    it in that entry's `providers`.
 
 `cargo test` then tells you if anything is missing.
+
+### Design records
+
+`docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0003 record
+the accepted design for loading a Rust extension from the `/data` volume at
+runtime, so an author or an MCP can write, build, and apply an extension without
+a new image. The load path is built; the builder image and the apply gate are not.
+
+## Runtime extensions
+
+A runtime extension is a Rust cdylib that links `blazonry-ext-api` and nothing
+else from blazonry. `examples/extensions/quote` is the worked example: 60 lines
+of Rust, a manifest, and a template.
+
+```sh
+ext_host build   examples/extensions/quote   # compile into the staging directory
+ext_host check   examples/extensions/quote   # run the staged build and paint it
+ext_host apply   examples/extensions/quote   # promote it, then reload
+ext_host rollback examples/extensions/quote  # put back what apply displaced
+ext_host list    --extensions /data/extensions
+ext_host serve   --extensions /data/extensions --socket /data/run/exthost.sock
+```
+
+The same five steps are HTTP, so an author does not need a shell. Each takes a
+`kind`, and the host owns the folder:
+
+```text
+POST /admin/extensions/write     source, manifest, template, fixture
+POST /admin/extensions/build     compile, and return the compiler's diagnostics
+POST /admin/extensions/check     run the staged build, and return the PNG it painted
+POST /admin/extensions/apply     promote it, only if build and check are both green
+POST /admin/extensions/rollback  put back what apply displaced
+```
+
+`apply` refuses when the newest build or check failed, or when the source changed
+after either one. `check` answers with the painted PNG inline, because the author
+is often a model that reads images.
+
+The server reads runtime kinds only when you name the socket. Code from the data
+volume runs as the server user, with the database and every stored provider token
+in reach, so this is opt-in and belongs on a device you control:
+
+```sh
+blazonry serve --ext-host /data/run/exthost.sock
+```
+
+`ext_host build` needs a Rust toolchain, so it runs in the builder container in
+dev mode. It needs the `blazonry-ext-api` source too: pass `--ext-api DIR` or set
+`BLAZONRY_EXT_API`.
 
 ## Authoring templates
 

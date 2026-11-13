@@ -21,6 +21,8 @@ pub mod cache;
 pub mod db;
 pub mod dither;
 pub mod ext_dev;
+pub mod ext_host;
+pub mod ext_link;
 pub mod extensions;
 pub mod firmware;
 pub mod liquid_compat;
