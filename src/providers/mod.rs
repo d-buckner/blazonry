@@ -20,7 +20,7 @@
 //! [`Provider`] trait, the registry, the two tables, and the refresh loop. It
 //! holds no vendor code. A provider implementation lives in the extension
 //! folder that introduced it (`extensions/calendar/caldav.rs`,
-//! `extensions/weather/open_meteo.rs`, `extensions/dashboard/home_assistant.rs`)
+//! `extensions/weather/open_meteo.rs`, `extensions/home_assistant/home_assistant.rs`)
 //! and joins through [`registry`].
 //!
 //! Location is not coupling. A provider answers a *shape*, never an extension:
@@ -61,17 +61,19 @@ pub enum Snapshot {
     Calendar(Vec<CalendarEvent>),
     /// WeatherSource: one JSON object (current + days), see open_meteo.
     Weather(serde_json::Value),
-    /// DashboardSource: one display-ready dashboard tab, see home_assistant.
-    Dashboard(serde_json::Value),
+    /// HomeAssistant shape: one display-ready Home Assistant tab, see
+    /// home_assistant.
+    HomeAssistant(serde_json::Value),
 }
 
 impl Snapshot {
-    /// Shape string this snapshot publishes ("calendar" | "weather" | "dashboard").
+    /// Shape string this snapshot publishes
+    /// ("calendar" | "weather" | "home_assistant").
     pub fn shape(&self) -> &'static str {
         match self {
             Snapshot::Calendar(_) => "calendar",
             Snapshot::Weather(_) => "weather",
-            Snapshot::Dashboard(_) => "dashboard",
+            Snapshot::HomeAssistant(_) => "home_assistant",
         }
     }
 
@@ -82,7 +84,7 @@ impl Snapshot {
                 serde_json::to_value(events).expect("CalendarEvent is Serialize by construction")
             }
             Snapshot::Weather(v) => v.clone(),
-            Snapshot::Dashboard(v) => v.clone(),
+            Snapshot::HomeAssistant(v) => v.clone(),
         }
     }
 
@@ -91,18 +93,18 @@ impl Snapshot {
         match shape {
             "calendar" => Ok(Snapshot::Calendar(serde_json::from_value(payload)?)),
             "weather" => Ok(Snapshot::Weather(payload)),
-            "dashboard" => Ok(Snapshot::Dashboard(payload)),
+            "home_assistant" => Ok(Snapshot::HomeAssistant(payload)),
             other => anyhow::bail!("unknown snapshot shape '{other}'"),
         }
     }
 
     /// Rows this snapshot holds (admin display: events for calendar, 1 for
-    /// weather and dashboard).
+    /// weather, tiles for a Home Assistant tab).
     pub fn item_count(&self) -> usize {
         match self {
             Snapshot::Calendar(events) => events.len(),
             Snapshot::Weather(_) => 1,
-            Snapshot::Dashboard(v) => v["tiles"].as_array().map(|t| t.len()).unwrap_or(0),
+            Snapshot::HomeAssistant(v) => v["tiles"].as_array().map(|t| t.len()).unwrap_or(0),
         }
     }
 
@@ -157,7 +159,7 @@ pub fn la() -> chrono_tz::Tz {
 /// and change detection (see module docs).
 pub trait Provider: Send + Sync {
     fn kind(&self) -> &'static str;
-    /// Shape this kind publishes: "calendar" | "weather" | "dashboard".
+    /// Shape this kind publishes: "calendar" | "weather" | "home_assistant".
     fn shape(&self) -> &'static str;
     /// The manifest bundled with this provider's module: label, blurb, config
     /// fields, and the refresh interval a new instance starts with. The admin

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Dashboard extension — a Home Assistant tab, re-laid out for e-ink.
+//! Home Assistant extension — one tab, re-laid out for e-ink.
 //!
-//! Requirement: DashboardSource, cardinality exactly 1 (one screen shows one
-//! tab; a second tab is a second extension).
+//! Requirement: HomeAssistant shape, cardinality exactly 1 (one screen shows
+//! one tab; a second tab is a second extension).
 //!
 //! This is deliberately *not* a screenshot of Lovelace. A panel is 800x480, has
 //! four grey levels, no colour, no scroll, and is read from across a room, so
@@ -20,7 +20,7 @@
 //!   provider could not express, are counted in the footer.
 //!
 //! Settings (JSON):
-//!   provider_id: i64          the dashboard provider (default: first)
+//!   provider_id: i64          the Home Assistant source (default: first)
 //!   title: string             header title (default: the tab's own title)
 //!   columns: i64              tiles per row, 2..=4 (default 4)
 //!   max_tiles: i64            cap beyond the pixel budget, 0 = as many as fit
@@ -30,6 +30,9 @@ use serde_json::{Value, json};
 use std::future::Future;
 use std::pin::Pin;
 
+/// The provider module is named for its kind, as in every folder. Here the
+/// extension and its only provider share a kind, so the names nest.
+#[allow(clippy::module_inception)]
 pub mod home_assistant;
 #[cfg(test)]
 #[path = "mapping_tests.rs"]
@@ -71,9 +74,9 @@ const TILE_PAD_X: f32 = 10.0;
 /// only untrailing part, so the loop never has to know if it is last.
 pub const MANIFEST: &str = include_str!("manifest.json");
 
-pub const DASHBOARD_TEMPLATE: &str = include_str!("template.liquid");
+pub const HOME_ASSISTANT_TEMPLATE: &str = include_str!("template.liquid");
 
-pub struct Dashboard;
+pub struct HomeAssistantTab;
 
 /// Greedy two-line word wrap: `Some(lines)` when the text splits into at most
 /// two lines that each fit at `px`. `None` means the caller must ellipsize.
@@ -107,7 +110,7 @@ fn wrap2(text: &str, max_px: f32, px: f32) -> Option<Vec<String>> {
 
 /// Snapshot payload -> Liquid vars. Fills rows until the panel is full, then
 /// counts what is left over instead of dropping it silently.
-pub fn dashboard_vars(snap: &Value, settings: &Value) -> Value {
+pub fn tab_vars(snap: &Value, settings: &Value) -> Value {
     let cols = settings
         .get("columns")
         .and_then(|v| v.as_i64())
@@ -419,9 +422,9 @@ pub fn no_data_vars(message: &str) -> Value {
 
 /// The provider data one rebuild reads is resolved by the framework; this only
 /// turns the snapshot on hand into panel rows.
-impl super::Extension for Dashboard {
+impl super::Extension for HomeAssistantTab {
     fn template(&self) -> &'static str {
-        DASHBOARD_TEMPLATE
+        HOME_ASSISTANT_TEMPLATE
     }
 
     fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
@@ -431,8 +434,8 @@ impl super::Extension for Dashboard {
             };
             Ok(
                 match crate::providers::load_snapshot(&cx.pool, pid).await? {
-                    Some(crate::providers::Snapshot::Dashboard(snap)) => {
-                        dashboard_vars(&snap, &cx.settings)
+                    Some(crate::providers::Snapshot::HomeAssistant(snap)) => {
+                        tab_vars(&snap, &cx.settings)
                     }
                     Some(_) => no_data_vars("Resolved provider does not publish a dashboard"),
                     None => no_data_vars("Waiting for first dashboard refresh..."),
@@ -459,7 +462,7 @@ mod tests {
             tiles.push(tile("tile", &format!("Light {i}"), "On"));
         }
         let snap = json!({"view_title": "Home", "tiles": tiles, "omitted": {"map": 2}});
-        let v = dashboard_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}));
         assert!(v["have_data"].as_bool().unwrap());
         let rows = v["rows"].as_array().unwrap();
         let placed: usize = rows
@@ -482,7 +485,7 @@ mod tests {
             .map(|i| tile("tile", &format!("T{i}"), "On"))
             .collect();
         let snap = json!({"view_title": "Home", "tiles": tiles, "omitted": {}});
-        let v = dashboard_vars(&snap, &json!({"columns": 3}));
+        let v = tab_vars(&snap, &json!({"columns": 3}));
         let rows = v["rows"].as_array().unwrap();
         // header + rows + footer must stay inside 480px.
         let mut used = HEADER_H + FOOTER_H;
@@ -507,7 +510,7 @@ mod tests {
             {"kind": "tile", "title": "Bedroom Skylight Left Hand Side", "value": "Unverifiable",
              "unit": "", "sub": "Some long secondary line", "on": false, "progress": null, "rows": []}
         ]});
-        let v = dashboard_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}));
         let t = &v["rows"][0]["tiles"][0];
         let cell_w = (WIDTH - 2.0 * PAD - GAP * 3.0) / 4.0 - 2.0 * TILE_PAD_X;
         assert!(
@@ -528,7 +531,7 @@ mod tests {
             {"kind": "group", "title": "Sensors", "value": "", "unit": "", "sub": "",
              "on": false, "progress": null, "rows": rows}
         ]});
-        let v = dashboard_vars(&snap, &json!({}));
+        let v = tab_vars(&snap, &json!({}));
         let kept = v["rows"][0]["rows"].as_array().unwrap().len();
         assert!(kept > 0 && kept < 40, "kept {kept} of 40 rows");
     }
@@ -539,7 +542,7 @@ mod tests {
             .map(|i| tile("tile", &format!("T{i}"), "On"))
             .collect();
         let snap = json!({"view_title": "Home", "tiles": tiles, "omitted": {}});
-        let v = dashboard_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}));
         let rows = v["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 2);
         let last = rows[1]["tiles"].as_array().unwrap();
@@ -573,8 +576,8 @@ mod tests {
              "on": true, "progress": null, "rows": []}
         ]});
         for cols in [2u64, 3, 4] {
-            let vars = dashboard_vars(&snap, &json!({"columns": cols}));
-            let report = crate::ext_dev::check(DASHBOARD_TEMPLATE, &vars.to_string());
+            let vars = tab_vars(&snap, &json!({"columns": cols}));
+            let report = crate::ext_dev::check(HOME_ASSISTANT_TEMPLATE, &vars.to_string());
             assert!(
                 report.ok,
                 "{cols} cols: {:?} {}",
@@ -587,7 +590,7 @@ mod tests {
     #[test]
     fn the_no_data_template_renders_too() {
         let report = crate::ext_dev::check(
-            DASHBOARD_TEMPLATE,
+            HOME_ASSISTANT_TEMPLATE,
             &no_data_vars("Waiting for first dashboard refresh...").to_string(),
         );
         assert!(
@@ -604,7 +607,7 @@ mod tests {
             {"kind": "tile", "title": "Today", "value": "Partly cloudy", "unit": "", "sub": "55\u{b0}F",
              "on": false, "progress": null, "rows": []}
         ]});
-        let v = dashboard_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}));
         let row = &v["rows"][0];
         let t = &row["tiles"][0];
         assert_eq!(t["lines"].as_array().map(|l| l.len()), Some(2), "{t}");
@@ -644,7 +647,7 @@ mod tests {
             {"kind": "tile", "title": "C", "value": "3", "unit": "", "sub": "",
              "on": false, "progress": null, "rows": []}
         ]});
-        let v = dashboard_vars(&snap, &json!({"columns": 4}));
+        let v = tab_vars(&snap, &json!({"columns": 4}));
         let rows = v["rows"].as_array().unwrap();
         let shape: Vec<String> = rows
             .iter()
@@ -676,7 +679,7 @@ mod tests {
     #[test]
     fn footer_names_the_tab_and_the_source() {
         let snap = json!({"view_title": "Security", "tiles": [tile("tile", "Alarm", "Armed away")], "omitted": {}});
-        let v = dashboard_vars(&snap, &json!({"title": "Wall"}));
+        let v = tab_vars(&snap, &json!({"title": "Wall"}));
         assert_eq!(v["title"], "Wall", "settings.title overrides the tab name");
         assert!(v["footer"].as_str().unwrap().contains("Security"));
         assert!(v["footer"].as_str().unwrap().starts_with("Home Assistant"));

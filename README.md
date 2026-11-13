@@ -73,7 +73,7 @@ The SQLite DB lives in the `/data` volume. To build locally:
   progress, bars, divider) cover the TRMNL screen families; Liquid is the
   authoring surface, a JSON screen tree is the compile target.
 - **Live sources** — providers pull data (CalDAV, Open-Meteo, Home Assistant);
-  extensions turn it into screens (agenda, weather, dashboard tab).
+  extensions turn it into screens (agenda, weather, a Home Assistant tab).
 - **OTA gating** — `update_firmware` only when the device's reported version
   differs from the newest firmware row (no OTA loops).
 - **Battery-friendly** — stable filenames so devices skip unchanged
@@ -117,8 +117,8 @@ is stored as plain JSON in the database and returned by `GET /admin/providers`,
 so the admin session protects it. Mint it for a LAN device, and rotate it with
 your other Home Assistant tokens.
 
-`src/extensions/dashboard/mapping_tests.rs` pins the mapping to a captured
-live config under `src/extensions/dashboard/fixtures/`, with the household
+`src/extensions/home_assistant/mapping_tests.rs` pins the mapping to a captured
+live config under `src/extensions/home_assistant/fixtures/`, with the household
 edited out. Upstream schema changes fail a test instead of blanking the wall.
 
 ## Layout
@@ -158,7 +158,7 @@ src/extensions/calendar/
   caldav.manifest.json       that provider's config schema
 ```
 
-Weather and dashboard follow the same shape with `open_meteo.rs` and
+Weather and Home Assistant follow the same shape with `open_meteo.rs` and
 `home_assistant.rs`. Countdown ships no provider, so it has no provider files.
 
 Two rules keep this a plugin system rather than a switch statement:
@@ -167,9 +167,9 @@ Two rules keep this a plugin system rather than a switch statement:
   kinds, per-kind settings, or per-kind defaults. The admin UI builds both of
   its forms from `GET /admin/kinds`, which serves the manifests.
 - **A provider answers a shape, not an extension.** Shapes are the
-  `providers::Snapshot` enum: `calendar`, `weather`, `dashboard`. A calendar
-  extension can read any provider that publishes `calendar`. A plugin cannot
-  invent a shape; that is a framework change.
+  `providers::Snapshot` enum: `calendar`, `weather`, `home_assistant`. A
+  calendar extension can read any provider that publishes `calendar`. A plugin
+  cannot invent a shape; that is a framework change.
 
 `src/extensions/mod.rs::registry()` is the one list. Each entry names a folder
 and the providers that folder ships, so adding a plugin is one line there and
@@ -236,8 +236,8 @@ plus two Python scripts; no physical hardware required.
   `config/routes.rb` + the actual `app/actions/api/{display,setup,log}`
   sources (verified Oct 2026; the assertions encode the contract, the
   upstream sources are not vendored).
-- **dashboard mapping** — drives the Home Assistant mapping against a captured
-  live dashboard config (`src/extensions/dashboard/fixtures/`, household
+- **Home Assistant mapping** — drives the mapping against a captured
+  live dashboard config (`src/extensions/home_assistant/fixtures/`, household
   edited out): tab
   selection, container flattening, per-card mapping, state humanization, and
   a full render at every column count. Schema drift upstream fails here rather

@@ -95,7 +95,7 @@ impl Provider for HomeAssistant {
     }
 
     fn shape(&self) -> &'static str {
-        "dashboard"
+        "home_assistant"
     }
 
     /// The one kind with something to browse: Lovelace config is exposed over
@@ -219,7 +219,7 @@ impl Provider for HomeAssistant {
                 );
             }
 
-            Ok(Snapshot::Dashboard(json!({
+            Ok(Snapshot::HomeAssistant(json!({
                 "dashboard": dashboard,
                 "dashboard_title": dash_title,
                 "view": view.get("path").and_then(|v| v.as_str()).unwrap_or(""),

@@ -1,8 +1,8 @@
 {
-  "kind": "dashboard",
+  "kind": "home_assistant",
   "label": "Home Assistant dashboard",
   "blurb": "One Home Assistant dashboard tab, redrawn for the e-ink panel.",
-  "consumes": "dashboard",
+  "consumes": "home_assistant",
   "cardinality": "exactly_one",
   "setup_hint": "Connect Home Assistant in Connections first.",
   "settings": [

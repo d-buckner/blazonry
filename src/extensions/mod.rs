@@ -38,7 +38,7 @@ use std::pin::Pin;
 
 pub mod calendar;
 pub mod countdown;
-pub mod dashboard;
+pub mod home_assistant;
 pub mod manifest;
 pub mod weather;
 
@@ -113,10 +113,10 @@ pub fn registry() -> &'static [Plugin] {
                 &[&weather::open_meteo::OpenMeteo],
             ),
             plugin(
-                dashboard::MANIFEST,
-                "dashboard/manifest.json",
-                &dashboard::Dashboard,
-                &[&dashboard::home_assistant::HomeAssistant],
+                home_assistant::MANIFEST,
+                "home_assistant/manifest.json",
+                &home_assistant::HomeAssistantTab,
+                &[&home_assistant::home_assistant::HomeAssistant],
             ),
             plugin(
                 countdown::MANIFEST,

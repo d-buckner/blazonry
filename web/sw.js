@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
-// blazonry admin PWA service worker. Emitted by web-app/build.js with 20261113201852
+// blazonry admin PWA service worker. Emitted by web-app/build.js with 20261113204510
 // replaced by a build stamp, so every deploy produces new bytes and browsers
 // pick up the update. Strategy:
 //   - app shell ('/', manifest, icons): cache-first (it is one inlined file)
