@@ -30,6 +30,9 @@ pub struct AppState {
     pub cache: BmpCache,
     pub auth: Arc<crate::auth_core::AuthConfig>,
     pub pending_oidc: Arc<crate::auth_core::PendingOidc>,
+    /// Where the extension host answers, if this server was told about one
+    /// (`--ext-host`). Every runtime-extension authoring call goes through it.
+    pub ext_host: Option<std::path::PathBuf>,
 }
 pub type SharedState = Arc<AppState>;
 

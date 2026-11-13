@@ -8,7 +8,7 @@
 //! calls the host for vars on every rebuild.
 
 use crate::extensions::{self, Extension, ExtensionManifest, Plugin, VarsRequest};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,7 +16,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 /// One request the host serves, one per line of JSON.
-#[derive(Debug, Deserialize)]
+///
+/// `build`, `check`, `apply`, and `rollback` are the ADR-0003 authoring loop. The
+/// server forwards them; the host does the work, because the host is the process
+/// with a compiler and the loaded libraries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum HostRequest {
     /// Liveness, plus what the host has loaded.
@@ -27,29 +31,22 @@ pub enum HostRequest {
     Reload,
     /// Vars for one rebuild.
     Vars { req: VarsRequest },
-}
-
-impl serde::Serialize for HostRequest {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::Error;
-        // Hand-written because the tag order above is the wire format and a
-        // derived Serialize would let a field rename change it silently.
-        let (op, extra): (&str, Option<VarsRequest>) = match self {
-            HostRequest::Ping => ("ping", None),
-            HostRequest::Kinds => ("kinds", None),
-            HostRequest::Reload => ("reload", None),
-            HostRequest::Vars { req } => ("vars", Some(req.clone())),
-        };
-        let mut map = serde_json::Map::new();
-        map.insert("op".into(), op.into());
-        if let Some(req) = extra {
-            map.insert(
-                "req".into(),
-                serde_json::to_value(req).map_err(S::Error::custom)?,
-            );
-        }
-        Value::Object(map).serialize(s)
-    }
+    /// Write source, manifest, template, and fixtures into one folder.
+    Write {
+        /// The extension folder, named by its kind. The host owns the volume, so
+        /// the server never sends a path.
+        kind: String,
+        /// File path inside the folder to text content.
+        files: std::collections::BTreeMap<String, String>,
+    },
+    /// Compile one extension folder into its staging directory.
+    Build { kind: String },
+    /// Run the staged artifact in a throwaway process and paint it.
+    Check { kind: String },
+    /// Promote the staged artifact, then reload it.
+    Apply { kind: String },
+    /// Put the displaced artifact back, then reload it.
+    Rollback { kind: String },
 }
 
 /// One connection per request. A rebuild is seconds apart, so a kept-alive

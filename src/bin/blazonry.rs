@@ -69,12 +69,17 @@ async fn main() -> anyhow::Result<()> {
     let cache = blazonry::cache::new_cache();
     let auth_cfg = blazonry::auth_core::AuthConfig::from_env()?;
     tracing::info!(mode = auth_cfg.mode_str(), "admin auth mode");
+    // Runtime extensions (ADR-0001, ADR-0002): the server asks a host process for
+    // kinds it cannot see. Off unless the operator names the socket, because code
+    // from the data volume is code the operator chose to run.
+    let ext_host = arg_after(&args, "--ext-host").map(std::path::PathBuf::from);
     let state = Arc::new(blazonry::api::AppState {
         pool: pool.clone(),
         backends: backends.clone(),
         cache: cache.clone(),
         auth: Arc::new(auth_cfg),
         pending_oidc: Arc::new(blazonry::auth_core::PendingOidc::new()),
+        ext_host: ext_host.clone(),
     });
 
     // background refresh loop (replaces Sidekiq + poller procs)
@@ -93,10 +98,7 @@ async fn main() -> anyhow::Result<()> {
         std::time::Duration::from_secs(60),
     );
 
-    // Runtime extensions (ADR-0001, ADR-0002): the server asks a host process for
-    // kinds it cannot see. Off unless the operator names the socket, because code
-    // from the data volume is code the operator chose to run.
-    if let Some(socket) = arg_after(&args, "--ext-host") {
+    if let Some(socket) = &ext_host {
         let socket = std::path::PathBuf::from(socket);
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(job_secs));
@@ -209,6 +211,26 @@ async fn main() -> anyhow::Result<()> {
                 .post(blazonry::admin_provider::create_extension),
         )
         .route("/kinds", get(blazonry::admin_provider::kinds))
+        .route(
+            "/extensions/write",
+            post(blazonry::admin_provider::ext_write),
+        )
+        .route(
+            "/extensions/build",
+            post(blazonry::admin_provider::ext_build),
+        )
+        .route(
+            "/extensions/check",
+            post(blazonry::admin_provider::ext_check),
+        )
+        .route(
+            "/extensions/apply",
+            post(blazonry::admin_provider::ext_apply),
+        )
+        .route(
+            "/extensions/rollback",
+            post(blazonry::admin_provider::ext_rollback),
+        )
         .route(
             "/extensions/{id}",
             patch(blazonry::admin_provider::patch_extension)

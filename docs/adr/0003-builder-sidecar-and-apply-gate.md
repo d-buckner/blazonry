@@ -113,9 +113,34 @@ The whole path is off by default. It needs an explicit opt-in such as
 
 ## Implementation notes
 
-Built: `ext_host build`, `ext_host probe`, `ext_host list`, and the artifact
-metadata the loader checks. Not built: the builder image, the admin-gated
-build/check/apply/rollback endpoints, and the MCP tools.
+Built: `ext_host build`, `check`, `apply`, `rollback`, `list`, the artifact
+metadata the loader checks, and the admin endpoints that drive them. Not built:
+the builder image, and the MCP tools.
+
+| Tool | Endpoint |
+|---|---|
+| `ext_write` | `POST /admin/extensions/write` |
+| `ext_build` | `POST /admin/extensions/build` |
+| `ext_check` | `POST /admin/extensions/check` |
+| `ext_apply` | `POST /admin/extensions/apply` |
+| `ext_rollback` | `POST /admin/extensions/rollback` |
+
+Each one carries a `kind`, never a path. The host owns the volume, so the server
+cannot ask for a directory outside the one it was given.
+
+Three details the design did not settle in advance:
+
+- A build lands in `build/<arch>/staging/` and touches nothing live. `apply`
+  promotes it and moves what it displaces into `build/<arch>/previous/`. Two
+  generations deep is the whole history, and that is enough for one rollback.
+- A build record and a check record each store the SHA-256 of the artifact they
+  describe. That is what makes a green record expire: edit the source, and apply
+  refuses with "the source changed after the last build" instead of promoting
+  something nobody looked at.
+- `check` returns the PNG it painted, base64'd. The author is a model looking
+  through an API, and a path on the builder tells it nothing. This is the admin
+  plane; `/api/display` still sends an image URL, because the panel firmware
+  cannot parse a string that size.
 
 - An extension declares `blazonry-ext-api` by version, not by path. The folder has
   to build wherever it lands in the volume. The builder supplies the source with

@@ -7,9 +7,11 @@
 //!
 //! ```text
 //! ext_host serve --extensions /data/extensions --socket /data/run/exthost.sock
-//! ext_host list  --extensions /data/extensions
-//! ext_host build /data/extensions/clock
-//! ext_host probe /data/extensions/clock
+//! ext_host list   --extensions /data/extensions
+//! ext_host build  /data/extensions/clock
+//! ext_host check  /data/extensions/clock
+//! ext_host apply  /data/extensions/clock
+//! ext_host rollback /data/extensions/clock
 //! ```
 //!
 //! `serve` reads one JSON request per line and answers with one JSON response
@@ -22,11 +24,12 @@
 //! {"op":"vars","req":{…}} -> {"vars":…} | {"error":"…"}
 //! ```
 //!
+//! A build lands in the folder's staging directory and changes nothing that is
+//! live. `check` runs the staged artifact in a throwaway process, so a bad
+//! extension dies there and the host keeps serving what it already loaded.
+//! `apply` promotes it, and `rollback` puts back what apply displaced.
+//!
 //! `build` needs a Rust toolchain, so it only works in the builder image.
-//! `probe` runs one built extension against the request in its folder's
-//! `request.json` and prints the vars. That is the check step of the authoring
-//! loop, and it runs in a throwaway process: a bad extension dies here, not in
-//! the server.
 
 use blazonry::ext_host::{self, Loaded};
 use blazonry::ext_link::HostRequest;
@@ -116,14 +119,33 @@ async fn main() -> anyhow::Result<()> {
             let so = ext_host::build(&folder, ext_api(&args).as_deref())?;
             println!(
                 "{}",
-                json!({"ok": true, "artifact": so.display().to_string()})
+                json!({"ok": true, "staged": so.display().to_string()})
             );
             Ok(())
         }
-        "probe" => probe(&folder_arg(&args)?),
+        "check" => match ext_host::check(&folder_arg(&args)?) {
+            Ok(v) => {
+                println!("{v}");
+                Ok(())
+            }
+            Err(e) => {
+                println!("{}", json!({"ok": false, "error": e.to_string()}));
+                Err(e)
+            }
+        },
+        "apply" => {
+            let out = ext_host::apply(&folder_arg(&args)?)?;
+            println!("{out}");
+            Ok(())
+        }
+        "rollback" => {
+            let out = ext_host::rollback(&folder_arg(&args)?)?;
+            println!("{out}");
+            Ok(())
+        }
         _ => {
             eprintln!(
-                "usage: ext_host serve|list|build|probe\n\
+                "usage: ext_host serve|list|build|check|apply|rollback\n\
                  see the source header for the request shapes"
             );
             anyhow::bail!("unknown command '{cmd}'");
@@ -180,6 +202,7 @@ async fn serve(args: &[String]) -> anyhow::Result<()> {
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o660))?;
     }
 
+    let api = ext_api(args);
     let live: Live = Arc::new(RwLock::new(rescan(&dir)));
     tracing::info!(
         "ext_host: listening on {}, {} loaded, {} refused",
@@ -213,8 +236,9 @@ async fn serve(args: &[String]) -> anyhow::Result<()> {
         let (stream, _) = listener.accept().await?;
         let live = live.clone();
         let dir = dir.clone();
+        let api = api.clone();
         tokio::spawn(async move {
-            if let Err(e) = serve_conn(stream, live, dir).await {
+            if let Err(e) = serve_conn(stream, live, dir, api).await {
                 tracing::warn!("ext_host: connection ended: {e}");
             }
         });
@@ -225,6 +249,7 @@ async fn serve_conn(
     stream: tokio::net::UnixStream,
     live: Live,
     dir: PathBuf,
+    api: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let (r, mut w) = stream.into_split();
     let mut lines = BufReader::new(r).lines();
@@ -233,7 +258,7 @@ async fn serve_conn(
             continue;
         }
         let answer = match serde_json::from_str::<HostRequest>(&line) {
-            Ok(req) => dispatch(req, &live, &dir).await,
+            Ok(req) => dispatch(req, &live, &dir, api.as_deref()).await,
             Err(e) => json!({"error": format!("unreadable request: {e}")}),
         };
         w.write_all(answer.to_string().as_bytes()).await?;
@@ -242,7 +267,7 @@ async fn serve_conn(
     Ok(())
 }
 
-async fn dispatch(req: HostRequest, live: &Live, dir: &Path) -> Value {
+async fn dispatch(req: HostRequest, live: &Live, dir: &Path, api: Option<&Path>) -> Value {
     match req {
         HostRequest::Ping => json!({
             "ok": true,
@@ -259,6 +284,37 @@ async fn dispatch(req: HostRequest, live: &Live, dir: &Path) -> Value {
             };
             out
         }
+        HostRequest::Write { kind, files } => match ext_host::folder_in(dir, &kind, true) {
+            Ok(folder) => ext_host::write_files(&folder, &files),
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
+        },
+        HostRequest::Build { kind } => match ext_host::folder_for(dir, &kind) {
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
+            Ok(folder) => {
+                let api = api.map(Path::to_path_buf);
+                match tokio::task::spawn_blocking(move || ext_host::build(&folder, api.as_deref()))
+                    .await
+                {
+                    Ok(Ok(so)) => json!({"ok": true, "staged": so.display().to_string()}),
+                    Ok(Err(e)) => json!({"ok": false, "error": e.to_string()}),
+                    Err(e) => json!({"ok": false, "error": format!("build task failed: {e}")}),
+                }
+            }
+        },
+        // A child process, so a staged artifact that segfaults takes the child and
+        // not every extension this host already loaded.
+        HostRequest::Check { kind } => match ext_host::folder_for(dir, &kind) {
+            Ok(folder) => child_check(&folder).await,
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
+        },
+        HostRequest::Apply { kind } => match ext_host::folder_for(dir, &kind) {
+            Ok(folder) => swapped(ext_host::apply(&folder), live, dir),
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
+        },
+        HostRequest::Rollback { kind } => match ext_host::folder_for(dir, &kind) {
+            Ok(folder) => swapped(ext_host::rollback(&folder), live, dir),
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
+        },
         HostRequest::Vars { req } => {
             let kind = req.kind.clone();
             let found = live
@@ -281,29 +337,59 @@ async fn dispatch(req: HostRequest, live: &Live, dir: &Path) -> Value {
     }
 }
 
-/// Run one built extension against its own fixture request.
-fn probe(folder: &Path) -> anyhow::Result<()> {
-    let loaded = ext_host::load(folder).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let fixture = folder.join("request.json");
-    let req: blazonry::extensions::VarsRequest = if fixture.is_file() {
-        serde_json::from_str(&std::fs::read_to_string(&fixture)?)?
-    } else {
-        blazonry::extensions::VarsRequest {
-            kind: loaded.kind.clone(),
-            settings: json!({}),
-            local_now: chrono::Utc::now().to_rfc3339(),
-            provider_ids: vec![],
-            snapshots: vec![],
-        }
+/// Promote or restore, then load what is on disk now. The report carries the
+/// refusal of any folder, including the one just applied, so a caller sees a
+/// generation that will not load instead of assuming the swap worked.
+fn swapped(out: anyhow::Result<Value>, live: &Live, dir: &Path) -> Value {
+    let mut out = match out {
+        Ok(v) => v,
+        Err(e) => return json!({"ok": false, "error": e.to_string()}),
     };
-    match loaded.vars(&req) {
-        Ok(vars) => {
-            println!("{}", json!({"ok": true, "kind": loaded.kind, "vars": vars}));
-            Ok(())
-        }
-        Err(e) => {
-            println!("{}", json!({"ok": false, "kind": loaded.kind, "error": e}));
-            anyhow::bail!(e)
-        }
+    let state = rescan(dir);
+    let report = state.report();
+    *live.write().expect("live lock") = state;
+    if let Some(map) = out.as_object_mut() {
+        map.insert("ok".to_string(), Value::Bool(true));
+        map.insert(
+            "loaded".to_string(),
+            report.get("loaded").cloned().unwrap_or(Value::Null),
+        );
+        map.insert(
+            "refused".to_string(),
+            report.get("refused").cloned().unwrap_or(Value::Null),
+        );
     }
+    out
+}
+
+/// Run `ext_host check` in a fresh process and return its JSON line.
+async fn child_check(folder: &Path) -> Value {
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => return json!({"ok": false, "error": format!("cannot find this binary: {e}")}),
+    };
+    let folder = folder.to_path_buf();
+    let ran = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(exe)
+            .arg("check")
+            .arg(folder)
+            .output()
+    })
+    .await;
+    let out = match ran {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => {
+            return json!({"ok": false, "error": format!("could not run the check: {e}")});
+        }
+        Err(e) => return json!({"ok": false, "error": format!("check task failed: {e}")}),
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if let Ok(v) = serde_json::from_str::<Value>(&stdout) {
+        return v;
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return json!({"ok": false, "error": stderr});
+    }
+    json!({"ok": false, "error": format!("the check exited {}", out.status)})
 }

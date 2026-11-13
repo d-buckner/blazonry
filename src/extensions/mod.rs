@@ -458,6 +458,26 @@ async fn rebuild_extension(
     Ok(false)
 }
 
+/// Repaint the screens bound to one kind. The apply step calls this, so an author
+/// sees the result at apply time rather than at the next refresh.
+pub async fn rebuild_kind(
+    pool: &SqlitePool,
+    backends: &crate::cache::Backends,
+    cache: &crate::cache::BmpCache,
+    kind: &str,
+) -> anyhow::Result<usize> {
+    let mut n = 0;
+    for ext in all_rows(pool).await? {
+        if ext.kind != kind {
+            continue;
+        }
+        if rebuild_extension(pool, backends, cache, ext).await? {
+            n += 1
+        }
+    }
+    Ok(n)
+}
+
 /// Re-render providerless extensions whose content depends on the local
 /// date (countdown). Called once per local-day rollover, never per minute:
 /// a screen whose content changes daily must not force a minute refresh

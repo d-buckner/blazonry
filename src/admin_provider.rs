@@ -12,6 +12,7 @@
 //! calendar source, picked none" fails here at config time.
 
 use crate::api::SharedState;
+use crate::ext_link::{self, HostRequest};
 use crate::extensions;
 use crate::providers;
 use axum::Json;
@@ -239,4 +240,114 @@ pub async fn delete_extension(State(st): State<SharedState>, Path(id): Path<i64>
         crate::cache::invalidate(&st.cache, sid).await;
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+// ---------------------------------------------------------------------------
+// Runtime extension authoring (ADR-0003).
+//
+// All five forward to the extension host. The host owns the data volume and the
+// compiler, so the server never names a path on disk and a request carries a kind.
+//
+// A red build or check answers 200 with `"ok": false`, because the request was
+// valid and the finding is the answer. A 400 means this server cannot act on the
+// request at all: no kind, or no host to ask.
+// ---------------------------------------------------------------------------
+
+fn host(st: &SharedState) -> Result<ext_link::Client, Err> {
+    st.ext_host
+        .as_ref()
+        .map(ext_link::Client::new)
+        .ok_or_else(|| bad("no extension host: start this server with --ext-host <socket>"))
+}
+
+fn kind_of(b: &Value) -> Result<String, Err> {
+    b.get("kind")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| bad("kind required"))
+}
+
+pub async fn ext_write(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
+    let kind = kind_of(&b)?;
+    let files: std::collections::BTreeMap<String, String> =
+        serde_json::from_value(b.get("files").cloned().unwrap_or(Value::Null))
+            .map_err(|e| bad(format!("files must map a path to text: {e}")))?;
+    if files.is_empty() {
+        return Err(bad("files is empty"));
+    }
+    Ok(Json(
+        host(&st)?
+            .call(HostRequest::Write { kind, files })
+            .await
+            .map_err(err)?,
+    ))
+}
+
+pub async fn ext_build(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
+    let kind = kind_of(&b)?;
+    Ok(Json(
+        host(&st)?
+            .call(HostRequest::Build { kind })
+            .await
+            .map_err(err)?,
+    ))
+}
+
+pub async fn ext_check(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
+    let kind = kind_of(&b)?;
+    Ok(Json(
+        host(&st)?
+            .call(HostRequest::Check { kind })
+            .await
+            .map_err(err)?,
+    ))
+}
+
+pub async fn ext_apply(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
+    let kind = kind_of(&b)?;
+    let socket = st
+        .ext_host
+        .as_ref()
+        .ok_or_else(|| bad("no extension host: start this server with --ext-host <socket>"))?
+        .clone();
+    let mut out = ext_link::Client::new(&socket)
+        .call(HostRequest::Apply { kind: kind.clone() })
+        .await
+        .map_err(err)?;
+    if out.get("ok").and_then(Value::as_bool) == Some(true) {
+        apply_aftermath(&st, &socket, &mut out, &kind).await;
+    }
+    Ok(Json(out))
+}
+
+pub async fn ext_rollback(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
+    let kind = kind_of(&b)?;
+    let socket = st
+        .ext_host
+        .as_ref()
+        .ok_or_else(|| bad("no extension host: start this server with --ext-host <socket>"))?
+        .clone();
+    let mut out = ext_link::Client::new(&socket)
+        .call(HostRequest::Rollback { kind: kind.clone() })
+        .await
+        .map_err(err)?;
+    if out.get("ok").and_then(Value::as_bool) == Some(true) {
+        apply_aftermath(&st, &socket, &mut out, &kind).await;
+    }
+    Ok(Json(out))
+}
+
+/// A generation swap changes what the server can see and what is on the wall.
+/// Re-sync the kinds, because a first apply adds one, and repaint the screens
+/// bound to this kind, so the author sees the result now rather than at the next
+/// refresh.
+async fn apply_aftermath(st: &SharedState, socket: &std::path::Path, out: &mut Value, kind: &str) {
+    if let Err(e) = ext_link::sync(socket).await {
+        tracing::warn!(%e, "kind sync after a generation swap failed");
+    }
+    match extensions::rebuild_kind(&st.pool, &st.backends, &st.cache, kind).await {
+        Ok(n) => out["rebuilt"] = json!(n),
+        Err(e) => out["rebuild_error"] = json!(e.to_string()),
+    }
 }
