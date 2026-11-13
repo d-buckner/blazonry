@@ -10,6 +10,9 @@ sim_screen.png
 fw*.png
 fw*.jpg
 fixtures/
+# ...except the captured-schema fixtures the Home Assistant test pins (see tests/ha_dashboard.rs)
+!tests/fixtures/
+!tests/fixtures/**
 fwassets
 web-app/node_modules/
 !docs/img/*.png
