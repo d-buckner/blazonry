@@ -14,36 +14,32 @@
 //!   include_description: bool (default false)
 
 use serde_json::{Value, json};
-use sqlx::SqlitePool;
+use std::future::Future;
+use std::pin::Pin;
+
+pub mod caldav;
 
 /// The agenda template: Liquid -> Screen JSON, fed by merged events.
 /// Day headers are LA-local dates; times arrive pre-formatted so the
 /// template stays dumb (and the golden-corpus renderer sees plain text).
-pub const AGENDA_TEMPLATE: &str = r##"{
-  "name": "{{ title }}",
-  "parts": [
-    { "type": "flex", "direction": "row", "align": "center", "style": { "bg": 0 }, "padding": [14, 28, 14, 28], "children": [
-      { "type": "text", "text": "{{ title }}", "style": { "font_px": 34, "bold": true, "fg": 3 }, "grow": 1 },
-      { "type": "text", "text": "{{ today }}", "style": { "font_px": 22, "fg": 2 } }
-    ] },
-{% for day in days %}
-    { "type": "flex", "direction": "column", "style": { "bg": {{ day.bg }} }, "padding": [6, 28, 6, 28], "children": [
-      { "type": "text", "text": "{{ day.label }}", "style": { "font_px": 20, "bold": true, "fg": {{ day.fg }} } }
-    ] },
-{% for e in day.events %}
-    { "type": "flex", "direction": "row", "gap": 18, "align": "center", "padding": [7, 28, 7, 28], "children": [
-      { "type": "text", "text": "{{ e.time }}", "style": { "font_px": 22, "bold": true }, "width": 110 },
-      { "type": "text", "text": "{{ e.title }}", "style": { "font_px": 24 }, "grow": 1 }{% if e.extra %},
-      { "type": "text", "text": "{{ e.extra }}", "style": { "font_px": 17, "fg": 1 } }{% endif %}
-    ] },
-{% endfor %}
-{% endfor %}
-{% if empty %}
-    { "type": "text", "text": "Nothing scheduled. Enjoy it.", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 28, 0, 28] },
-{% endif %}
-    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 15, "fg": 1 }, "padding": [12, 28, 0, 28] }
-  ]
-}"##;
+pub const MANIFEST: &str = include_str!("manifest.json");
+
+pub const AGENDA_TEMPLATE: &str = include_str!("template.liquid");
+
+pub struct Calendar;
+
+impl super::Extension for Calendar {
+    fn template(&self) -> &'static str {
+        AGENDA_TEMPLATE
+    }
+
+    fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+        Box::pin(async move {
+            let merged = crate::providers::merged_calendar_rows(&cx.pool, &cx.provider_ids).await?;
+            Ok(agenda_vars(&merged, &cx.settings))
+        })
+    }
+}
 
 /// Merged snapshot rows -> Liquid vars for AGENDA_TEMPLATE.
 /// `rows` items: (start, all_day, title, location, description, source_name).
@@ -149,26 +145,4 @@ pub fn agenda_vars(
         "empty": days.is_empty(),
         "footer": format!("Updated {}", now.with_timezone(&tz).format("%-l:%M %p").to_string().to_lowercase()),
     })
-}
-
-/// Create a calendar extension: validates cardinality (1..n), creates
-/// its screen row with the agenda template, and renders it immediately.
-/// Returns (extension_id, screen_id).
-pub async fn create(
-    pool: &SqlitePool,
-    backends: &crate::cache::Backends,
-    cache: &crate::cache::BmpCache,
-    name: &str,
-    settings: Value,
-) -> anyhow::Result<(i64, i64)> {
-    let ids = super::resolved_provider_ids(pool, &settings, "calendar").await?;
-    if ids.is_empty() {
-        anyhow::bail!("calendar requires 1..n calendar providers; none configured or picked");
-    }
-    let vars = json!({ "title": "Calendar", "today": "", "days": [], "empty": true, "footer": "" });
-    let sid = crate::screens::create(pool, name, AGENDA_TEMPLATE, &vars.to_string()).await?;
-    let id = super::insert(pool, "calendar", name, &settings, sid).await?;
-    // Immediate first paint from existing snapshots.
-    super::rebuild_extensions(pool, backends, cache).await?;
-    Ok((id, sid))
 }

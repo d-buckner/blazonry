@@ -1,0 +1,75 @@
+{
+  "name": "{{ title }}",
+  "parts": [
+    { "type": "flex", "direction": "row", "align": "center", "style": { "bg": 0 }, "padding": [6, 20, 6, 20], "children": [
+      { "type": "text", "text": "{{ title }}", "style": { "font_px": 26, "bold": true, "fg": 3 }, "grow": 1 },
+      { "type": "text", "text": "{{ clock }}", "style": { "font_px": 19, "fg": 2 } }
+    ] },
+{% if have_data %}
+{% for row in rows %}
+{% if row.heading %}
+    { "type": "text", "text": "{{ row.text }}", "style": { "font_px": 16, "bold": true, "fg": 1 }, "padding": [2, 20, 0, 20] },
+{% elsif row.tiles %}
+    { "type": "flex", "direction": "row", "gap": 6, "padding": [0, 20, 0, 20], "children": [
+{% for t in row.tiles %}
+{% if t.blank %}
+      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "children": [] }
+{% else %}
+      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": {{ t.bg }} }, "padding": [6, 10, 4, 10], "children": [
+        { "type": "text", "text": "{{ t.title }}", "style": { "font_px": 15, "fg": {{ t.fg2 }} } },
+{% if t.lines %}
+{% for l in t.lines %}
+        { "type": "flex", "direction": "row", "align": "end", "children": [
+          { "type": "text", "text": "{{ l }}", "style": { "font_px": {{ t.vpx }}, "bold": true, "fg": {{ t.fg }} }, "grow": 1 }{% if forloop.last %}{% if t.sub %},
+          { "type": "text", "text": "{{ t.sub }}", "style": { "font_px": 14, "fg": {{ t.fg2 }} } }{% endif %}{% endif %}
+        ] }{% if forloop.last %}{% else %},{% endif %}
+{% endfor %}
+{% else %}
+        { "type": "flex", "direction": "row", "align": "end", "children": [
+          { "type": "text", "text": "{{ t.value }}", "style": { "font_px": {{ t.vpx }}, "bold": true, "fg": {{ t.fg }} }, "grow": 1 }{% if t.sub %},
+          { "type": "text", "text": "{{ t.sub }}", "style": { "font_px": 14, "fg": {{ t.fg2 }} } }{% endif %}
+        ] }
+{% endif %}
+      ] }
+{% endif %}{% if forloop.last %}{% else %},{% endif %}
+{% endfor %}
+    ] },
+{% elsif row.group %}
+    { "type": "flex", "direction": "row", "padding": [0, 20, 0, 20], "children": [
+      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": 2 }, "padding": [6, 14, 6, 14], "children": [
+{% if row.title %}
+        { "type": "text", "text": "{{ row.title }}", "style": { "font_px": 15, "bold": true, "fg": 1 } },
+{% endif %}
+{% for r in row.rows %}
+        { "type": "flex", "direction": "row", "align": "center", "children": [
+          { "type": "text", "text": "{{ r.k }}", "style": { "font_px": 17, "fg": 0 }, "grow": 1 },
+          { "type": "text", "text": "{{ r.v }}", "style": { "font_px": 17, "bold": true, "fg": 0 } }
+        ] }{% if forloop.last %}{% else %},{% endif %}
+{% endfor %}
+      ] }
+    ] },
+{% elsif row.bar %}
+    { "type": "flex", "direction": "row", "padding": [0, 20, 0, 20], "children": [
+      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": 2 }, "padding": [6, 14, 4, 14], "children": [
+        { "type": "flex", "direction": "row", "align": "center", "children": [
+          { "type": "text", "text": "{{ row.title }}", "style": { "font_px": 15, "fg": 1 }, "grow": 1 },
+          { "type": "text", "text": "{{ row.value }}", "style": { "font_px": 17, "bold": true, "fg": 0 } }
+        ] },
+        { "type": "progress", "value": {{ row.bar }} }
+      ] }
+    ] },
+{% elsif row.text %}
+    { "type": "flex", "direction": "row", "padding": [0, 20, 0, 20], "children": [
+      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": 2 }, "padding": [6, 14, 4, 14], "children": [
+        { "type": "text", "text": "{{ row.title }}", "style": { "font_px": 15, "fg": 1 } },
+        { "type": "text", "text": "{{ row.value }}", "style": { "font_px": 19, "bold": true, "fg": 0 } }
+      ] }
+    ] },
+{% endif %}
+{% endfor %}
+{% else %}
+    { "type": "text", "text": "{{ message }}", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 20, 0, 20] },
+{% endif %}
+    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 14, "fg": 1 }, "padding": [6, 20, 0, 20] }
+  ]
+}

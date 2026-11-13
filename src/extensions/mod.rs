@@ -1,40 +1,142 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Extensions: consumers of provider shapes. One module per extension under
-//! `extensions/` (today: `calendar`). Each extension declares its
-//! required shape + cardinality and turns merged snapshots into a screen.
+//! Extensions: consumers of provider shapes. One folder per extension under
+//! `extensions/`, and each folder holds everything that extension needs:
+//!
+//! ```text
+//! extensions/calendar/
+//!   mod.rs            impl Extension: the template and the vars it feeds it
+//!   manifest.json     what it is, what it consumes, the settings it takes
+//!   template.liquid   Liquid -> Screen JSON
+//!   vars.json         sample vars for the offline dev loop (`blazonry ext`)
+//!   caldav.rs         the provider this folder introduced, if any
+//!   caldav.manifest.json
+//! ```
 //!
 //! The framework here is generic: selector resolution (all | explicit pick
 //! list — no tags, no expressions), snapshot merge, and rebuild dispatch.
-//! Adding an extension = new module + one match arm in [`rebuild_extension`]
-//! and [`create`].
+//! Adding an extension = one folder + one line in [`registry`]. There is no
+//! per-kind match arm left to update.
 //!
 //! Two framework services read the same kind→shape table so consumers never
 //! re-derive it: [`referenced_provider_ids`] (which providers any screen
 //! actually consumes — the refresh loop fetches nothing else) and
 //! [`rebuild_extensions_shapes`] (rebuild only screens whose consumed shape
-//! changed).
+//! changed). Both read the manifest, so they can never disagree with each
+//! other or with the admin UI.
+//!
+//! The core set is compiled in. A community extension is the same folder shape
+//! in a crate of its own: implement [`Extension`], add it to [`registry`], and
+//! it appears in the admin UI with no further change. A plugin cannot invent a
+//! new provider *shape* — shapes are the [`crate::providers::Snapshot`] enum,
+//! and a new one is a framework change.
 
 use serde_json::Value;
 use sqlx::SqlitePool;
+use std::future::Future;
+use std::pin::Pin;
 
 pub mod calendar;
 pub mod countdown;
 pub mod dashboard;
+pub mod manifest;
 pub mod weather;
+
+pub use manifest::{Cardinality, ExtensionManifest, ProviderManifest};
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
-/// The shape an extension kind consumes, if any (countdown computes from the
-/// calendar date; no provider).
-/// This is the single kind→shape table — reference resolution and rebuild
-/// filtering both read it, so they can never disagree.
-pub fn consumes_shape(kind: &str) -> Option<&'static str> {
-    match kind {
-        "calendar" => Some("calendar"),
-        "weather" => Some("weather"),
-        "dashboard" => Some("dashboard"),
-        _ => None,
+/// What one rebuild hands an extension. Owned, so an extension may keep it
+/// across awaits (same shape as [`crate::providers::Provider::fetch`]).
+pub struct Ctx {
+    pub pool: SqlitePool,
+    /// Stored settings, completed with the manifest's defaults.
+    pub settings: Value,
+    /// Providers resolved for the consumed shape. Empty only for an extension
+    /// that consumes no shape, or when a picked provider was deleted since.
+    pub provider_ids: Vec<i64>,
+}
+
+/// One extension kind: the template it paints and the vars it feeds it.
+/// Everything else — settings, cardinality, which shape it reads — comes from
+/// its manifest, so the framework can drive it without knowing the kind.
+pub trait Extension: Send + Sync {
+    /// The Liquid template bundled in the extension folder.
+    fn template(&self) -> &'static str;
+    /// Liquid vars for one rebuild, from the snapshots on hand. An extension
+    /// with no snapshot yet returns its own "waiting for data" vars rather
+    /// than failing, so the screen says something true.
+    fn vars(&self, cx: Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>>;
+}
+
+/// A manifest paired with the code that implements it.
+pub struct Plugin {
+    pub manifest: ExtensionManifest,
+    pub extension: &'static dyn Extension,
+}
+
+fn plugin(src: &str, path: &str, extension: &'static dyn Extension) -> Plugin {
+    let manifest = ExtensionManifest::parse(src, path)
+        .unwrap_or_else(|e| panic!("bundled manifest is unreadable: {e}"));
+    Plugin {
+        manifest,
+        extension,
     }
+}
+
+/// The core set: the extensions this build ships with. A community extension
+/// adds one entry here.
+pub fn registry() -> &'static [Plugin] {
+    static REGISTRY: OnceLock<Vec<Plugin>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        vec![
+            plugin(
+                calendar::MANIFEST,
+                "calendar/manifest.json",
+                &calendar::Calendar,
+            ),
+            plugin(
+                weather::MANIFEST,
+                "weather/manifest.json",
+                &weather::Weather,
+            ),
+            plugin(
+                dashboard::MANIFEST,
+                "dashboard/manifest.json",
+                &dashboard::Dashboard,
+            ),
+            plugin(
+                countdown::MANIFEST,
+                "countdown/manifest.json",
+                &countdown::Countdown,
+            ),
+        ]
+    })
+}
+
+pub fn lookup(kind: &str) -> Option<&'static Plugin> {
+    registry().iter().find(|p| p.manifest.kind == kind)
+}
+
+/// The shape an extension kind consumes, if any (countdown computes from the
+/// calendar date; no provider). Single source: the manifest.
+pub fn consumes_shape(kind: &str) -> Option<&'static str> {
+    lookup(kind)?.manifest.consumes.as_deref()
+}
+
+/// Check settings against a kind's manifest and complete them with defaults.
+/// The admin API calls this on create and on patch.
+pub fn validate_settings(kind: &str, settings: &Value) -> anyhow::Result<Value> {
+    let plugin = lookup(kind).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown extension kind '{kind}' (known: {})",
+            registry()
+                .iter()
+                .map(|p| p.manifest.kind.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    plugin.manifest.validate_settings(settings)
 }
 
 /// Resolve an extension's provider pick list for a shape: explicit ids, or
@@ -53,6 +155,33 @@ pub async fn resolved_provider_ids(
     crate::providers::provider_ids_by_shape(pool, shape).await
 }
 
+/// The providers one extension will read, per its cardinality.
+///
+/// `exactly_one` takes the picked provider, else the first of the shape.
+/// `one_or_more` takes the pick list, else every provider of the shape.
+/// No existence check here: a create validates its pick (see [`create`]), and
+/// a rebuild must still paint when a picked provider has since gone away.
+async fn resolve_ids(
+    pool: &SqlitePool,
+    m: &ExtensionManifest,
+    settings: &Value,
+) -> anyhow::Result<Vec<i64>> {
+    let Some(shape) = &m.consumes else {
+        return Ok(Vec::new());
+    };
+    if m.cardinality == Some(Cardinality::ExactlyOne) {
+        if let Some(id) = settings.get("provider_id").and_then(|v| v.as_i64()) {
+            return Ok(vec![id]);
+        }
+        return Ok(crate::providers::provider_ids_by_shape(pool, shape)
+            .await?
+            .into_iter()
+            .take(1)
+            .collect());
+    }
+    resolved_provider_ids(pool, settings, shape).await
+}
+
 /// The set of provider ids actually referenced by existing extensions.
 /// A provider no extension consumes is never refreshed — an orphan costs
 /// nothing. Weather's singular `provider_id` setting is folded in here so
@@ -63,25 +192,19 @@ pub async fn referenced_provider_ids(
     use std::collections::HashSet;
     let mut set = HashSet::new();
     for ext in all_rows(pool).await? {
-        let Some(shape) = consumes_shape(&ext.kind) else {
+        let Some(plugin) = lookup(&ext.kind) else {
             continue;
         };
-        let mut ids = resolved_provider_ids(pool, &ext.settings, shape).await?;
+        if plugin.manifest.consumes.is_none() {
+            continue;
+        }
+        let mut ids = resolve_ids(pool, &plugin.manifest, &ext.settings).await?;
         if let Some(pid) = ext.settings.get("provider_id").and_then(|v| v.as_i64()) {
             ids.push(pid);
         }
         set.extend(ids);
     }
     Ok(set)
-}
-
-/// Merged calendar snapshot rows for a resolved provider set, sorted by start.
-/// Rows: (start, all_day, title, location, description, source_name).
-pub async fn merged_calendar_rows(
-    pool: &SqlitePool,
-    ids: &[i64],
-) -> anyhow::Result<Vec<(String, bool, String, String, String, String)>> {
-    crate::providers::merged_calendar_rows(pool, ids).await
 }
 
 /// Re-render one extension screen into the BMP cache (both panel depths).
@@ -140,7 +263,8 @@ pub async fn rebuild_extensions_shapes(
     Ok(n)
 }
 
-/// Rebuild one extension's bound screen from current snapshots.
+/// Rebuild one extension's bound screen from current snapshots. Driven
+/// entirely by its manifest and its [`Extension`] impl — no per-kind branch.
 /// Returns whether the screen was rebuilt (false = skipped, e.g. no
 /// providers resolved — the last paint stays up).
 async fn rebuild_extension(
@@ -158,101 +282,32 @@ async fn rebuild_extension(
     let Some(sid) = screen_id else {
         return Ok(false);
     };
-    match kind.as_str() {
-        "calendar" => {
-            let ids = resolved_provider_ids(pool, &settings, "calendar").await?;
-            if ids.is_empty() {
-                tracing::warn!(
-                    extension = name,
-                    "no calendar providers resolved; leaving screen as-is"
-                );
-                return Ok(false);
-            }
-            let merged = merged_calendar_rows(pool, &ids).await?;
-            let vars = calendar::agenda_vars(&merged, &settings);
-            let vars_json = serde_json::to_string(&vars)?;
-            crate::screens::set_vars(pool, sid, &vars_json).await?;
-            repaint(pool, backends, cache, sid).await;
-            Ok(true)
-        }
-        "weather" => {
-            let Some(pid) = weather::resolved_provider_id(pool, &settings).await? else {
-                tracing::warn!(
-                    extension = name,
-                    "no weather provider resolved; leaving screen as-is"
-                );
-                return Ok(false);
-            };
-            match crate::providers::load_snapshot(pool, pid).await? {
-                Some(snap) => {
-                    let Snapshot::Weather(payload) = snap else {
-                        tracing::warn!(
-                            extension = name,
-                            "resolved provider does not publish weather; leaving screen as-is"
-                        );
-                        return Ok(false);
-                    };
-                    let vars = weather::weather_vars(&payload, &settings);
-                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                    repaint(pool, backends, cache, sid).await;
-                    Ok(true)
-                }
-                None => {
-                    let vars = weather::no_data_vars("Waiting for first weather refresh...");
-                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                    repaint(pool, backends, cache, sid).await;
-                    Ok(true)
-                }
-            }
-        }
-        "dashboard" => {
-            let Some(pid) = dashboard::resolved_provider_id(pool, &settings).await? else {
-                tracing::warn!(
-                    extension = name,
-                    "no dashboard providers resolved; leaving screen as-is"
-                );
-                return Ok(false);
-            };
-            match crate::providers::load_snapshot(pool, pid).await? {
-                Some(crate::providers::Snapshot::Dashboard(snap)) => {
-                    let vars = dashboard::dashboard_vars(&snap, &settings);
-                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                    repaint(pool, backends, cache, sid).await;
-                    Ok(true)
-                }
-                Some(_) => {
-                    tracing::warn!(
-                        extension = name,
-                        "resolved provider does not publish a dashboard; leaving screen as-is"
-                    );
-                    Ok(false)
-                }
-                None => {
-                    let vars = dashboard::no_data_vars("Waiting for first dashboard refresh...");
-                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-                    repaint(pool, backends, cache, sid).await;
-                    Ok(true)
-                }
-            }
-        }
-        "countdown" => {
-            let vars = countdown::countdown_vars(&settings)?;
-            crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
-            repaint(pool, backends, cache, sid).await;
-            Ok(true)
-        }
-        other => {
-            tracing::warn!(
-                extension = name,
-                kind = other,
-                "unknown extension kind; skipping"
-            );
-            Ok(false)
-        }
+    let Some(plugin) = lookup(&kind) else {
+        tracing::warn!(extension = name, kind, "unknown extension kind; skipping");
+        return Ok(false);
+    };
+    let settings = plugin.manifest.with_defaults(&settings);
+    let ids = resolve_ids(pool, &plugin.manifest, &settings).await?;
+    if !ids.is_empty() || plugin.manifest.consumes.is_none() {
+        let vars = plugin
+            .extension
+            .vars(Ctx {
+                pool: pool.clone(),
+                settings,
+                provider_ids: ids,
+            })
+            .await?;
+        crate::screens::set_vars(pool, sid, &vars.to_string()).await?;
+        repaint(pool, backends, cache, sid).await;
+        return Ok(true);
     }
+    tracing::warn!(
+        extension = name,
+        "no {} providers resolved; leaving screen as-is",
+        plugin.manifest.consumes.as_deref().unwrap_or("?")
+    );
+    Ok(false)
 }
-
-use crate::providers::Snapshot;
 
 /// Re-render providerless extensions whose content depends on the local
 /// date (countdown). Called once per local-day rollover, never per minute:
@@ -393,8 +448,9 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> anyhow::Result<Option<i64>> {
     Ok(sid)
 }
 
-/// Create an extension by kind: validate cardinality, create its screen row,
-/// render immediately from existing snapshots. Returns (extension_id, screen_id).
+/// Create an extension by kind: validate its settings and cardinality against
+/// the manifest, create its screen row, and paint it from the snapshots on
+/// hand. Returns (extension_id, screen_id).
 pub async fn create(
     pool: &SqlitePool,
     backends: &crate::cache::Backends,
@@ -403,16 +459,52 @@ pub async fn create(
     name: &str,
     settings: Value,
 ) -> anyhow::Result<(i64, i64)> {
-    match kind {
-        "calendar" => calendar::create(pool, backends, cache, name, settings).await,
-        "weather" => weather::create(pool, backends, cache, name, settings).await,
-        "dashboard" => dashboard::create(pool, backends, cache, name, settings).await,
-        "countdown" => countdown::create(pool, backends, cache, name, settings).await,
-        other => anyhow::bail!(
-            "unknown extension kind '{other}' (supported: calendar, weather, dashboard, countdown)"
-        ),
+    let plugin = lookup(kind).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown extension kind '{kind}' (known: {})",
+            registry()
+                .iter()
+                .map(|p| p.manifest.kind.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    let m = &plugin.manifest;
+    let settings = m.validate_settings(&settings)?;
+    let ids = resolve_ids(pool, m, &settings).await?;
+    if let Some(shape) = &m.consumes {
+        let need = match m.cardinality {
+            Some(Cardinality::ExactlyOne) => format!("a {shape} source"),
+            _ => format!("at least one {shape} source"),
+        };
+        if ids.is_empty() {
+            anyhow::bail!(
+                "{} needs {need}. {}",
+                m.label,
+                m.setup_hint.as_deref().unwrap_or("Connect one first.")
+            );
+        }
+        if !crate::providers::ids_with_shape_exist(pool, shape, &ids).await? {
+            anyhow::bail!("the source you picked is not {need}");
+        }
     }
+    let vars = plugin
+        .extension
+        .vars(Ctx {
+            pool: pool.clone(),
+            settings: settings.clone(),
+            provider_ids: ids,
+        })
+        .await?;
+    let sid =
+        crate::screens::create(pool, name, plugin.extension.template(), &vars.to_string()).await?;
+    let id = insert(pool, kind, name, &settings, sid).await?;
+    // First paint of this screen only, from the snapshots already stored.
+    repaint(pool, backends, cache, sid).await;
+    Ok((id, sid))
 }
+
+use std::sync::OnceLock;
 
 #[cfg(test)]
 mod tests {

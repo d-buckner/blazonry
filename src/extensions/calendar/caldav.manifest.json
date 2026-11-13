@@ -1,0 +1,11 @@
+{
+  "kind": "caldav",
+  "label": "Calendar (CalDAV)",
+  "blurb": "A CalDAV calendar URL (for example Radicale). Events from the next week are pulled automatically.",
+  "default_refresh_secs": 3600,
+  "config": [
+    { "key": "url", "type": "string", "label": "Calendar URL" },
+    { "key": "user", "type": "string", "label": "User", "optional": true },
+    { "key": "pass", "type": "string", "label": "Password", "optional": true, "secret": true }
+  ]
+}

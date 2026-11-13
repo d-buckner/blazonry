@@ -24,7 +24,7 @@
 //! Lovelace `grid_options` is deliberately NOT read: it sizes a scrollable web
 //! page whose width the operator chose, and a panel is always 800x480.
 
-use super::{Provider, Snapshot};
+use crate::providers::{Provider, Snapshot};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::pin::Pin;

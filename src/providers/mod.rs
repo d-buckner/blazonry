@@ -16,8 +16,17 @@
 //! registry line, and adding a *shape* costs one `Snapshot` variant with its
 //! payload round-trip — no tables, no vendor literals in SQL.
 //!
-//! One module per provider under `providers/` (today: `caldav`, `home_assistant`,
-//! `open_meteo`).
+//! This module is the provider *framework*: the shape vocabulary, the
+//! [`Provider`] trait, the registry, the two tables, and the refresh loop. It
+//! holds no vendor code. A provider implementation lives in the extension
+//! folder that introduced it (`extensions/calendar/caldav.rs`,
+//! `extensions/weather/open_meteo.rs`, `extensions/dashboard/home_assistant.rs`)
+//! and joins through [`registry`].
+//!
+//! Location is not coupling. A provider answers a *shape*, never an extension:
+//! any extension that consumes `calendar` reads a CalDAV snapshot, and the
+//! refresh loop still walks extensions to providers, so a provider no
+//! extension consumes stays an orphan that costs nothing.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -26,10 +35,6 @@ use sqlx::Row;
 use sqlx::SqlitePool;
 use std::future::Future;
 use std::pin::Pin;
-
-pub mod caldav;
-pub mod home_assistant;
-pub mod open_meteo;
 
 pub const DEFAULT_REFRESH_SECS: i64 = 3600;
 
@@ -146,7 +151,8 @@ pub fn la() -> chrono_tz::Tz {
 }
 
 /// A provider kind (not an instance): validates config and fetches snapshots.
-/// Implementations live one-per-module (see [`caldav`]). A provider returns
+/// Implementations live one per extension folder and join in [`registry`].
+/// A provider returns
 /// ONLY its normalized payload — the framework owns freshness, provenance,
 /// and change detection (see module docs).
 pub trait Provider: Send + Sync {
@@ -170,9 +176,9 @@ pub fn registry() -> &'static std::collections::HashMap<&'static str, Box<dyn Pr
     static REGISTRY: OnceLock<HashMap<&'static str, Box<dyn Provider>>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let providers: Vec<Box<dyn Provider>> = vec![
-            Box::new(caldav::CalDav),
-            Box::new(home_assistant::HomeAssistant),
-            Box::new(open_meteo::OpenMeteo),
+            Box::new(crate::extensions::calendar::caldav::CalDav),
+            Box::new(crate::extensions::dashboard::home_assistant::HomeAssistant),
+            Box::new(crate::extensions::weather::open_meteo::OpenMeteo),
         ];
         providers.into_iter().map(|p| (p.kind(), p)).collect()
     })

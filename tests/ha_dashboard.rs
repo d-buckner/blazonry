@@ -6,8 +6,10 @@
 //! Lovelace config, or a state stops mapping to a word a person would say, a
 //! test here fails instead of the wall display going quietly blank.
 
+use blazonry::extensions::dashboard::home_assistant::{
+    build_tiles, flatten_cards, pick_view, tile_json,
+};
 use blazonry::extensions::dashboard::{DASHBOARD_TEMPLATE, dashboard_vars};
-use blazonry::providers::home_assistant::{build_tiles, flatten_cards, pick_view, tile_json};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 

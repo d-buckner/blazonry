@@ -154,7 +154,7 @@ pub async fn ha_tabs(Json(b): Json<Value>) -> Res {
         return Err(bad("token required"));
     };
     let dashboard = want("dashboard").unwrap_or_else(|| "lovelace".to_string());
-    let out = providers::home_assistant::browse(&url, &token, &dashboard)
+    let out = crate::extensions::dashboard::home_assistant::browse(&url, &token, &dashboard)
         .await
         .unwrap_or_else(|e| json!({ "ok": false, "error": e.to_string() }));
     Ok(Json(out))

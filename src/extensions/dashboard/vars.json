@@ -1,0 +1,90 @@
+{
+  "clock": "11:32",
+  "footer": "Home Assistant · Home · updated 11:32 am · 1 cannot be shown on a panel",
+  "have_data": true,
+  "rows": [
+    {
+      "heading": true,
+      "text": "Weather"
+    },
+    {
+      "height": 94.30000305175781,
+      "tiles": [
+        {
+          "bg": 2,
+          "fg": 0,
+          "fg2": 1,
+          "lines": [
+            "Partly",
+            "cloudy"
+          ],
+          "sub": "56°F",
+          "title": "Today",
+          "value": "",
+          "vpx": 18.0
+        },
+        {
+          "bg": 2,
+          "fg": 0,
+          "fg2": 1,
+          "sub": "μg/m³",
+          "title": "Smoke",
+          "value": "16.1",
+          "vpx": 18.0
+        },
+        {
+          "blank": true
+        },
+        {
+          "blank": true
+        }
+      ]
+    },
+    {
+      "heading": true,
+      "text": "Lights"
+    },
+    {
+      "height": 70.0,
+      "tiles": [
+        {
+          "bg": 2,
+          "fg": 0,
+          "fg2": 1,
+          "sub": "",
+          "title": "Basement",
+          "value": "Off",
+          "vpx": 28.0
+        },
+        {
+          "bg": 2,
+          "fg": 0,
+          "fg2": 1,
+          "sub": "Idle",
+          "title": "Basement",
+          "value": "70°",
+          "vpx": 28.0
+        },
+        {
+          "bg": 2,
+          "fg": 0,
+          "fg2": 1,
+          "sub": "",
+          "title": "Battery",
+          "value": "50%",
+          "vpx": 28.0
+        },
+        {
+          "bg": 2,
+          "fg": 0,
+          "fg2": 1,
+          "sub": "",
+          "title": "Doors",
+          "value": "Locked",
+          "vpx": 28.0
+        }
+      ]
+    }
+  ],
+  "title": "Home"
+}

@@ -1,0 +1,42 @@
+{
+  "title": "Home",
+  "have_data": true,
+  "units": "F",
+  "current": {
+    "temp": 61,
+    "label": "Partly cloudy",
+    "feels": 59,
+    "wind": 6,
+    "humidity": 71
+  },
+  "days": [
+    {
+      "label": "Today",
+      "hi": 66,
+      "lo": 52,
+      "sub": "40% precip",
+      "card_bg": 0,
+      "fg": 3,
+      "sub_fg": 2
+    },
+    {
+      "label": "Sat",
+      "hi": 63,
+      "lo": 50,
+      "sub": "Rain",
+      "card_bg": 2,
+      "fg": 0,
+      "sub_fg": 1
+    },
+    {
+      "label": "Sun",
+      "hi": 61,
+      "lo": 49,
+      "sub": "Windy",
+      "card_bg": 2,
+      "fg": 0,
+      "sub_fg": 1
+    }
+  ],
+  "footer": "Updated 7:12 am"
+}

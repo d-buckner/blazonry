@@ -9,7 +9,7 @@
 //!   { "location": name, "current": {temp, feels, humidity, wind, code, time},
 //!     "days": [ {date, code, hi, lo, precip}, ... ], "fetched_at": iso }
 
-use super::{Provider, Snapshot};
+use crate::providers::{Provider, Snapshot};
 use serde_json::{Value, json};
 use std::pin::Pin;
 

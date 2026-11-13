@@ -27,7 +27,10 @@
 //!   show_headings: bool       keep Lovelace section headings (default true)
 
 use serde_json::{Value, json};
-use sqlx::SqlitePool;
+use std::future::Future;
+use std::pin::Pin;
+
+pub mod home_assistant;
 
 use crate::render::{fit, fit_size, text_width};
 
@@ -63,81 +66,11 @@ const TILE_PAD_X: f32 = 10.0;
 
 /// Liquid -> Screen JSON. Every row part ends with a comma; the footer is the
 /// only untrailing part, so the loop never has to know if it is last.
-pub const DASHBOARD_TEMPLATE: &str = r##"{
-  "name": "{{ title }}",
-  "parts": [
-    { "type": "flex", "direction": "row", "align": "center", "style": { "bg": 0 }, "padding": [6, 20, 6, 20], "children": [
-      { "type": "text", "text": "{{ title }}", "style": { "font_px": 26, "bold": true, "fg": 3 }, "grow": 1 },
-      { "type": "text", "text": "{{ clock }}", "style": { "font_px": 19, "fg": 2 } }
-    ] },
-{% if have_data %}
-{% for row in rows %}
-{% if row.heading %}
-    { "type": "text", "text": "{{ row.text }}", "style": { "font_px": 16, "bold": true, "fg": 1 }, "padding": [2, 20, 0, 20] },
-{% elsif row.tiles %}
-    { "type": "flex", "direction": "row", "gap": 6, "padding": [0, 20, 0, 20], "children": [
-{% for t in row.tiles %}
-{% if t.blank %}
-      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "children": [] }
-{% else %}
-      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": {{ t.bg }} }, "padding": [6, 10, 4, 10], "children": [
-        { "type": "text", "text": "{{ t.title }}", "style": { "font_px": 15, "fg": {{ t.fg2 }} } },
-{% if t.lines %}
-{% for l in t.lines %}
-        { "type": "flex", "direction": "row", "align": "end", "children": [
-          { "type": "text", "text": "{{ l }}", "style": { "font_px": {{ t.vpx }}, "bold": true, "fg": {{ t.fg }} }, "grow": 1 }{% if forloop.last %}{% if t.sub %},
-          { "type": "text", "text": "{{ t.sub }}", "style": { "font_px": 14, "fg": {{ t.fg2 }} } }{% endif %}{% endif %}
-        ] }{% if forloop.last %}{% else %},{% endif %}
-{% endfor %}
-{% else %}
-        { "type": "flex", "direction": "row", "align": "end", "children": [
-          { "type": "text", "text": "{{ t.value }}", "style": { "font_px": {{ t.vpx }}, "bold": true, "fg": {{ t.fg }} }, "grow": 1 }{% if t.sub %},
-          { "type": "text", "text": "{{ t.sub }}", "style": { "font_px": 14, "fg": {{ t.fg2 }} } }{% endif %}
-        ] }
-{% endif %}
-      ] }
-{% endif %}{% if forloop.last %}{% else %},{% endif %}
-{% endfor %}
-    ] },
-{% elsif row.group %}
-    { "type": "flex", "direction": "row", "padding": [0, 20, 0, 20], "children": [
-      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": 2 }, "padding": [6, 14, 6, 14], "children": [
-{% if row.title %}
-        { "type": "text", "text": "{{ row.title }}", "style": { "font_px": 15, "bold": true, "fg": 1 } },
-{% endif %}
-{% for r in row.rows %}
-        { "type": "flex", "direction": "row", "align": "center", "children": [
-          { "type": "text", "text": "{{ r.k }}", "style": { "font_px": 17, "fg": 0 }, "grow": 1 },
-          { "type": "text", "text": "{{ r.v }}", "style": { "font_px": 17, "bold": true, "fg": 0 } }
-        ] }{% if forloop.last %}{% else %},{% endif %}
-{% endfor %}
-      ] }
-    ] },
-{% elsif row.bar %}
-    { "type": "flex", "direction": "row", "padding": [0, 20, 0, 20], "children": [
-      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": 2 }, "padding": [6, 14, 4, 14], "children": [
-        { "type": "flex", "direction": "row", "align": "center", "children": [
-          { "type": "text", "text": "{{ row.title }}", "style": { "font_px": 15, "fg": 1 }, "grow": 1 },
-          { "type": "text", "text": "{{ row.value }}", "style": { "font_px": 17, "bold": true, "fg": 0 } }
-        ] },
-        { "type": "progress", "value": {{ row.bar }} }
-      ] }
-    ] },
-{% elsif row.text %}
-    { "type": "flex", "direction": "row", "padding": [0, 20, 0, 20], "children": [
-      { "type": "flex", "direction": "column", "grow": 1, "height": {{ row.height }}, "style": { "bg": 2 }, "padding": [6, 14, 4, 14], "children": [
-        { "type": "text", "text": "{{ row.title }}", "style": { "font_px": 15, "fg": 1 } },
-        { "type": "text", "text": "{{ row.value }}", "style": { "font_px": 19, "bold": true, "fg": 0 } }
-      ] }
-    ] },
-{% endif %}
-{% endfor %}
-{% else %}
-    { "type": "text", "text": "{{ message }}", "style": { "font_px": 26, "fg": 1 }, "padding": [16, 20, 0, 20] },
-{% endif %}
-    { "type": "text", "text": "{{ footer }}", "style": { "font_px": 14, "fg": 1 }, "padding": [6, 20, 0, 20] }
-  ]
-}"##;
+pub const MANIFEST: &str = include_str!("manifest.json");
+
+pub const DASHBOARD_TEMPLATE: &str = include_str!("template.liquid");
+
+pub struct Dashboard;
 
 /// Greedy two-line word wrap: `Some(lines)` when the text splits into at most
 /// two lines that each fit at `px`. `None` means the caller must ellipsize.
@@ -314,7 +247,7 @@ pub fn dashboard_vars(snap: &Value, settings: &Value) -> Value {
         }
         let kind = t["kind"].as_str().unwrap_or("tile");
         let title = t["title"].as_str().unwrap_or("");
-        let value = crate::providers::home_assistant::with_unit(
+        let value = home_assistant::with_unit(
             t["value"].as_str().unwrap_or(""),
             t["unit"].as_str().unwrap_or(""),
         );
@@ -481,47 +414,29 @@ pub fn no_data_vars(message: &str) -> Value {
     })
 }
 
-/// Resolve the dashboard provider id: explicit `provider_id`, else first one.
-pub async fn resolved_provider_id(
-    pool: &SqlitePool,
-    settings: &Value,
-) -> anyhow::Result<Option<i64>> {
-    if let Some(id) = settings.get("provider_id").and_then(|v| v.as_i64()) {
-        return Ok(Some(id));
+/// The provider data one rebuild reads is resolved by the framework; this only
+/// turns the snapshot on hand into panel rows.
+impl super::Extension for Dashboard {
+    fn template(&self) -> &'static str {
+        DASHBOARD_TEMPLATE
     }
-    Ok(crate::providers::provider_ids_by_shape(pool, "dashboard")
-        .await?
-        .into_iter()
-        .next())
-}
 
-/// Create a dashboard extension: cardinality exactly 1 checked here, screen
-/// created with the template, first paint from an existing snapshot if any.
-pub async fn create(
-    pool: &SqlitePool,
-    backends: &crate::cache::Backends,
-    cache: &crate::cache::BmpCache,
-    name: &str,
-    settings: Value,
-) -> anyhow::Result<(i64, i64)> {
-    let pid = resolved_provider_id(pool, &settings).await?;
-    let Some(pid) = pid else {
-        anyhow::bail!(
-            "dashboard requires exactly 1 dashboard provider; none configured — connect Home Assistant first"
-        );
-    };
-    if !crate::providers::ids_with_shape_exist(pool, "dashboard", &[pid]).await? {
-        anyhow::bail!("provider_id {pid} is not a known dashboard provider");
+    fn vars(&self, cx: super::Ctx) -> Pin<Box<dyn Future<Output = anyhow::Result<Value>> + Send>> {
+        Box::pin(async move {
+            let Some(pid) = cx.provider_ids.first().copied() else {
+                return Ok(no_data_vars("No dashboard source is connected."));
+            };
+            Ok(
+                match crate::providers::load_snapshot(&cx.pool, pid).await? {
+                    Some(crate::providers::Snapshot::Dashboard(snap)) => {
+                        dashboard_vars(&snap, &cx.settings)
+                    }
+                    Some(_) => no_data_vars("Resolved provider does not publish a dashboard"),
+                    None => no_data_vars("Waiting for first dashboard refresh..."),
+                },
+            )
+        })
     }
-    let vars = match crate::providers::load_snapshot(pool, pid).await? {
-        Some(crate::providers::Snapshot::Dashboard(snap)) => dashboard_vars(&snap, &settings),
-        Some(_) => no_data_vars("Resolved provider does not publish a dashboard"),
-        None => no_data_vars("Waiting for first dashboard refresh..."),
-    };
-    let sid = crate::screens::create(pool, name, DASHBOARD_TEMPLATE, &vars.to_string()).await?;
-    let id = super::insert(pool, "dashboard", name, &settings, sid).await?;
-    super::rebuild_extensions(pool, backends, cache).await?;
-    Ok((id, sid))
 }
 
 #[cfg(test)]

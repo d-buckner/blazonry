@@ -1,0 +1,14 @@
+{
+  "name": "Countdown",
+  "parts": [
+    { "type": "flex", "direction": "row", "align": "center", "height": 480, "children": [
+      { "type": "flex", "direction": "column", "align": "center", "gap": 10, "grow": 1, "children": [
+        { "type": "text", "text": "{{ title }}", "style": { "font_px": 30, "fg": 1 } },
+        { "type": "text", "text": "{{ days }}", "style": { "font_px": 150, "bold": true } },
+        { "type": "flex", "direction": "row", "style": { "bg": 0 }, "padding": [8, 22, 8, 22], "children": [
+          { "type": "text", "text": "{{ unit }}", "style": { "font_px": 28, "bold": true, "fg": 3 } }
+        ] }
+      ] }
+    ] }
+  ]
+}

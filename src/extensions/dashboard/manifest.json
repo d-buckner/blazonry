@@ -1,0 +1,29 @@
+{
+  "kind": "dashboard",
+  "label": "Home Assistant dashboard",
+  "blurb": "One Home Assistant dashboard tab, redrawn for the e-ink panel.",
+  "consumes": "dashboard",
+  "cardinality": "exactly_one",
+  "setup_hint": "Connect Home Assistant in Connections first.",
+  "settings": [
+    {
+      "key": "title",
+      "type": "string",
+      "label": "Title",
+      "optional": true,
+      "hint": "Blank uses the tab's own title."
+    },
+    { "key": "columns", "type": "int", "label": "Tiles per row", "default": 4, "min": 2, "max": 4 },
+    {
+      "key": "max_tiles",
+      "type": "int",
+      "label": "Max tiles",
+      "default": 0,
+      "min": 0,
+      "max": 24,
+      "hint": "0 shows as many as fit the panel."
+    },
+    { "key": "show_headings", "type": "bool", "label": "Keep section headings", "default": true },
+    { "key": "provider_id", "type": "provider_id", "label": "Home Assistant source" }
+  ]
+}

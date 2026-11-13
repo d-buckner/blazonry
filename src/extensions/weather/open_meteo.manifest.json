@@ -1,0 +1,17 @@
+{
+  "kind": "open_meteo",
+  "label": "Weather (Open-Meteo)",
+  "blurb": "Free forecast from Open-Meteo — just a location, no API key needed.",
+  "default_refresh_secs": 3600,
+  "config": [
+    { "key": "latitude", "type": "number", "label": "Latitude" },
+    { "key": "longitude", "type": "number", "label": "Longitude" },
+    {
+      "key": "units",
+      "type": "enum",
+      "label": "Units",
+      "values": ["imperial", "metric"],
+      "default": "imperial"
+    }
+  ]
+}
