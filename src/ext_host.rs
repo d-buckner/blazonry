@@ -277,6 +277,12 @@ pub fn scan(dir: &Path) -> Scan {
 /// to build wherever it lands. `ext_api` points cargo at the source with a
 /// `[patch]`, which is what makes a folder with no registry access buildable.
 pub fn build(folder: &Path, ext_api: Option<&Path>) -> anyhow::Result<PathBuf> {
+    // Absolute paths, because the command runs with the folder as its working
+    // directory and a relative path would resolve twice.
+    let dir = folder.canonicalize()?;
+    let folder: &Path = &dir;
+    let ext_api = ext_api.map(|p| p.canonicalize()).transpose()?;
+    let ext_api = ext_api.as_deref();
     let manifest = folder.join("Cargo.toml");
     if !manifest.is_file() {
         anyhow::bail!("{} has no Cargo.toml", folder.display());
