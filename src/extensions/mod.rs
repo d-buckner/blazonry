@@ -42,7 +42,7 @@ pub mod dashboard;
 pub mod manifest;
 pub mod weather;
 
-pub use manifest::{Cardinality, ExtensionManifest, ProviderManifest};
+pub use manifest::{Cardinality, ExtensionManifest, Field, FieldKind, ProviderManifest};
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
 
