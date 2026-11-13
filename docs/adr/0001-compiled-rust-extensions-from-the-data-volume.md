@@ -1,7 +1,7 @@
 # ADR-0001: Runtime extensions are compiled Rust loaded from the data volume
 
 **Date**: 2026-11-13
-**Status**: accepted, not implemented
+**Status**: accepted, implemented for the load path
 **Deciders**: Daniel Buckner with pi
 
 ## Context
@@ -112,3 +112,21 @@ Rust. A folder on disk would then be a complete extension.
   last good image.
 - **Scope creep into a plugin marketplace.** Out of scope. This record covers
   loading a folder that an operator or an MCP placed on the volume.
+
+## Implementation notes
+
+Built in `src/ext_host.rs` and `src/bin/ext_host.rs`.
+
+- A folder holds `src/`, `Cargo.toml`, `manifest.json`, `template.liquid`,
+  `vars.json` (the check fixture), and `request.json` (the probe fixture).
+- The build output goes to `<folder>/build/<arch>/lib<kind>.so`, beside
+  `lib<kind>.json`. That sidecar records the SHA-256 of the artifact, the rustc
+  that built it, the architecture, and the build time.
+- The folder name must equal the crate name. The loader looks for
+  `lib<folder-name>.so`, so a folder called `quote` cannot ship a crate called
+  `quotes`.
+- A dot folder is scratch space (`.cargo`, `.git`) and the scan skips it.
+- A runtime kind may not take a name a bundled extension already owns. The
+  bundled set is the one the tests and the docs describe, and it wins.
+- Built-in extensions stay compiled in, as decided above. Nothing seeds
+  `/data/extensions` on first run.

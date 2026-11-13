@@ -206,8 +206,32 @@ publishes, and every bundled template renders against its bundled fixture.
 `docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0003 record
 the accepted design for loading a Rust extension from the `/data` volume at
 runtime, so an author or an MCP can write, build, and apply an extension without
-a new image. That design is agreed and not built yet. Everything above describes
-what ships.
+a new image. The load path is built; the builder image and the apply gate are not.
+
+## Runtime extensions
+
+A runtime extension is a Rust cdylib that links `blazonry-ext-api` and nothing
+else from blazonry. `examples/extensions/quote` is the worked example: 60 lines
+of Rust, a manifest, and a template.
+
+```sh
+ext_host build examples/extensions/quote   # compile one folder
+ext_host probe examples/extensions/quote   # run it against its request.json
+ext_host list  --extensions /data/extensions
+ext_host serve --extensions /data/extensions --socket /data/run/exthost.sock
+```
+
+The server reads runtime kinds only when you name the socket. Code from the data
+volume runs as the server user, with the database and every stored provider token
+in reach, so this is opt-in and belongs on a device you control:
+
+```sh
+blazonry serve --ext-host /data/run/exthost.sock
+```
+
+`ext_host build` needs a Rust toolchain, so it runs in the builder container in
+dev mode. It needs the `blazonry-ext-api` source too: pass `--ext-api DIR` or set
+`BLAZONRY_EXT_API`.
 
 ## Authoring templates
 

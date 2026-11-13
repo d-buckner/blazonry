@@ -1,7 +1,7 @@
 # ADR-0003: A builder sidecar compiles plugins, and apply requires a green check
 
 **Date**: 2026-11-13
-**Status**: accepted, not implemented
+**Status**: accepted, partly implemented
 **Deciders**: Daniel Buckner with pi
 
 ## Context
@@ -110,3 +110,24 @@ The whole path is off by default. It needs an explicit opt-in such as
 - **Silent staleness after an image upgrade.** A plugin built for the old rustc
   stops loading. Mitigation: the loader reports the mismatch as a named,
   operator-visible error instead of skipping the folder quietly.
+
+## Implementation notes
+
+Built: `ext_host build`, `ext_host probe`, `ext_host list`, and the artifact
+metadata the loader checks. Not built: the builder image, the admin-gated
+build/check/apply/rollback endpoints, and the MCP tools.
+
+- An extension declares `blazonry-ext-api` by version, not by path. The folder has
+  to build wherever it lands in the volume. The builder supplies the source with
+  `--config patch.crates-io.blazonry-ext-api.path=<dir>`, taken from `--ext-api`
+  or `BLAZONRY_EXT_API`. A folder that names no ext-api location fails the build
+  with a readable error.
+- The builder runs cargo from the extension folder, so cargo reads that folder's
+  config and not the server's.
+- The builder sets `RUSTC` to the rustc beside its own cargo. Otherwise rustup
+  resolves a toolchain per directory, the artifact records a different compiler,
+  and the loader rejects it. This is the "builder must track the server's rustc"
+  consequence, and it is enforced in code rather than by convention.
+- `ext_host probe` is the check step: it loads one built artifact in a throwaway
+  process, runs it against `request.json`, and prints the vars or the error. A bad
+  extension dies there, not in the host.

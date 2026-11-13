@@ -1,7 +1,7 @@
 # ADR-0002: Plugins run in a sidecar host and speak JSON capabilities
 
 **Date**: 2026-11-13
-**Status**: accepted, not implemented
+**Status**: accepted, implemented
 **Deciders**: Daniel Buckner with pi
 
 ## Context
@@ -121,3 +121,29 @@ chrono. It never links the `blazonry` crate.
 - **Protocol drift between the server and the host.** Both are built from one
   workspace and carry a protocol version in every request. A mismatch is a
   startup error, not a silent failure.
+
+## Implementation notes
+
+Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
+`src/bin/ext_host.rs`.
+
+- The four entry points compile as `#[unsafe(no_mangle)]`. Edition 2024 rejects
+  the bare attribute.
+- The server opens one connection per request and closes it. A rebuild is seconds
+  apart, and a kept-alive socket would have to notice a restarted host for no
+  gain.
+- A host that is down leaves the last sync in the registry. The sync loop logs and
+  retries, and the screens keep their last good paint.
+- A rebuild writes the extension's template next to its vars
+  (`screens::set_paint`). Bundled templates never change, so the stored copy was
+  harmless. A runtime template changes on every apply, and a stale copy paints the
+  previous screen.
+- Two mitigations from the Risks list are not built yet: the client has no
+  per-request timeout, and requests carry no protocol version. The ABI version is
+  checked once, at load. A slow plugin blocks its host until that changes.
+- **Text metrics do not cross the boundary.** `render::text_width`, `fit`, and
+  `fit_size` measure with the embedded DejaVu fonts, and they live in the core. A
+  plugin links only `blazonry-ext-api`, so it cannot measure, and the renderer
+  never wraps. `examples/extensions/quote` wraps on a 0.62 em estimate instead.
+  A follow-up must choose: move the helpers and the fonts into `blazonry-ext-api`
+  (about 1.4 MB per plugin), or add a fit call to the host protocol.
