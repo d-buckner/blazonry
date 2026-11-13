@@ -72,10 +72,54 @@ The SQLite DB lives in the `/data` volume. To build locally:
 - **Native renderer** — ~15 screen primitives (text, keyed_value, flex,
   progress, bars, divider) cover the TRMNL screen families; Liquid is the
   authoring surface, a JSON screen tree is the compile target.
+- **Live sources** — providers pull data (CalDAV, Open-Meteo, Home Assistant);
+  extensions turn it into screens (agenda, weather, dashboard tab).
 - **OTA gating** — `update_firmware` only when the device's reported version
   differs from the newest firmware row (no OTA loops).
 - **Battery-friendly** — stable filenames so devices skip unchanged
   downloads; `refresh_rate` in seconds as the firmware actually expects.
+
+## Home Assistant
+
+The Home Assistant provider renders one dashboard tab on the panel. It reads
+the dashboard layout over the Home Assistant WebSocket API (`get_panels`,
+`lovelace/config`) and entity values over REST (`GET /api/states`,
+`POST /api/template`). Home Assistant does not expose Lovelace config over
+REST, so the WebSocket connection is required, not optional.
+
+Setup needs four values: the endpoint URL, a long-lived access token, the
+dashboard, and the tab. In the admin dialog, **Find tabs** reads the real
+dashboard and tab list from your instance, so you pick a tab instead of
+guessing a path. A tab name that no longer exists fails at create time and
+lists the tabs that do.
+
+This is not a screenshot of Lovelace. A panel is 800x480, has four grey levels,
+no colour, and no scroll, so the layout is the panel's own:
+
+- **Fill carries state.** An active tile (light on, door open, unlocked,
+  vacuum cleaning) is inverted black-on-white. Colour is unavailable, and
+  "which of these is on" is the question a wall display answers.
+- **States are words.** A door sensor says `Open`, not `on`. `unavailable` says
+  `Unavailable`, never `Off`. A value too long for its cell wraps to a second
+  line instead of being cut.
+- **Uniform grid.** Lovelace `grid_options` sizes a scrollable web page whose
+  width the operator chose. Here every tile is one cell of a `columns` grid.
+- **Nothing disappears quietly.** Cards a panel cannot draw (graphs, maps,
+  pictures, action buttons) are counted in the footer. A tab that maps to no
+  tiles at all is a provider error, not a blank screen.
+
+Extension settings: `columns` (2 to 4, default 4), `show_headings` (default
+true), `max_tiles` (default: as many as fit). A panel holds roughly 12 to 16
+cards. The provider refreshes every 15 minutes by default.
+
+The token is a long-lived access token. Like every provider credential here it
+is stored as plain JSON in the database and returned by `GET /admin/providers`,
+so the admin session protects it. Mint it for a LAN device, and rotate it with
+your other Home Assistant tokens.
+
+`tests/ha_dashboard.rs` pins the mapping to a captured live config under
+`tests/fixtures/`, with the household edited out. Upstream schema changes fail
+a test instead of blanking the wall.
 
 ## Layout
 
@@ -91,6 +135,8 @@ src/bmp.rs       2-bit bottom-up BMP writer (device wire format)
 src/backend.rs   render backend trait (native; browser behind `browser` feature)
 src/browser/     headless-Chromium backend + embedded framework assets
 src/api.rs       device plane (TRMNL wire contract)
+src/providers/   live sources (CalDAV, Open-Meteo, Home Assistant)
+src/extensions/  ready-made screens built from provider snapshots
 src/admin.rs     admin API (Terminus parity)
 src/auth.rs      argon2 accounts, bearer sessions
 web-app/         Svelte 5 source → node build.js → web/index.html
@@ -135,6 +181,11 @@ plus two Python scripts; no physical hardware required.
   `config/routes.rb` + the actual `app/actions/api/{display,setup,log}`
   sources (verified Oct 2026; the assertions encode the contract, the
   upstream sources are not vendored).
+- **ha_dashboard** — drives the Home Assistant mapping against a captured
+  live dashboard config (`tests/fixtures/`, household edited out): tab
+  selection, container flattening, per-card mapping, state humanization, and
+  a full render at every column count. Schema drift upstream fails here rather
+  than blanking a screen.
 
 ### 2. Real firmware in QEMU (`scripts/e2e_sim.py`)
 

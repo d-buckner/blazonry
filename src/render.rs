@@ -115,6 +115,72 @@ fn is_stretchy(kind: &NodeKind) -> bool {
     )
 }
 
+/// Advance width of `text` at `px`, in the same fonts the renderer paints with.
+/// The renderer never wraps text, so an author that emits a string wider than
+/// its box paints over its neighbour; this is how an extension can fit first.
+/// Falls back to an average-advance estimate if no font could be loaded (the
+/// renderer itself would have failed already, so this only keeps `fit` total).
+pub fn text_width(text: &str, px: f32, bold: bool) -> f32 {
+    text.chars().map(|ch| advance(ch, px, bold)).sum()
+}
+
+/// Advance of one glyph, from the embedded fonts (see `text_width`).
+fn advance(ch: char, px: f32, bold: bool) -> f32 {
+    static FONTS: std::sync::OnceLock<Option<[fontdue::Font; 2]>> = std::sync::OnceLock::new();
+    let fonts = FONTS.get_or_init(|| {
+        let regular = load_font(0, "BLAZONRY_FONT").ok()?;
+        let bold_font = load_font(1, "BLAZONRY_FONT_BOLD").ok()?;
+        Some([regular, bold_font])
+    });
+    match fonts {
+        Some([regular, bold_font]) => {
+            let font = if bold { bold_font } else { regular };
+            font.rasterize(ch, px).0.advance_width
+        }
+        // The renderer itself would have failed already; keep `fit` total.
+        None => px * 0.62,
+    }
+}
+
+/// Shorten `text` to `max_px`, marking the cut with an ellipsis. Measured, not
+/// counted: "Washer Fluid" and "Bedroom Skylight" are not the same width.
+pub fn fit(text: &str, max_px: f32, px: f32, bold: bool) -> String {
+    if text.is_empty() || text_width(text, px, bold) <= max_px {
+        return text.to_string();
+    }
+    let ellipsis = advance('\u{2026}', px, bold);
+    let mut kept = String::new();
+    let mut width = 0.0;
+    for ch in text.chars() {
+        let advance = advance(ch, px, bold);
+        if width + advance + ellipsis > max_px {
+            break;
+        }
+        kept.push(ch);
+        width += advance;
+    }
+    kept.push('\u{2026}');
+    kept
+}
+
+/// Largest whole-pixel size in `min_font..=max_font` that `text` fits in
+/// `max_px` at, and the text at that size — ellipsized only if it fits at none
+/// of them. Callers that lay out a grid take the minimum over the row so every
+/// cell shares one size.
+pub fn fit_size(
+    text: &str,
+    max_px: f32,
+    max_font: f32,
+    min_font: f32,
+    bold: bool,
+) -> (String, f32) {
+    let mut px = max_font;
+    while px > min_font && text_width(text, px, bold) > max_px {
+        px -= 1.0;
+    }
+    (fit(text, max_px, px, bold), px)
+}
+
 /// Cached text advance: (width, height) per (text, px, bold) key.
 type TextAdvance = (f32, f32);
 

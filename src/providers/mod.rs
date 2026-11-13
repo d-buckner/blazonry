@@ -16,7 +16,8 @@
 //! registry line, and adding a *shape* costs one `Snapshot` variant with its
 //! payload round-trip — no tables, no vendor literals in SQL.
 //!
-//! One module per provider under `providers/` (today: `caldav`, `open_meteo`).
+//! One module per provider under `providers/` (today: `caldav`, `home_assistant`,
+//! `open_meteo`).
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub mod caldav;
+pub mod home_assistant;
 pub mod open_meteo;
 
 pub const DEFAULT_REFRESH_SECS: i64 = 3600;
@@ -54,14 +56,17 @@ pub enum Snapshot {
     Calendar(Vec<CalendarEvent>),
     /// WeatherSource: one JSON object (current + days), see open_meteo.
     Weather(serde_json::Value),
+    /// DashboardSource: one display-ready dashboard tab, see home_assistant.
+    Dashboard(serde_json::Value),
 }
 
 impl Snapshot {
-    /// Shape string this snapshot publishes ("calendar" | "weather").
+    /// Shape string this snapshot publishes ("calendar" | "weather" | "dashboard").
     pub fn shape(&self) -> &'static str {
         match self {
             Snapshot::Calendar(_) => "calendar",
             Snapshot::Weather(_) => "weather",
+            Snapshot::Dashboard(_) => "dashboard",
         }
     }
 
@@ -72,6 +77,7 @@ impl Snapshot {
                 serde_json::to_value(events).expect("CalendarEvent is Serialize by construction")
             }
             Snapshot::Weather(v) => v.clone(),
+            Snapshot::Dashboard(v) => v.clone(),
         }
     }
 
@@ -80,15 +86,18 @@ impl Snapshot {
         match shape {
             "calendar" => Ok(Snapshot::Calendar(serde_json::from_value(payload)?)),
             "weather" => Ok(Snapshot::Weather(payload)),
+            "dashboard" => Ok(Snapshot::Dashboard(payload)),
             other => anyhow::bail!("unknown snapshot shape '{other}'"),
         }
     }
 
-    /// Rows this snapshot holds (admin display: events for calendar, 1 for weather).
+    /// Rows this snapshot holds (admin display: events for calendar, 1 for
+    /// weather and dashboard).
     pub fn item_count(&self) -> usize {
         match self {
             Snapshot::Calendar(events) => events.len(),
             Snapshot::Weather(_) => 1,
+            Snapshot::Dashboard(v) => v["tiles"].as_array().map(|t| t.len()).unwrap_or(0),
         }
     }
 
@@ -142,7 +151,7 @@ pub fn la() -> chrono_tz::Tz {
 /// and change detection (see module docs).
 pub trait Provider: Send + Sync {
     fn kind(&self) -> &'static str;
-    /// Shape this kind publishes: "calendar" | "weather".
+    /// Shape this kind publishes: "calendar" | "weather" | "dashboard".
     fn shape(&self) -> &'static str;
     /// Validate a config JSON at create/patch time — bad config fails in the
     /// admin UI, not at render time.
@@ -160,8 +169,11 @@ pub fn registry() -> &'static std::collections::HashMap<&'static str, Box<dyn Pr
     use std::sync::OnceLock;
     static REGISTRY: OnceLock<HashMap<&'static str, Box<dyn Provider>>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        let providers: Vec<Box<dyn Provider>> =
-            vec![Box::new(caldav::CalDav), Box::new(open_meteo::OpenMeteo)];
+        let providers: Vec<Box<dyn Provider>> = vec![
+            Box::new(caldav::CalDav),
+            Box::new(home_assistant::HomeAssistant),
+            Box::new(open_meteo::OpenMeteo),
+        ];
         providers.into_iter().map(|p| (p.kind(), p)).collect()
     })
 }

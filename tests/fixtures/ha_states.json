@@ -1,0 +1,217 @@
+[
+ {
+  "entity_id": "alarm_control_panel.house",
+  "state": "disarmed",
+  "attributes": {
+   "code_format": "number",
+   "changed_by": "Allie",
+   "code_arm_required": true,
+   "arm_mode": null,
+   "next_state": "disarmed",
+   "open_sensors": null,
+   "bypassed_sensors": null,
+   "delay": null,
+   "last_triggered": "2026-11-10 13:52:31",
+   "friendly_name": "House",
+   "supported_features": 15
+  },
+  "last_changed": "2026-11-13T00:15:13.788266+00:00",
+  "last_reported": "2026-11-13T00:15:13.788266+00:00",
+  "last_updated": "2026-11-13T00:15:13.788266+00:00",
+  "context": {
+   "id": "01M7944A3AVFP3CSWN3M80GNKH",
+   "parent_id": "01M7944A3ADVXYXW2YMA8VMHZS",
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "camera.print_cam",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "icon": "mdi:camera",
+   "friendly_name": "Print Camera",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-12T03:05:20.691257+00:00",
+  "last_reported": "2026-11-12T03:05:20.691257+00:00",
+  "last_updated": "2026-11-12T03:05:20.691257+00:00",
+  "context": {
+   "id": "01M76VF31KGT3H5GKXSGC6FSZ8",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "climate.basement",
+  "state": "heat_cool",
+  "attributes": {
+   "hvac_modes": [
+    "off",
+    "heat",
+    "cool",
+    "heat_cool"
+   ],
+   "min_temp": 45,
+   "max_temp": 92,
+   "min_humidity": 20,
+   "max_humidity": 50,
+   "fan_modes": [
+    "on",
+    "auto"
+   ],
+   "current_temperature": 70,
+   "temperature_unit": "\u00b0F",
+   "temperature": null,
+   "target_temp_high": 75,
+   "target_temp_low": 69,
+   "current_humidity": 58.0,
+   "humidity": 36.0,
+   "fan_mode": "auto",
+   "hvac_action": "idle",
+   "friendly_name": "Basement",
+   "supported_features": 399
+  },
+  "last_changed": "2026-11-12T22:28:03.520255+00:00",
+  "last_reported": "2026-11-13T00:30:02.634361+00:00",
+  "last_updated": "2026-11-13T00:30:02.634361+00:00",
+  "context": {
+   "id": "01M794ZECA17P7HJ5DAJQ550BJ",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "light.room_b",
+  "state": "off",
+  "attributes": {
+   "supported_color_modes": [
+    "brightness"
+   ],
+   "color_mode": null,
+   "brightness": null,
+   "entity_id": [
+    "light.basement_main_lights",
+    "light.basement_workout_lights",
+    "light.basement_tv_lights"
+   ],
+   "friendly_name": "Room B",
+   "supported_features": 40
+  },
+  "last_changed": "2026-11-12T22:30:01.823709+00:00",
+  "last_reported": "2026-11-12T22:30:01.823709+00:00",
+  "last_updated": "2026-11-12T22:30:01.823709+00:00",
+  "context": {
+   "id": "01M78Y3P9H4V2FCB4EGY7VW922",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "lock.front_door",
+  "state": "locked",
+  "attributes": {
+   "icon": "mdi:lock",
+   "friendly_name": "Front Door",
+   "supported_features": 0
+  },
+  "last_changed": "2026-11-12T23:30:34.344974+00:00",
+  "last_reported": "2026-11-13T00:30:34.907414+00:00",
+  "last_updated": "2026-11-12T23:30:34.344974+00:00",
+  "context": {
+   "id": "01M791JHQ8DWCRFQKBNNWJ22C5",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "sensor.air_quality",
+  "state": "16.05",
+  "attributes": {
+   "state_class": "measurement",
+   "attribution": "Powered by Pirate Weather",
+   "unit_of_measurement": "\u03bcg/m\u00b3",
+   "device_class": "pm25",
+   "icon": "mdi:smoke",
+   "friendly_name": "Air Quality"
+  },
+  "last_changed": "2026-11-13T00:30:27.540134+00:00",
+  "last_reported": "2026-11-13T00:40:27.063745+00:00",
+  "last_updated": "2026-11-13T00:30:27.540134+00:00",
+  "context": {
+   "id": "01M79506PMYRQQY46A2TFHJV3W",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "sensor.car_battery",
+  "state": "50",
+  "attributes": {
+   "state_class": "measurement",
+   "unit_of_measurement": "%",
+   "device_class": "battery",
+   "friendly_name": "Car Battery"
+  },
+  "last_changed": "2026-11-13T00:30:34.906256+00:00",
+  "last_reported": "2026-11-13T00:30:34.906256+00:00",
+  "last_updated": "2026-11-13T00:30:34.906256+00:00",
+  "context": {
+   "id": "01M7950DWT8FE5PCNEMV2YGQT1",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "sensor.print_progress",
+  "state": "unavailable",
+  "attributes": {
+   "restored": true,
+   "state_class": "measurement",
+   "friendly_name": "Print Progress",
+   "supported_features": 0,
+   "unit_of_measurement": "%"
+  },
+  "last_changed": "2026-11-12T03:05:20.691527+00:00",
+  "last_reported": "2026-11-12T03:05:20.691527+00:00",
+  "last_updated": "2026-11-12T03:05:20.691527+00:00",
+  "context": {
+   "id": "01M76VF31KG6K93GQKRVDEX53N",
+   "parent_id": null,
+   "user_id": null
+  }
+ },
+ {
+  "entity_id": "weather.today",
+  "state": "partlycloudy",
+  "attributes": {
+   "temperature": 56,
+   "apparent_temperature": 54,
+   "dew_point": 51,
+   "temperature_unit": "\u00b0F",
+   "humidity": 85,
+   "ozone": 304.2,
+   "cloud_coverage": 85.0,
+   "pressure": 29.54,
+   "pressure_unit": "inHg",
+   "wind_bearing": 85,
+   "wind_gust_speed": 8.11,
+   "wind_speed": 3.55,
+   "wind_speed_unit": "mph",
+   "visibility": 10.0,
+   "visibility_unit": "mi",
+   "precipitation_unit": "in",
+   "attribution": "Powered by Pirate Weather",
+   "friendly_name": "Today",
+   "supported_features": 7
+  },
+  "last_changed": "2026-11-13T00:00:27.540637+00:00",
+  "last_reported": "2026-11-13T00:30:27.541461+00:00",
+  "last_updated": "2026-11-13T00:30:27.541461+00:00",
+  "context": {
+   "id": "01M79506PNV4JAR0X2XAXD3SAP",
+   "parent_id": null,
+   "user_id": null
+  }
+ }
+]

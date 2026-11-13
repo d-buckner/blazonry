@@ -1,0 +1,296 @@
+{
+ "_comment": "Trimmed from a live Home Assistant lovelace config. Entity ids and friendly names are generic stand-ins of the same device class; card shapes and state attributes are verbatim.",
+ "views": [
+  {
+   "title": "Home",
+   "path": "home",
+   "type": "sections",
+   "icon": "mdi:home",
+   "max_columns": 4,
+   "sections": [
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "heading",
+       "heading": "Weather",
+       "icon": "mdi:weather-cloudy"
+      },
+      {
+       "type": "tile",
+       "entity": "weather.today",
+       "name": "Today",
+       "features": [
+        {
+         "type": "temperature-forecast",
+         "forecast_type": "daily",
+         "days_to_show": 5,
+         "show_labels": true
+        }
+       ],
+       "grid_options": {
+        "columns": "full"
+       }
+      },
+      {
+       "type": "tile",
+       "entity": "sensor.air_quality",
+       "name": "Smoke",
+       "features": [
+        {
+         "type": "trend-graph",
+         "hours_to_show": 72
+        }
+       ],
+       "grid_options": {
+        "columns": 6
+       }
+      }
+     ]
+    },
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "heading",
+       "heading": "Lights",
+       "icon": "mdi:lightbulb"
+      },
+      {
+       "type": "tile",
+       "entity": "light.room_b",
+       "name": "Basement",
+       "features": [
+        {
+         "type": "light-brightness"
+        }
+       ],
+       "grid_options": {
+        "columns": 6
+       }
+      }
+     ]
+    },
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "tile",
+       "entity": "climate.basement",
+       "name": "Basement",
+       "features": [
+        {
+         "type": "target-temperature"
+        },
+        {
+         "type": "climate-hvac-modes",
+         "style": "dropdown"
+        }
+       ],
+       "grid_options": {
+        "columns": "full"
+       }
+      },
+      {
+       "type": "button",
+       "name": "Close Blinds in 1h",
+       "icon": "mdi:blinds",
+       "tap_action": {
+        "action": "perform-action",
+        "perform_action": "script.close_blinds_in_an_hour"
+       },
+       "grid_options": {
+        "columns": 6
+       }
+      }
+     ]
+    },
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "tile",
+       "entity": "sensor.car_battery",
+       "name": "Battery",
+       "grid_options": {
+        "columns": 6
+       }
+      },
+      {
+       "type": "tile",
+       "entity": "lock.front_door",
+       "name": "Doors",
+       "grid_options": {
+        "columns": "full"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Vacuum",
+   "path": "vacuum",
+   "type": "sections",
+   "icon": "mdi:robot-vacuum",
+   "max_columns": 3,
+   "sections": [
+    {
+     "type": "grid",
+     "column_span": 2,
+     "cards": [
+      {
+       "type": "custom:some_vendor-card",
+       "vacuum": "valetudo_dreame",
+       "grid_options": {
+        "columns": "full",
+        "rows": 8
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Security",
+   "path": "security",
+   "type": "sections",
+   "icon": "mdi:security",
+   "max_columns": 3,
+   "sections": [
+    {
+     "type": "grid",
+     "column_span": 2,
+     "cards": [
+      {
+       "type": "history-graph",
+       "title": "Alarm State",
+       "hours_to_show": 24,
+       "entities": [
+        "alarm_control_panel.house"
+       ],
+       "grid_options": {
+        "columns": "full",
+        "rows": 3
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Printing",
+   "path": "printing",
+   "type": "sections",
+   "icon": "mdi:printer-3d-nozzle",
+   "max_columns": 3,
+   "visibility": [
+    {
+     "condition": "user",
+     "users": [
+      "37b56f1afe434666886e172bddea8aee",
+      "ee61dee71df34a77a378467aaff0d7a5"
+     ]
+    }
+   ],
+   "sections": [
+    {
+     "type": "grid",
+     "column_span": 2,
+     "cards": [
+      {
+       "type": "picture-entity",
+       "entity": "camera.print_cam",
+       "show_state": false,
+       "grid_options": {
+        "columns": "full",
+        "rows": 7
+       }
+      }
+     ]
+    },
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "gauge",
+       "entity": "sensor.print_progress",
+       "needle": false,
+       "grid_options": {
+        "columns": "full",
+        "rows": 3
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Energy",
+   "path": "energy",
+   "type": "sections",
+   "icon": "mdi:lightning-bolt",
+   "max_columns": 2,
+   "sections": [
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "shortcut",
+       "label": "Open Energy Dashboard",
+       "icon": "mdi:lightning-bolt-circle",
+       "tap_action": {
+        "action": "navigate",
+        "navigation_path": "/energy"
+       },
+       "grid_options": {
+        "columns": "full"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Car",
+   "path": "car",
+   "type": "sections",
+   "icon": "mdi:car",
+   "max_columns": 4,
+   "sections": [
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "graph": "line",
+       "type": "sensor",
+       "entity": "sensor.car_battery",
+       "detail": 1,
+       "name": "Battery",
+       "unit": "%",
+       "hours_to_show": 168,
+       "grid_options": {
+        "columns": 12,
+        "rows": 3
+       }
+      }
+     ]
+    },
+    {
+     "type": "grid",
+     "cards": [
+      {
+       "type": "markdown",
+       "content": "{{ states(\"sensor.car_location\") }}",
+       "title": "Parked At",
+       "grid_options": {
+        "columns": "full",
+        "rows": 2
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
