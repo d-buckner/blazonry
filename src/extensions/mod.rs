@@ -19,6 +19,7 @@ use sqlx::SqlitePool;
 
 pub mod calendar;
 pub mod countdown;
+pub mod dashboard;
 pub mod weather;
 
 pub const MIGRATE: &str = crate::providers::MIGRATE;
@@ -31,6 +32,7 @@ pub fn consumes_shape(kind: &str) -> Option<&'static str> {
     match kind {
         "calendar" => Some("calendar"),
         "weather" => Some("weather"),
+        "dashboard" => Some("dashboard"),
         _ => None,
     }
 }
@@ -197,6 +199,36 @@ async fn rebuild_extension(
                 }
                 None => {
                     let vars = weather::no_data_vars("Waiting for first weather refresh...");
+                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                    repaint(pool, backends, cache, sid).await;
+                    Ok(true)
+                }
+            }
+        }
+        "dashboard" => {
+            let Some(pid) = dashboard::resolved_provider_id(pool, &settings).await? else {
+                tracing::warn!(
+                    extension = name,
+                    "no dashboard providers resolved; leaving screen as-is"
+                );
+                return Ok(false);
+            };
+            match crate::providers::load_snapshot(pool, pid).await? {
+                Some(crate::providers::Snapshot::Dashboard(snap)) => {
+                    let vars = dashboard::dashboard_vars(&snap, &settings);
+                    crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
+                    repaint(pool, backends, cache, sid).await;
+                    Ok(true)
+                }
+                Some(_) => {
+                    tracing::warn!(
+                        extension = name,
+                        "resolved provider does not publish a dashboard; leaving screen as-is"
+                    );
+                    Ok(false)
+                }
+                None => {
+                    let vars = dashboard::no_data_vars("Waiting for first dashboard refresh...");
                     crate::screens::set_vars(pool, sid, &serde_json::to_string(&vars)?).await?;
                     repaint(pool, backends, cache, sid).await;
                     Ok(true)
@@ -374,9 +406,10 @@ pub async fn create(
     match kind {
         "calendar" => calendar::create(pool, backends, cache, name, settings).await,
         "weather" => weather::create(pool, backends, cache, name, settings).await,
+        "dashboard" => dashboard::create(pool, backends, cache, name, settings).await,
         "countdown" => countdown::create(pool, backends, cache, name, settings).await,
         other => anyhow::bail!(
-            "unknown extension kind '{other}' (supported: calendar, weather, countdown)"
+            "unknown extension kind '{other}' (supported: calendar, weather, dashboard, countdown)"
         ),
     }
 }
