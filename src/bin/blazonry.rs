@@ -186,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
             get(blazonry::admin_provider::list_extensions)
                 .post(blazonry::admin_provider::create_extension),
         )
+        .route("/kinds", get(blazonry::admin_provider::kinds))
         .route(
             "/extensions/{id}",
             patch(blazonry::admin_provider::patch_extension)

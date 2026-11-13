@@ -31,6 +31,8 @@ use std::pin::Pin;
 
 pub struct HomeAssistant;
 
+pub const MANIFEST: &str = include_str!("home_assistant.manifest.json");
+
 /// What one card contributes to the screen. `heading` is a section label,
 /// `tile` a title/value pair, `group` a block of key/value rows, `progress` a
 /// filled bar, `text` a free-form line (rendered Markdown).
@@ -78,6 +80,18 @@ fn validate(config: &Value) -> anyhow::Result<()> {
 impl Provider for HomeAssistant {
     fn kind(&self) -> &'static str {
         "home_assistant"
+    }
+
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest {
+        static M: std::sync::OnceLock<crate::extensions::ProviderManifest> =
+            std::sync::OnceLock::new();
+        M.get_or_init(|| {
+            crate::extensions::ProviderManifest::parse(
+                MANIFEST,
+                "dashboard/home_assistant.manifest.json",
+            )
+            .expect("bundled provider manifest is unreadable")
+        })
     }
 
     fn shape(&self) -> &'static str {

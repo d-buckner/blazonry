@@ -159,6 +159,11 @@ pub trait Provider: Send + Sync {
     fn kind(&self) -> &'static str;
     /// Shape this kind publishes: "calendar" | "weather" | "dashboard".
     fn shape(&self) -> &'static str;
+    /// The manifest bundled with this provider's module: label, blurb, config
+    /// fields, and the refresh interval a new instance starts with. The admin
+    /// UI builds its form from it. A manifest that will not parse is a
+    /// build-time bug, so this panics instead of returning a Result.
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest;
     /// Validate a config JSON at create/patch time — bad config fails in the
     /// admin UI, not at render time.
     fn validate(&self, config: &serde_json::Value) -> anyhow::Result<()>;
@@ -186,6 +191,32 @@ pub fn registry() -> &'static std::collections::HashMap<&'static str, Box<dyn Pr
 
 pub fn lookup(kind: &str) -> Option<&'static dyn Provider> {
     registry().get(kind).map(|b| b.as_ref())
+}
+
+/// Per-kind metadata for the admin UI: each registered kind's manifest plus
+/// the shape its Rust impl publishes. The shape comes from the impl, not the
+/// manifest, so the two cannot drift apart in the response.
+pub fn kind_metadata() -> Vec<Value> {
+    let mut out: Vec<Value> = registry()
+        .values()
+        .map(|p| {
+            let mut m =
+                serde_json::to_value(p.manifest()).expect("manifest is JSON by construction");
+            m["shape"] = json!(p.shape());
+            m
+        })
+        .collect();
+    out.sort_by(|a, b| a["kind"].as_str().cmp(&b["kind"].as_str()));
+    out
+}
+
+/// The refresh interval a new instance of this kind starts with. Each kind's
+/// manifest declares it (Home Assistant is 15 minutes; a wall display goes
+/// stale fast), so the server does not need a per-kind table.
+pub fn default_refresh_secs(kind: &str) -> i64 {
+    lookup(kind)
+        .map(|p| p.manifest().default_refresh_secs)
+        .unwrap_or(DEFAULT_REFRESH_SECS)
 }
 
 /// Validate a provider config for a kind (admin API entry point).

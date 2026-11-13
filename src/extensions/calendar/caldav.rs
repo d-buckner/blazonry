@@ -13,6 +13,8 @@ use std::str::FromStr;
 
 pub struct CalDav;
 
+pub const MANIFEST: &str = include_str!("caldav.manifest.json");
+
 #[derive(Debug, Deserialize)]
 pub struct CalDavConfig {
     /// Collection URL serving merged text/calendar on GET (Radicale does).
@@ -29,6 +31,15 @@ const WINDOW_DAYS: i64 = 8;
 impl Provider for CalDav {
     fn kind(&self) -> &'static str {
         "caldav"
+    }
+
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest {
+        static M: std::sync::OnceLock<crate::extensions::ProviderManifest> =
+            std::sync::OnceLock::new();
+        M.get_or_init(|| {
+            crate::extensions::ProviderManifest::parse(MANIFEST, "calendar/caldav.manifest.json")
+                .expect("bundled provider manifest is unreadable")
+        })
     }
 
     fn shape(&self) -> &'static str {

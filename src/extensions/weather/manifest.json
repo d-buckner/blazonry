@@ -13,7 +13,19 @@
       "optional": true,
       "hint": "Blank uses the place name from the source."
     },
-    { "key": "days", "type": "int", "label": "Forecast days", "default": 3, "min": 0, "max": 4 },
-    { "key": "provider_id", "type": "provider_id", "label": "Weather source" }
+    {
+      "key": "days",
+      "type": "int",
+      "label": "Forecast days",
+      "default": 3,
+      "min": 0,
+      "max": 4
+    },
+    {
+      "key": "provider_id",
+      "type": "provider_id",
+      "label": "Weather source",
+      "optional": true
+    }
   ]
 }

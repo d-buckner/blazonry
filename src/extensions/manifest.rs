@@ -56,10 +56,13 @@ pub struct Field {
     pub hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
+    /// Bounds for `int` and `number` fields. Whole numbers only: every bound
+    /// in this repo is one, and an integer in the manifest stays an integer on
+    /// the wire instead of arriving as `14.0`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min: Option<f64>,
+    pub min: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max: Option<f64>,
+    pub max: Option<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub values: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -138,12 +141,12 @@ impl Field {
 
     fn range(&self, n: f64) -> anyhow::Result<()> {
         if let Some(min) = self.min
-            && n < min
+            && n < min as f64
         {
             return Err(anyhow::anyhow!("must be at least {min}"));
         }
         if let Some(max) = self.max
-            && n > max
+            && n > max as f64
         {
             return Err(anyhow::anyhow!("must be at most {max}"));
         }

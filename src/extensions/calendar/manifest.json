@@ -6,14 +6,36 @@
   "cardinality": "one_or_more",
   "setup_hint": "Connect a CalDAV calendar in Connections first.",
   "settings": [
-    { "key": "title", "type": "string", "label": "Title", "default": "Calendar" },
-    { "key": "days", "type": "int", "label": "Days ahead", "default": 3, "min": 1, "max": 14 },
-    { "key": "max_events", "type": "int", "label": "Max events", "default": 12, "min": 1, "max": 40 },
+    {
+      "key": "title",
+      "type": "string",
+      "label": "Title",
+      "default": "Calendar"
+    },
+    {
+      "key": "days",
+      "type": "int",
+      "label": "Days ahead",
+      "default": 3,
+      "min": 1,
+      "max": 14
+    },
+    {
+      "key": "max_events",
+      "type": "int",
+      "label": "Max events",
+      "default": 12,
+      "min": 1,
+      "max": 40
+    },
     {
       "key": "time_format",
       "type": "enum",
       "label": "Time format",
-      "values": ["12h", "24h"],
+      "values": [
+        "12h",
+        "24h"
+      ],
       "default": "12h"
     },
     {
@@ -22,6 +44,11 @@
       "label": "Show the description when an event has no location",
       "default": false
     },
-    { "key": "provider_ids", "type": "provider_ids", "label": "Calendar sources" }
+    {
+      "key": "provider_ids",
+      "type": "provider_ids",
+      "label": "Calendar sources",
+      "optional": true
+    }
   ]
 }

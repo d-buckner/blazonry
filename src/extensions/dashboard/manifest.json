@@ -13,7 +13,14 @@
       "optional": true,
       "hint": "Blank uses the tab's own title."
     },
-    { "key": "columns", "type": "int", "label": "Tiles per row", "default": 4, "min": 2, "max": 4 },
+    {
+      "key": "columns",
+      "type": "int",
+      "label": "Tiles per row",
+      "default": 4,
+      "min": 2,
+      "max": 4
+    },
     {
       "key": "max_tiles",
       "type": "int",
@@ -23,7 +30,17 @@
       "max": 24,
       "hint": "0 shows as many as fit the panel."
     },
-    { "key": "show_headings", "type": "bool", "label": "Keep section headings", "default": true },
-    { "key": "provider_id", "type": "provider_id", "label": "Home Assistant source" }
+    {
+      "key": "show_headings",
+      "type": "bool",
+      "label": "Keep section headings",
+      "default": true
+    },
+    {
+      "key": "provider_id",
+      "type": "provider_id",
+      "label": "Home Assistant source",
+      "optional": true
+    }
   ]
 }

@@ -123,20 +123,36 @@ pub fn consumes_shape(kind: &str) -> Option<&'static str> {
     lookup(kind)?.manifest.consumes.as_deref()
 }
 
-/// Check settings against a kind's manifest and complete them with defaults.
-/// The admin API calls this on create and on patch.
-pub fn validate_settings(kind: &str, settings: &Value) -> anyhow::Result<Value> {
-    let plugin = lookup(kind).ok_or_else(|| {
-        anyhow::anyhow!(
-            "unknown extension kind '{kind}' (known: {})",
-            registry()
-                .iter()
-                .map(|p| p.manifest.kind.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    })?;
-    plugin.manifest.validate_settings(settings)
+fn unknown_kind(kind: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "unknown extension kind '{kind}' (known: {})",
+        registry()
+            .iter()
+            .map(|p| p.manifest.kind.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// Check submitted settings for a kind and complete them with defaults.
+/// The admin API calls this on create and on patch, so a settings typo or an
+/// out-of-range number fails the request instead of sitting in the row.
+/// A provider pick is checked too: every id must exist and publish the shape
+/// this kind consumes.
+pub async fn validate_settings(
+    pool: &SqlitePool,
+    kind: &str,
+    settings: &Value,
+) -> anyhow::Result<Value> {
+    let plugin = lookup(kind).ok_or_else(|| unknown_kind(kind))?;
+    let settings = plugin.manifest.validate_settings(settings)?;
+    if let Some(shape) = &plugin.manifest.consumes {
+        let ids = resolve_ids(pool, &plugin.manifest, &settings).await?;
+        if !ids.is_empty() && !crate::providers::ids_with_shape_exist(pool, shape, &ids).await? {
+            anyhow::bail!("the source you picked is not a {shape} source");
+        }
+    }
+    Ok(settings)
 }
 
 /// Resolve an extension's provider pick list for a shape: explicit ids, or
@@ -459,18 +475,9 @@ pub async fn create(
     name: &str,
     settings: Value,
 ) -> anyhow::Result<(i64, i64)> {
-    let plugin = lookup(kind).ok_or_else(|| {
-        anyhow::anyhow!(
-            "unknown extension kind '{kind}' (known: {})",
-            registry()
-                .iter()
-                .map(|p| p.manifest.kind.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    })?;
+    let plugin = lookup(kind).ok_or_else(|| unknown_kind(kind))?;
     let m = &plugin.manifest;
-    let settings = m.validate_settings(&settings)?;
+    let settings = validate_settings(pool, kind, &settings).await?;
     let ids = resolve_ids(pool, m, &settings).await?;
     if let Some(shape) = &m.consumes {
         let need = match m.cardinality {
@@ -483,9 +490,6 @@ pub async fn create(
                 m.label,
                 m.setup_hint.as_deref().unwrap_or("Connect one first.")
             );
-        }
-        if !crate::providers::ids_with_shape_exist(pool, shape, &ids).await? {
-            anyhow::bail!("the source you picked is not {need}");
         }
     }
     let vars = plugin

@@ -15,6 +15,8 @@ use std::pin::Pin;
 
 pub struct OpenMeteo;
 
+pub const MANIFEST: &str = include_str!("open_meteo.manifest.json");
+
 /// WMO weather code -> short label (the set Open-Meteo actually emits).
 pub fn wmo_label(code: i64) -> &'static str {
     match code {
@@ -70,6 +72,15 @@ fn validate(config: &Value) -> anyhow::Result<()> {
 impl Provider for OpenMeteo {
     fn kind(&self) -> &'static str {
         "open_meteo"
+    }
+
+    fn manifest(&self) -> &'static crate::extensions::ProviderManifest {
+        static M: std::sync::OnceLock<crate::extensions::ProviderManifest> =
+            std::sync::OnceLock::new();
+        M.get_or_init(|| {
+            crate::extensions::ProviderManifest::parse(MANIFEST, "weather/open_meteo.manifest.json")
+                .expect("bundled provider manifest is unreadable")
+        })
     }
 
     fn shape(&self) -> &'static str {

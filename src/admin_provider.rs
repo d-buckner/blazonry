@@ -4,11 +4,12 @@
 //!   providers   GET|POST /providers, GET|PATCH|DELETE /providers/:id,
 //!               POST /providers/:id/refresh
 //!   extensions  GET|POST /extensions, GET|PATCH|DELETE /extensions/:id
+//!   kinds       GET /kinds — the manifests of every kind this build ships
 //!
 //! HTTP only: parse request, call the owning module (`providers` /
 //! `extensions`), map errors to status codes. No raw SQL here (issue #9).
-//! Cardinality validation lives in extensions::create — "requires a
-//! calendar, picked none" fails here at config time.
+//! Settings and cardinality validation lives in `extensions` — "needs a
+//! calendar source, picked none" fails here at config time.
 
 use crate::api::SharedState;
 use crate::extensions;
@@ -32,6 +33,20 @@ pub async fn list_providers(State(st): State<SharedState>) -> Res {
     Ok(Json(json!(providers::list(&st.pool).await.map_err(err)?)))
 }
 
+/// The plugin catalog: every extension and provider kind this build ships,
+/// described by the manifest in its folder. The admin UI builds both "add"
+/// forms from this response, so a new extension needs no front-end change.
+pub async fn kinds() -> Res {
+    let ext: Vec<Value> = extensions::registry()
+        .iter()
+        .map(|p| serde_json::to_value(&p.manifest).map_err(err))
+        .collect::<Result<_, _>>()?;
+    Ok(Json(json!({
+        "extensions": ext,
+        "providers": providers::kind_metadata(),
+    })))
+}
+
 pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
     let kind = b
         .get("kind")
@@ -48,7 +63,7 @@ pub async fn create_provider(State(st): State<SharedState>, Json(b): Json<Value>
     let refresh_secs = b
         .get("refresh_secs")
         .and_then(|v| v.as_i64())
-        .unwrap_or(providers::DEFAULT_REFRESH_SECS)
+        .unwrap_or_else(|| providers::default_refresh_secs(kind))
         .max(60);
     let id = providers::create(&st.pool, kind, name, &config, refresh_secs)
         .await
@@ -193,33 +208,13 @@ pub async fn patch_extension(
             .map_err(err)?;
     }
     if let Some(settings) = b.get("settings") {
-        // Re-validate cardinality on settings change (explicit picks must
-        // exist AND publish the shape this extension consumes).
-        if let Some(ids) = settings.get("provider_ids").and_then(|v| v.as_array()) {
-            let ids: Vec<i64> = ids.iter().filter_map(|v| v.as_i64()).collect();
-            if ids.len() != settings["provider_ids"].as_array().map_or(0, |a| a.len()) {
-                return Err(bad("provider_ids must be integers"));
-            }
-            let kind = extensions::kind_of(&st.pool, id).await.map_err(err)?;
-            match extensions::consumes_shape(&kind) {
-                Some(shape) => {
-                    if !providers::ids_with_shape_exist(&st.pool, shape, &ids)
-                        .await
-                        .map_err(err)?
-                    {
-                        return Err(bad(format!(
-                            "provider_ids contains unknown or non-{shape} providers"
-                        )));
-                    }
-                }
-                None => {
-                    return Err(bad(
-                        "this extension kind consumes no providers; provider_ids is not applicable",
-                    ));
-                }
-            }
-        }
-        extensions::set_settings(&st.pool, id, settings)
+        // Same check as create: manifest schema, defaults, and a provider pick
+        // that must exist and publish the shape this extension consumes.
+        let kind = extensions::kind_of(&st.pool, id).await.map_err(err)?;
+        let settings = extensions::validate_settings(&st.pool, &kind, settings)
+            .await
+            .map_err(|e| bad(e.to_string()))?;
+        extensions::set_settings(&st.pool, id, &settings)
             .await
             .map_err(err)?;
     }
