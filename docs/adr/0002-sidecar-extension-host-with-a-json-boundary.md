@@ -138,9 +138,17 @@ Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
   (`screens::set_paint`). Bundled templates never change, so the stored copy was
   harmless. A runtime template changes on every apply, and a stale copy paints the
   previous screen.
-- Two mitigations from the Risks list are not built yet: the client has no
-  per-request timeout, and requests carry no protocol version. The ABI version is
-  checked once, at load. A slow plugin blocks its host until that changes.
+- The client now bounds every call with a per-op limit (`ext_link::Client`): 5s
+  for `ping`, 30s for `vars`, 900s for `build`. One limit for everything was
+  wrong, because `vars` should answer in a blink and `build` runs cargo.
+- What the limit does **not** do: rescue the host. A plugin that spins forever
+  keeps the blocking thread it was spawned on forever, because a blocking task
+  cannot be cancelled. The limit stops the server from waiting on it, so the
+  rebuild loop and every other screen stay alive. Killing a wedged plugin means
+  restarting the host process.
+- Still not built: requests carry no protocol version. The ABI version is checked
+  once, at load, so an old server against a new host fails at load rather than
+  misparsing a request.
 - **Text metrics do not cross the boundary.** `render::text_width`, `fit`, and
   `fit_size` measure with the embedded DejaVu fonts, and they live in the core. A
   plugin links only `blazonry-ext-api`, so it cannot measure, and the renderer
