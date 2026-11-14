@@ -73,6 +73,12 @@ required-features = ["browser"]
 [dev-dependencies]
 reqwest = { version = "0.13.5", features = ["json", "cookies", "form"] }
 
+# line-tables-only keeps .debug_line, so panic backtraces still resolve file:line,
+# and drops the type info that is most of a debug build's size. Do not add `strip`
+# here: it removes .debug_line too, and the frames lose file:line.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
