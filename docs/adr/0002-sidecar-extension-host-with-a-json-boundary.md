@@ -146,9 +146,15 @@ Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
   cannot be cancelled. The limit stops the server from waiting on it, so the
   rebuild loop and every other screen stay alive. Killing a wedged plugin means
   restarting the host process.
-- Still not built: requests carry no protocol version. The ABI version is checked
-  once, at load, so an old server against a new host fails at load rather than
-  misparsing a request.
+- Every request carries `PROTOCOL_VERSION` and the host refuses anything else:
+  `protocol mismatch: the request says v=99, this host speaks v=1`. A server and a
+  host built apart now fail with a sentence.
+- Fixing that exposed a worse bug. `sync` read a missing `kinds` key as "zero
+  extensions", so a host that answered `{"error": ...}` logged
+  `extension host synced kinds=0` as a success. Every host-side refusal was
+  invisible. `Client::call` now turns any answer with a top-level `error` into a
+  failure, and the admin layer maps that to 409 rather than 500, because a refused
+  apply is a precondition the author can fix, not a server fault.
 - **Text metrics do not cross the boundary.** `render::text_width`, `fit`, and
   `fit_size` measure with the embedded DejaVu fonts, and they live in the core. A
   plugin links only `blazonry-ext-api`, so it cannot measure, and the renderer

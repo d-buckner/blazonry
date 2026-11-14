@@ -32,7 +32,7 @@
 //! `build` needs a Rust toolchain, so it only works in the builder image.
 
 use blazonry::ext_host::{self, Loaded};
-use blazonry::ext_link::HostRequest;
+use blazonry::ext_link::{self, HostRequest};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -257,9 +257,9 @@ async fn serve_conn(
         if line.trim().is_empty() {
             continue;
         }
-        let answer = match serde_json::from_str::<HostRequest>(&line) {
+        let answer = match ext_link::read_request(&line) {
             Ok(req) => dispatch(req, &live, &dir, api.as_deref()).await,
-            Err(e) => json!({"error": format!("unreadable request: {e}")}),
+            Err(e) => json!({"error": e}),
         };
         w.write_all(answer.to_string().as_bytes()).await?;
         w.write_all(b"\n").await?;
@@ -271,10 +271,15 @@ async fn dispatch(req: HostRequest, live: &Live, dir: &Path, api: Option<&Path>)
     match req {
         HostRequest::Ping => json!({
             "ok": true,
+            "protocol": blazonry::ext_link::PROTOCOL_VERSION,
             "arch": blazonry_ext_api::ARCH,
             "loaded": live.read().expect("live lock").loaded.len(),
         }),
-        HostRequest::Kinds => live.read().expect("live lock").report(),
+        HostRequest::Kinds => {
+            let mut report = live.read().expect("live lock").report();
+            report["protocol"] = json!(ext_link::PROTOCOL_VERSION);
+            report
+        }
         HostRequest::Reload => {
             let state = rescan(dir);
             let out = state.report();

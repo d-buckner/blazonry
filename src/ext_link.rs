@@ -15,6 +15,13 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
+/// The wire protocol between the server and the host.
+///
+/// Every request carries it and the host refuses anything else, so a mismatch
+/// fails with a sentence instead of a parse error or a hang. Bump it when a change
+/// an older host cannot honour lands on the wire.
+pub const PROTOCOL_VERSION: u64 = 1;
+
 /// One request the host serves, one per line of JSON.
 ///
 /// `build`, `check`, `apply`, and `rollback` are the ADR-0003 authoring loop. The
@@ -118,13 +125,23 @@ impl Client {
             })?
     }
 
+    /// Every answer that carries a top-level `error` string is a failure, and
+    /// `sync` used to read a missing `kinds` key as "no extensions". A host that
+    /// refused, or that speaks another protocol, reported success with zero kinds.
+    fn answer(value: Value) -> anyhow::Result<Value> {
+        if let Some(msg) = value.get("error").and_then(Value::as_str) {
+            return Err(HostRejected(msg.to_string()).into());
+        }
+        Ok(value)
+    }
+
     async fn call_inner(&self, req: &HostRequest) -> anyhow::Result<Value> {
         let where_ = format!("the extension host at {}", self.socket.display());
         let stream = UnixStream::connect(&self.socket)
             .await
             .map_err(|e| anyhow::anyhow!("cannot reach {where_}: {e}"))?;
         let (r, mut w) = stream.into_split();
-        let line_out = serde_json::to_string(req)?;
+        let line_out = serde_json::to_string(&stamped(req)?)?;
         // A host killed mid-request resets the socket. Without the op and the
         // socket in the message, "Connection reset by peer" tells a reader
         // nothing about which process died.
@@ -142,8 +159,52 @@ impl Client {
         if read == 0 {
             anyhow::bail!("{where_} closed the socket without answering");
         }
-        Ok(serde_json::from_str(&line)?)
+        Self::answer(serde_json::from_str(&line)?)
     }
+}
+
+/// Read one line of JSON into a request, and refuse a client that does not speak
+/// this host's protocol. A version check here is what turns a server and a host
+/// built apart into a message rather than a hang.
+pub fn read_request(line: &str) -> Result<HostRequest, String> {
+    let value: Value =
+        serde_json::from_str(line).map_err(|e| format!("unreadable request: {e}"))?;
+    let got = value.get("v").and_then(|v| v.as_u64());
+    match got {
+        None => return Err("request carries no protocol version".to_string()),
+        Some(v) if v != PROTOCOL_VERSION => {
+            return Err(format!(
+                "protocol mismatch: the request says v={v}, this host speaks v={}",
+                PROTOCOL_VERSION
+            ));
+        }
+        _ => {}
+    }
+    serde_json::from_value(value).map_err(|e| format!("unreadable request: {e}"))
+}
+
+/// The host answered, and its answer was a failure. Kept as its own type so the
+/// admin layer can answer 409 for "the gate refused" instead of 500 for "the
+/// server broke".
+#[derive(Debug)]
+pub struct HostRejected(pub String);
+
+impl std::fmt::Display for HostRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for HostRejected {}
+
+/// The request as JSON with the protocol version added.
+fn stamped(req: &HostRequest) -> anyhow::Result<Value> {
+    let mut v = serde_json::to_value(req)?;
+    let Some(map) = v.as_object_mut() else {
+        anyhow::bail!("a host request must serialize to a JSON object");
+    };
+    map.insert("v".to_string(), serde_json::json!(PROTOCOL_VERSION));
+    Ok(v)
 }
 
 /// An extension the server cannot see, only ask.
@@ -266,6 +327,45 @@ mod tests {
         let err = Client::new(&sock).call(HostRequest::Ping).await;
         let err = err.unwrap_err().to_string();
         assert!(err.contains("closed the socket without answering"), "{err}");
+    }
+
+    /// A server and a host built apart must fail with a sentence, not a hang or a
+    /// misleading parse error.
+    #[test]
+    fn a_request_without_a_version_is_refused() {
+        let err = read_request(r#"{"op":"ping"}"#).unwrap_err();
+        assert!(err.contains("no protocol version"), "{err}");
+    }
+
+    #[test]
+    fn a_request_from_another_protocol_is_refused_by_name() {
+        let err = read_request(r#"{"op":"ping","v":99}"#).unwrap_err();
+        assert!(err.contains("protocol mismatch"), "{err}");
+        assert!(err.contains("v=99"), "{err}");
+    }
+
+    #[test]
+    fn a_request_with_the_right_version_parses() {
+        let line = stamped(&HostRequest::Ping).unwrap().to_string();
+        assert!(matches!(read_request(&line), Ok(HostRequest::Ping)));
+    }
+
+    /// A host that answers with a failure must not look like a host with nothing
+    /// loaded. `sync` used to read the missing `kinds` key as zero extensions and
+    /// log success, which hid every refusal the host made.
+    #[tokio::test]
+    async fn a_host_that_refuses_does_not_report_zero_kinds() {
+        let sock = temp_socket("refused");
+        let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _addr) = listener.accept().await.unwrap();
+            use tokio::io::AsyncWriteExt as _;
+            let _ = stream
+                .write_all(b"{\"error\":\"the host is not configured\"}\n")
+                .await;
+        });
+        let err = sync(&sock).await.unwrap_err().to_string();
+        assert!(err.contains("the host is not configured"), "{err}");
     }
 
     #[tokio::test]

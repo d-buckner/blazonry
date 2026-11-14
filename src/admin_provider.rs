@@ -26,6 +26,15 @@ type Res = Result<Json<Value>, Err>;
 fn err(e: impl std::fmt::Display) -> Err {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
+
+/// The host refused: the apply gate failed, or the host speaks another protocol.
+/// An author can fix that, so it is not a server fault and not a 500.
+fn refused(e: anyhow::Error) -> Err {
+    if e.downcast_ref::<crate::ext_link::HostRejected>().is_some() {
+        return (StatusCode::CONFLICT, e.to_string());
+    }
+    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+}
 fn bad(msg: impl Into<String>) -> Err {
     (StatusCode::BAD_REQUEST, msg.into())
 }
@@ -280,7 +289,7 @@ pub async fn ext_write(State(st): State<SharedState>, Json(b): Json<Value>) -> R
         host(&st)?
             .call(HostRequest::Write { kind, files })
             .await
-            .map_err(err)?,
+            .map_err(refused)?,
     ))
 }
 
@@ -290,7 +299,7 @@ pub async fn ext_build(State(st): State<SharedState>, Json(b): Json<Value>) -> R
         host(&st)?
             .call(HostRequest::Build { kind })
             .await
-            .map_err(err)?,
+            .map_err(refused)?,
     ))
 }
 
@@ -300,7 +309,7 @@ pub async fn ext_check(State(st): State<SharedState>, Json(b): Json<Value>) -> R
         host(&st)?
             .call(HostRequest::Check { kind })
             .await
-            .map_err(err)?,
+            .map_err(refused)?,
     ))
 }
 
@@ -314,7 +323,7 @@ pub async fn ext_apply(State(st): State<SharedState>, Json(b): Json<Value>) -> R
     let mut out = ext_link::Client::new(&socket)
         .call(HostRequest::Apply { kind: kind.clone() })
         .await
-        .map_err(err)?;
+        .map_err(refused)?;
     if out.get("ok").and_then(Value::as_bool) == Some(true) {
         apply_aftermath(&st, &socket, &mut out, &kind).await;
     }
@@ -331,7 +340,7 @@ pub async fn ext_rollback(State(st): State<SharedState>, Json(b): Json<Value>) -
     let mut out = ext_link::Client::new(&socket)
         .call(HostRequest::Rollback { kind: kind.clone() })
         .await
-        .map_err(err)?;
+        .map_err(refused)?;
     if out.get("ok").and_then(Value::as_bool) == Some(true) {
         apply_aftermath(&st, &socket, &mut out, &kind).await;
     }
