@@ -329,6 +329,28 @@ handshake and requires a `server/discover` RPC. A client that speaks both eras
 probes `server/discover`, gets `-32601`, and falls back to `initialize`, so it
 works here. A client that speaks only `2026-07-28` does not.
 
+### The same tools over HTTP
+
+`POST /admin/mcp` serves the same seven tools to a client that cannot spawn a
+process, which is the case whenever the server runs in a container the client is
+outside of. One JSON-RPC message per request, answered as one JSON body.
+
+```sh
+curl -s -X POST http://127.0.0.1:2301/admin/mcp \
+  -H "Authorization: Bearer $BLAZONRY_ADMIN_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+The route sits inside the admin plane, so `require_admin` gates it exactly as it
+ gates every other authoring route. A notification answers `202` with no body.
+`GET` answers `405`: there is no server-to-client SSE stream, and a tools-only
+server needs none. No `Mcp-Session-Id` is issued, because a session would be state
+a restarting container cannot keep.
+
+A tool is still a call to the admin API, so the endpoint calls this server back on
+loopback and forwards the caller's own bearer. A tool call therefore runs as
+whoever made it, and a session bearer works as well as the static one.
+
 ## Authoring templates
 
 Screens are HTML + Liquid using the TRMNL framework class vocabulary
