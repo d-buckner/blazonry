@@ -59,6 +59,8 @@ The image is a `FROM scratch` container around the static musl binary —
 6.3 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
 The SQLite DB lives in the `/data` volume. To build locally:
 `docker buildx build -t blazonry .` (multi-arch: `--platform linux/amd64,linux/arm64`).
+Runtime extensions need a second image that carries a toolchain, see
+[Runtime extensions](#runtime-extensions).
 
 ## What you get
 
@@ -206,7 +208,8 @@ publishes, and every bundled template renders against its bundled fixture.
 `docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0003 record
 the accepted design for loading a Rust extension from the `/data` volume at
 runtime, so an author or an MCP can write, build, and apply an extension without
-a new image. The load path is built; the builder image and the apply gate are not.
+a new image. All of it is built: the load path, the apply gate, the builder image
+(`Dockerfile.exthost`), and the MCP server.
 
 ## Runtime extensions
 
@@ -251,9 +254,20 @@ in reach, so this is opt-in and belongs on a device you control:
 blazonry serve --ext-host /data/run/exthost.sock
 ```
 
-`ext_host build` needs a Rust toolchain, so it runs in the builder container in
-dev mode. It needs the `blazonry-ext-api` source too: pass `--ext-api DIR` or set
-`BLAZONRY_EXT_API`.
+`ext_host build` needs a Rust toolchain, so it runs in a sidecar container and
+never in the server image. `Dockerfile.exthost` builds one image that serves and
+builds, because the loader rejects an artifact built by a different `rustc`:
+
+```sh
+docker build -f Dockerfile.exthost -t blazonry-exthost .
+docker run -d --name blazonry-exthost -v blazonry-data:/data blazonry-exthost
+```
+
+The two containers share the `/data` volume, so the socket named above is the one
+the host creates there. The image carries a copy of the `blazonry-ext-api` source
+and points `BLAZONRY_EXT_API` at it, so an extension folder declares the crate by
+version and builds wherever it lands in the volume. Pass `--ext-api DIR` to point
+it somewhere else. CI does not publish this image; build it by hand.
 
 ## MCP server
 
