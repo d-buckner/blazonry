@@ -215,6 +215,7 @@ async fn main() -> anyhow::Result<()> {
             "/extensions/write",
             post(blazonry::admin_provider::ext_write),
         )
+        .route("/extensions/read", post(blazonry::admin_provider::ext_read))
         .route(
             "/extensions/build",
             post(blazonry::admin_provider::ext_build),

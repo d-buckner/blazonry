@@ -6,6 +6,9 @@ edition = "2024"
 
 [workspace]
 members = ["ext-api"]
+# A package that is also the workspace root defaults to testing only itself, so
+# `cargo test` here skipped the ABI crate and its six tests.
+default-members = [".", "ext-api"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -42,7 +45,7 @@ sha2 = "0.11.1"
 sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
 taffy = "0.15.1"
 tiny-skia = "0.12.0"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "process", "io-util", "signal"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "process", "io-util", "signal", "time", "io-std"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"
@@ -72,6 +75,12 @@ required-features = ["browser"]
 
 [dev-dependencies]
 reqwest = { version = "0.13.5", features = ["json", "cookies", "form"] }
+
+# line-tables-only keeps .debug_line, so panic backtraces still resolve file:line,
+# and drops the type info that is most of a debug build's size. Do not add `strip`
+# here: it removes .debug_line too, and the frames lose file:line.
+[profile.dev]
+debug = "line-tables-only"
 
 [profile.release]
 lto = "fat"

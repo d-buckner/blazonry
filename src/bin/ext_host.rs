@@ -32,7 +32,7 @@
 //! `build` needs a Rust toolchain, so it only works in the builder image.
 
 use blazonry::ext_host::{self, Loaded};
-use blazonry::ext_link::HostRequest;
+use blazonry::ext_link::{self, HostRequest};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -257,9 +257,9 @@ async fn serve_conn(
         if line.trim().is_empty() {
             continue;
         }
-        let answer = match serde_json::from_str::<HostRequest>(&line) {
+        let answer = match ext_link::read_request(&line) {
             Ok(req) => dispatch(req, &live, &dir, api.as_deref()).await,
-            Err(e) => json!({"error": format!("unreadable request: {e}")}),
+            Err(e) => json!({"error": e}),
         };
         w.write_all(answer.to_string().as_bytes()).await?;
         w.write_all(b"\n").await?;
@@ -271,10 +271,15 @@ async fn dispatch(req: HostRequest, live: &Live, dir: &Path, api: Option<&Path>)
     match req {
         HostRequest::Ping => json!({
             "ok": true,
+            "protocol": blazonry::ext_link::PROTOCOL_VERSION,
             "arch": blazonry_ext_api::ARCH,
             "loaded": live.read().expect("live lock").loaded.len(),
         }),
-        HostRequest::Kinds => live.read().expect("live lock").report(),
+        HostRequest::Kinds => {
+            let mut report = live.read().expect("live lock").report();
+            report["protocol"] = json!(ext_link::PROTOCOL_VERSION);
+            report
+        }
         HostRequest::Reload => {
             let state = rescan(dir);
             let out = state.report();
@@ -314,6 +319,13 @@ async fn dispatch(req: HostRequest, live: &Live, dir: &Path, api: Option<&Path>)
         HostRequest::Rollback { kind } => match ext_host::folder_for(dir, &kind) {
             Ok(folder) => swapped(ext_host::rollback(&folder), live, dir),
             Err(e) => json!({"ok": false, "error": e.to_string()}),
+        },
+        HostRequest::Read { kind } => match ext_host::folder_for(dir, &kind) {
+            Err(e) => json!({"error": e.to_string()}),
+            Ok(folder) => match ext_host::read_folder(&folder) {
+                Ok(files) => json!({"ok": true, "files": files}),
+                Err(e) => json!({"error": e.to_string()}),
+            },
         },
         HostRequest::Vars { req } => {
             let kind = req.kind.clone();
@@ -369,6 +381,7 @@ async fn child_check(folder: &Path) -> Value {
         Err(e) => return json!({"ok": false, "error": format!("cannot find this binary: {e}")}),
     };
     let folder = folder.to_path_buf();
+    let exe_for_msg = exe.clone();
     let ran = tokio::task::spawn_blocking(move || {
         std::process::Command::new(exe)
             .arg("check")
@@ -379,7 +392,15 @@ async fn child_check(folder: &Path) -> Value {
     let out = match ran {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
-            return json!({"ok": false, "error": format!("could not run the check: {e}")});
+            // A host binary replaced while it ran reports its path with " (deleted)"
+            // on Linux, and the child cannot be spawned from it. Saying so beats
+            // "No such file or directory", which reads like a broken folder.
+            let note = if exe_for_msg.to_string_lossy().contains("(deleted)") {
+                " this host binary was replaced while it was running; restart the host."
+            } else {
+                ""
+            };
+            return json!({"ok": false, "error": format!("could not run the check: {e}{note}")});
         }
         Err(e) => return json!({"ok": false, "error": format!("check task failed: {e}")}),
     };

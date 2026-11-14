@@ -1,0 +1,72 @@
+# blazonry extension host — the sidecar that loads runtime extensions
+# (ADR-0002), and the builder that compiles them (ADR-0003).
+#
+# This image is deliberately NOT the same as the server image. The server is
+# `FROM scratch` with a static musl binary and cannot dlopen. This one carries a
+# libc and a Rust toolchain, because it does two jobs:
+#
+#   ext_host serve   loads the .so files and answers the server over a socket
+#   ext_host build   compiles a folder into one of those .so files
+#
+# Both jobs live in one image on purpose. The loader rejects an artifact whose
+# `rustc` is not the one the host reports, so a separate builder image would have
+# to pin the same toolchain forever and would fail the moment it drifted. One
+# image cannot drift from itself. It also means the plugin and the host agree on
+# libc, which the loader does not check and dlopen will not forgive.
+#
+# Build (CI does not publish this image, same as Dockerfile.browser):
+#   docker build -f Dockerfile.exthost -t blazonry-exthost .
+# Run (the volume holds the extension folders and their builds). The restart
+# policy is not decoration: a plugin that segfaults takes this process down, and
+# nothing in blazonry brings it back.
+#   docker run -d --name blazonry-exthost --restart unless-stopped \
+#     -v blazonry-data:/data blazonry-exthost \
+#     serve --extensions /data/extensions --socket /data/run/exthost.sock
+# The server then opts in:
+#   blazonry serve --ext-host /data/run/exthost.sock
+#
+# The two containers share the volume that holds the socket, or the socket path
+# must be reachable from the server.
+
+ARG RUST=1.99.1
+FROM rust:${RUST}-slim-bookworm AS builder
+# build-essential: rust:slim ships gcc and libc6-dev but no make, and cmake's
+# default generator is Unix Makefiles. cmake+perl: aws-lc-sys, the rustls
+# backend. The server Dockerfile needs no such line: rust:bookworm is
+# buildpack-deps, which already carries make.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake perl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY ext-api ./ext-api
+COPY src ./src
+COPY assets ./assets
+COPY web ./web
+# The default target, not musl: this binary dlopens, and the plugins it builds
+# must be built by the same toolchain against the same libc.
+RUN cargo build --release --bin ext_host --bin blazonry_mcp
+
+FROM rust:${RUST}-slim-bookworm
+# The toolchain stays in the runtime stage because `ext_host build` runs cargo
+# here. rust:slim carries gcc and libc6-dev, which is what linking a cdylib
+# needs, so the build job adds no packages of its own.
+# ca-certificates: the host does no TLS today, but a plugin that reaches a URL
+# will want the bundle, and it costs nothing here.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/ext_host /usr/local/bin/ext_host
+# The MCP needs no toolchain, only the admin API. It rides along so an author with
+# no Rust on the machine can drive the whole loop from this container.
+COPY --from=builder /app/target/release/blazonry_mcp /usr/local/bin/blazonry_mcp
+# The builder points cargo at this source with `--config
+# patch.crates-io.blazonry-ext-api.path`, so an extension folder can declare
+# blazonry-ext-api by version and build wherever it lands.
+COPY ext-api /opt/ext-api
+# Where an author's work lands before it is applied, and where the socket lives.
+VOLUME ["/data"]
+RUN mkdir -p /data/extensions /data/run
+ENV BLAZONRY_EXT_API=/opt/ext-api
+ENTRYPOINT ["/usr/local/bin/ext_host"]
+CMD ["serve", "--extensions", "/data/extensions", "--socket", "/data/run/exthost.sock"]

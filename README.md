@@ -59,6 +59,8 @@ The image is a `FROM scratch` container around the static musl binary —
 6.3 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
 The SQLite DB lives in the `/data` volume. To build locally:
 `docker buildx build -t blazonry .` (multi-arch: `--platform linux/amd64,linux/arm64`).
+Runtime extensions need a second image that carries a toolchain, see
+[Runtime extensions](#runtime-extensions).
 
 ## What you get
 
@@ -206,13 +208,19 @@ publishes, and every bundled template renders against its bundled fixture.
 `docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0003 record
 the accepted design for loading a Rust extension from the `/data` volume at
 runtime, so an author or an MCP can write, build, and apply an extension without
-a new image. The load path is built; the builder image and the apply gate are not.
+a new image. All of it is built: the load path, the apply gate, the builder image
+(`Dockerfile.exthost`), and the MCP server.
 
 ## Runtime extensions
 
 A runtime extension is a Rust cdylib that links `blazonry-ext-api` and nothing
 else from blazonry. `examples/extensions/quote` is the worked example: 60 lines
 of Rust, a manifest, and a template.
+
+A plugin gets one synchronous call, `vars(req, host)`. The `host` argument lends
+the core's own text metrics, so `host.text_width` and `host.wrap` break a line
+where the renderer will break it. Measure the weight your template paints: bold
+DejaVu is wider than regular.
 
 ```sh
 ext_host build   examples/extensions/quote   # compile into the staging directory
@@ -246,9 +254,60 @@ in reach, so this is opt-in and belongs on a device you control:
 blazonry serve --ext-host /data/run/exthost.sock
 ```
 
-`ext_host build` needs a Rust toolchain, so it runs in the builder container in
-dev mode. It needs the `blazonry-ext-api` source too: pass `--ext-api DIR` or set
-`BLAZONRY_EXT_API`.
+`ext_host build` needs a Rust toolchain, so it runs in a sidecar container and
+never in the server image. `Dockerfile.exthost` builds one image that serves and
+builds, because the loader rejects an artifact built by a different `rustc`:
+
+```sh
+docker build -f Dockerfile.exthost -t blazonry-exthost .
+docker run -d --name blazonry-exthost --restart unless-stopped \
+  -v blazonry-data:/data blazonry-exthost
+```
+
+The two containers share the `/data` volume, so the socket named above is the one
+the host creates there. The image carries a copy of the `blazonry-ext-api` source
+and points `BLAZONRY_EXT_API` at it, so an extension folder declares the crate by
+version and builds wherever it lands in the volume. Pass `--ext-api DIR` to point
+it somewhere else. CI does not publish this image; build it by hand.
+
+Nothing in blazonry starts the host, and nothing brings it back. A plugin that
+segfaults, aborts, or wedges takes the host process down with it. The panels keep
+their last good paint and the server logs a failed sync until the host returns, so
+the restart policy has to come from the supervisor: `--restart unless-stopped`
+above, or `Restart=on-failure` in a systemd unit. A panic is a different case: the
+extension catches it and answers an error, so the host stays up.
+
+## MCP server
+
+`blazonry_mcp` speaks MCP over stdio and maps the authoring endpoints onto tools,
+so an agent can write, build, look at, and ship an extension without a shell on the
+device. It holds no state: every tool is one POST to the admin API, so it can be
+restarted at any point in a session.
+
+It needs the server URL and an admin token. A client config looks like this:
+
+```json
+{
+  "mcpServers": {
+    "blazonry": {
+      "command": "blazonry_mcp",
+      "env": {
+        "BLAZONRY_URL": "http://127.0.0.1:2301",
+        "BLAZONRY_ADMIN_TOKEN": "at-least-32-characters-of-secret"
+      }
+    }
+  }
+}
+```
+
+Seven tools: `ext_kinds`, `ext_read`, `ext_write`, `ext_build`, `ext_check`,
+`ext_apply`, `ext_rollback`. `ext_check` returns the painted screen as an MCP image,
+which is the part that makes iteration work: a layout that reads fine as text can
+still overflow the panel, and the picture shows it.
+
+The token is the same `BLAZONRY_ADMIN_TOKEN` the server was started with, and the
+server refuses a shorter one at boot, so the MCP refuses it at startup too rather
+than failing every call with 401.
 
 ## Authoring templates
 

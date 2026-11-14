@@ -22,10 +22,11 @@
 //! mapped.
 
 use crate::extensions::VarsRequest;
-use blazonry_ext_api::{ABI_VERSION, ARCH, Meta, RUSTC_VERSION, VarsResponse, symbol};
+use blazonry_ext_api::{ABI_VERSION, ARCH, HostFns, Meta, RUSTC_VERSION, VarsResponse, symbol};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
@@ -39,7 +40,7 @@ pub struct Loaded {
     pub kind: String,
     pub manifest: Value,
     pub template: String,
-    vars_fn: extern "C" fn(*const c_char) -> *mut c_char,
+    vars_fn: extern "C" fn(*const c_char, *const HostFns) -> *mut c_char,
     free_fn: extern "C" fn(*mut c_char),
 }
 
@@ -159,7 +160,7 @@ pub fn load_at(folder: &Path, so: &Path) -> Result<Loaded, LoadError> {
     // as any Loaded can be called.
     // SAFETY: the ABI contract says these two symbols exist with these
     // signatures, and the meta check above already rejected a foreign build.
-    let vars_fn: extern "C" fn(*const c_char) -> *mut c_char =
+    let vars_fn: extern "C" fn(*const c_char, *const HostFns) -> *mut c_char =
         *unsafe { lib.get(symbol::VARS) }.map_err(|e| reason(e.to_string()))?;
     let free_fn: extern "C" fn(*mut c_char) =
         *unsafe { lib.get(symbol::FREE) }.map_err(|e| reason(e.to_string()))?;
@@ -179,7 +180,7 @@ impl Loaded {
     pub fn vars(&self, req: &VarsRequest) -> Result<Value, String> {
         let body = serde_json::to_string(req).map_err(|e| format!("request: {e}"))?;
         let req_c = CString::new(body).map_err(|_| "request contains a NUL".to_string())?;
-        let out = (self.vars_fn)(req_c.as_ptr());
+        let out = (self.vars_fn)(req_c.as_ptr(), &HOST_FNS);
         if out.is_null() {
             return Err("extension returned nothing".to_string());
         }
@@ -196,6 +197,92 @@ impl Loaded {
         }
     }
 }
+
+/// The largest file `read_folder` returns, and the largest total. An author who
+/// points this at a directory of artifacts should get the source back, not a
+/// gigabyte of build output in one JSON answer.
+const READ_FILE_MAX: u64 = 256 * 1024;
+const READ_TOTAL_MAX: u64 = 2 * 1024 * 1024;
+
+/// The text files in one extension folder, keyed by path inside it.
+///
+/// `build/` and dot directories are scratch, and a binary in there is not
+/// something an author reads, so both are skipped. A file that is too big or not
+/// UTF-8 is reported rather than dropped in silence.
+pub fn read_folder(folder: &Path) -> anyhow::Result<BTreeMap<String, String>> {
+    if !folder.is_dir() {
+        anyhow::bail!("no extension folder at {}", folder.display());
+    }
+    let mut out = BTreeMap::new();
+    let mut total = 0u64;
+    let mut stack = vec![folder.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let rel = path
+                .strip_prefix(folder)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                if name.starts_with('.') || name == "build" || name == "target" {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            let Ok(meta) = path.metadata() else { continue };
+            if meta.len() > READ_FILE_MAX {
+                out.insert(
+                    rel,
+                    format!("<skipped: {} bytes, over the limit>", meta.len()),
+                );
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok(text) = String::from_utf8(bytes.clone()) else {
+                out.insert(rel, format!("<skipped: {} bytes, not text>", bytes.len()));
+                continue;
+            };
+            total += meta.len();
+            if total > READ_TOTAL_MAX {
+                out.insert(rel, "<skipped: folder total over the limit>".to_string());
+                continue;
+            }
+            out.insert(rel, text);
+        }
+    }
+    Ok(out)
+}
+
+/// Width of a C string, measured with the core's own fonts.
+///
+/// This runs in the host process, so a plugin borrows the same measurement the
+/// server will paint with. A plugin that linked its own copy of the fonts would
+/// break lines somewhere other than where the renderer breaks them.
+extern "C" fn c_text_width(text: *const c_char, px: f32, bold: u8) -> f32 {
+    if text.is_null() {
+        return 0.0;
+    }
+    // SAFETY: the ABI contract says the pointer is a valid NUL-terminated string.
+    match unsafe { CStr::from_ptr(text) }.to_str() {
+        Ok(s) => crate::render::text_width(s, px, bold != 0),
+        // The same fallback the core uses when it cannot read a glyph.
+        Err(_) => px * 0.62,
+    }
+}
+
+/// The metrics every plugin is handed on each `vars` call.
+pub static HOST_FNS: HostFns = HostFns {
+    text_width: c_text_width,
+};
 
 /// What a builder records beside the artifact.
 #[derive(Debug, Deserialize)]
@@ -885,6 +972,24 @@ mod tests {
             );
         }
         assert!(safe_inside(&dir, "src/lib.rs").is_ok());
+    }
+
+    /// A plugin borrows the core's measurement, not a copy of it. If this ever
+    /// answers the 0.62 em fallback, the plugin is wrapping where the renderer will
+    /// not break, which is the bug the callback exists to prevent.
+    #[test]
+    fn the_host_lends_the_core_text_metrics() {
+        let text = "The best way out is always through.";
+        let got = {
+            let c = CString::new(text).unwrap();
+            (HOST_FNS.text_width)(c.as_ptr(), 38.0, 0)
+        };
+        assert_eq!(got, crate::render::text_width(text, 38.0, false));
+        assert!(
+            (got - 38.0 * 0.62 * text.chars().count() as f32).abs() > 1.0,
+            "the callback answered the fallback estimate: {got}"
+        );
+        assert_eq!((HOST_FNS.text_width)(std::ptr::null(), 38.0, 0), 0.0);
     }
 
     #[test]

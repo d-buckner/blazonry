@@ -1,7 +1,7 @@
 # ADR-0003: A builder sidecar compiles plugins, and apply requires a green check
 
 **Date**: 2026-11-13
-**Status**: accepted, partly implemented
+**Status**: accepted, implemented
 **Deciders**: Daniel Buckner with pi
 
 ## Context
@@ -19,8 +19,8 @@ build must not be able to take a screen down.
 
 Add a **builder sidecar** for dev mode. It pins rustc to the version the server
 image uses, keeps a warm cargo cache, and mounts `/data/extensions` read-write.
-It builds only the architecture it runs on. CI builds and publishes both
-architectures for blessed plugins.
+It builds only the architecture it runs on. A published plugin is built once per
+architecture by whoever publishes it; no CI job does that today.
 
 The MCP drives five tools over the existing admin API:
 
@@ -33,10 +33,13 @@ The MCP drives five tools over the existing admin API:
 | `ext_rollback` | Point the registry back at the previous generation |
 
 `ext_apply` refuses unless the newest build and the newest check for that folder
-are both green, and the recorded metadata matches the running server. The loader
-validates four values before it loads: `blazonry-ext-api` version, rustc
-version, target triple, and artifact sha256. The server's own target triple is
-the authoritative value for what will load, because the server is what loads it.
+are both green, and the recorded metadata matches the running host. The loader
+validates four values before it loads: `blazonry-ext-api` ABI version, rustc
+version, `std::env::consts::ARCH`, and artifact sha256. The host is the authority
+for all four, because the host is what loads the artifact. ARCH is an
+architecture, not a full target triple, so it does not separate glibc from musl.
+The builder and the host share one image, and that is what keeps the libc choice
+agreed instead of assumed.
 
 The host never unloads a generation. It loads a new one, swaps the registry
 pointer, and leaves the old mapping in place. `ext_rollback` swaps back to a
@@ -89,7 +92,7 @@ The whole path is off by default. It needs an explicit opt-in such as
 
 ### Negative
 
-- One more image to build and publish, and one more container in dev mode.
+- One more image to build, and one more container in dev mode.
 - The builder must track the server's rustc version. A drift is a load-time
   rejection until the builder is rebuilt.
 - Generations accumulate in the host process until it restarts. Reload is rare
@@ -114,8 +117,15 @@ The whole path is off by default. It needs an explicit opt-in such as
 ## Implementation notes
 
 Built: `ext_host build`, `check`, `apply`, `rollback`, `list`, the artifact
-metadata the loader checks, and the admin endpoints that drive them. Not built:
-the builder image, and the MCP tools.
+metadata the loader checks, the admin endpoints that drive them, the MCP tools,
+and the builder image (`Dockerfile.exthost`).
+
+The builder image is one image that serves and one that builds, not two. The
+loader rejects an artifact whose `rustc` is not the one the host reports, so a
+separate builder image would have to pin this toolchain forever and fail the
+moment it drifted. The warm cargo cache is the per-extension cargo target dir
+under `build/`, which sits on the volume and survives a container rebuild. CI
+does not build or publish this image, same as `Dockerfile.browser`.
 
 | Tool | Endpoint |
 |---|---|

@@ -25,7 +25,8 @@ from the current build decide how that loading works.
 
 Load plugins in a separate **extension host** process. The server talks to it
 over a unix socket at `/data/run/exthost.sock`. The host holds the shared
-libraries, answers `vars` requests, and restarts on crash.
+libraries and answers `vars` requests. Nothing in blazonry starts the host, and
+nothing in blazonry restarts it: the operator's process supervisor does.
 
 Nothing but JSON crosses the boundary. The host fetches nothing and the plugin
 fetches nothing. The server resolves the snapshots and passes them in, because
@@ -95,8 +96,9 @@ chrono. It never links the `blazonry` crate.
 ### Positive
 
 - The core image stays `FROM scratch`, static, and small.
-- A plugin crash ends the host process. The server restarts it, and the BMP
-  cache keeps serving the last good image, so the panel does not go blank.
+- A plugin crash ends the host process, not the server. The BMP cache keeps
+  serving the last good image, so the panel does not go blank, and the server picks
+  the kinds up again on its next sync. Restarting the host is the supervisor's job.
 - The boundary is transport-independent. A later WASM host or an in-process host
   can replace the sidecar without changing what a plugin sees.
 - `blazonry-ext-api` stays tiny, so a plugin build takes seconds against a warm
@@ -115,7 +117,8 @@ chrono. It never links the `blazonry` crate.
 ### Risks
 
 - **A slow plugin blocks its host.** Mitigation: a per-request timeout in the
-  client, and a host that restarts on timeout.
+  client, so the server stops waiting. The wedged thread is not rescued; the
+  supervisor restarts the process.
 - **A plugin panics on every request.** Mitigation: the apply gate in ADR-0003
   runs the plugin against its fixture before it goes live.
 - **Protocol drift between the server and the host.** Both are built from one
@@ -129,6 +132,11 @@ Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
 
 - The four entry points compile as `#[unsafe(no_mangle)]`. Edition 2024 rejects
   the bare attribute.
+- A panic is caught inside the plugin, not inside the host. `call_vars` wraps
+  `vars()`, and a panic there answers an error. `meta` and `template` have no error
+  to answer with, so a panic there answers null, and the host reads a null as a
+  refused folder. A panic that reaches an `extern "C"` boundary aborts the process,
+  which is why the catch sits inside that boundary.
 - The server opens one connection per request and closes it. A rebuild is seconds
   apart, and a kept-alive socket would have to notice a restarted host for no
   gain.
@@ -138,12 +146,35 @@ Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
   (`screens::set_paint`). Bundled templates never change, so the stored copy was
   harmless. A runtime template changes on every apply, and a stale copy paints the
   previous screen.
-- Two mitigations from the Risks list are not built yet: the client has no
-  per-request timeout, and requests carry no protocol version. The ABI version is
-  checked once, at load. A slow plugin blocks its host until that changes.
-- **Text metrics do not cross the boundary.** `render::text_width`, `fit`, and
-  `fit_size` measure with the embedded DejaVu fonts, and they live in the core. A
-  plugin links only `blazonry-ext-api`, so it cannot measure, and the renderer
-  never wraps. `examples/extensions/quote` wraps on a 0.62 em estimate instead.
-  A follow-up must choose: move the helpers and the fonts into `blazonry-ext-api`
-  (about 1.4 MB per plugin), or add a fit call to the host protocol.
+- The client now bounds every call with a per-op limit (`ext_link::Client`): 5s
+  for `ping`, 30s for `vars`, 900s for `build`. One limit for everything was
+  wrong, because `vars` should answer in a blink and `build` runs cargo.
+- What the limit does **not** do: rescue the host. A plugin that spins forever
+  keeps the blocking thread it was spawned on forever, because a blocking task
+  cannot be cancelled. The limit stops the server from waiting on it, so the
+  rebuild loop and every other screen stay alive. Killing a wedged plugin means
+  restarting the host process.
+- Every request carries `PROTOCOL_VERSION` and the host refuses anything else:
+  `protocol mismatch: the request says v=99, this host speaks v=1`. A server and a
+  host built apart now fail with a sentence.
+- Fixing that exposed a worse bug. `sync` read a missing `kinds` key as "zero
+  extensions", so a host that answered `{"error": ...}` logged
+  `extension host synced kinds=0` as a success. Every host-side refusal was
+  invisible. `Client::call` now turns any answer with a top-level `error` into a
+  failure, and the admin layer maps that to 409 rather than 500, because a refused
+  apply is a precondition the author can fix, not a server fault.
+- **Text metrics cross the boundary by callback, not by copy.**
+  `render::text_width` measures with the embedded DejaVu fonts, and those fonts
+  live in the core. Shipping them into `blazonry-ext-api` would cost about 1.4 MB
+  per plugin, and a plugin that linked its own copy would break lines somewhere
+  other than where the renderer breaks them. So `blazonry_ext_vars` takes a second
+  argument, a `#[repr(C)]` struct of function pointers the host fills from its own
+  `render` module, and a plugin calls `host.text_width` or `host.wrap`. The host
+  links the core, so the measurement is the server's own. This is why ABI_VERSION
+  is 2.
+- The pointers carry no captured state, so a plugin may call them whenever it
+  likes; there is nothing to outlive. A null struct falls back to the same 0.62 em
+  estimate the core uses when its fonts fail to load, rather than failing the
+  rebuild.
+- A plugin must measure the weight its template paints. The example first measured
+  regular and painted bold, which under-filled every line.
