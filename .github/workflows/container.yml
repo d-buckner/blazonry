@@ -5,7 +5,8 @@ name: container
 # On v* tags the same image publishes as :<tag>.
 #
 # Dockerfile.browser is not published here. Build it by hand if you need the
-# Chromium render backend.
+# Chromium render backend. Neither is Dockerfile.exthost, the extension host and
+# builder sidecar; it carries a Rust toolchain and only dev mode needs it.
 #
 # No secrets needed: GITHUB_TOKEN has write:packages for this repo's registry.
 on:
