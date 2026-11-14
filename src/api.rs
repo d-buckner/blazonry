@@ -33,6 +33,10 @@ pub struct AppState {
     /// Where the extension host answers, if this server was told about one
     /// (`--ext-host`). Every runtime-extension authoring call goes through it.
     pub ext_host: Option<std::path::PathBuf>,
+    /// This server's own loopback origin, which is what the HTTP MCP endpoint
+    /// dials to run a tool. Derived from `--addr`, never from a `Host` header:
+    /// a public name would send the call out through the proxy and back.
+    pub self_url: String,
 }
 pub type SharedState = Arc<AppState>;
 

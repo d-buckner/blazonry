@@ -5,9 +5,11 @@
 //! it painted. That loop is already the admin API; this module maps it onto MCP
 //! tools so a client does not need a shell on the device.
 //!
-//! The transport is newline-delimited JSON-RPC 2.0 over stdio, which is what a
-//! client spawns a local server with. Only the four methods a tools-only server
-//! needs are implemented: `initialize`, `tools/list`, `tools/call`, and `ping`.
+//! Two transports carry the same dispatch. Newline-delimited JSON-RPC 2.0 over
+//! stdio, which is what a client spawns a local server with, and one JSON-RPC
+//! message per `POST /admin/mcp`, which is what a client behind a container
+//! boundary needs. Only the four methods a tools-only server needs are
+//! implemented: `initialize`, `tools/list`, `tools/call`, and `ping`.
 //!
 //! Shapes follow the 2025-11-25 specification:
 //! <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
@@ -332,6 +334,62 @@ fn e2v(e: anyhow::Error) -> Value {
 pub fn write_line(out: &mut impl Write, body: &Value) -> std::io::Result<()> {
     writeln!(out, "{body}")?;
     out.flush()
+}
+
+/// The HTTP transport's client, shared across requests.
+///
+/// The timeout matches the stdio binary's. A build is cargo compiling a fresh
+/// crate, which is minutes on a Pi, and cancelling one mid-build leaves a stale
+/// staging directory behind.
+static HTTP_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(1200))
+            .build()
+            .expect("reqwest client")
+    })
+}
+
+/// The same seven tools over streamable HTTP, for a client that cannot spawn a
+/// process across a container boundary.
+///
+/// One JSON-RPC message per POST, answered as one JSON body. There is no
+/// `Mcp-Session-Id`: a tools-only server needs no server-initiated stream, and a
+/// session would be state a restarting container cannot keep. `GET` and `DELETE`
+/// answer 405 from the router, which is the specification's answer for a server
+/// with no SSE stream.
+///
+/// The tools are calls to the admin API, so this handler dials this same server
+/// back on loopback. That keeps one dispatch for both transports instead of a
+/// second copy of seven tool bodies.
+pub async fn http_post(
+    axum::extract::State(st): axum::extract::State<crate::api::SharedState>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse as _;
+
+    // Run the tool as whoever asked. `require_admin` already proved this bearer,
+    // so forwarding it adds no check and keeps a tool call attributable to the
+    // principal that made it rather than to one shared static token.
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or_default()
+        .to_string();
+    let cfg = Cfg {
+        url: st.self_url.clone(),
+        token,
+    };
+    match handle(&body, &cfg, http_client()).await {
+        // A notification: the client asked for no answer.
+        None => StatusCode::ACCEPTED.into_response(),
+        Some(out) => axum::Json(out).into_response(),
+    }
 }
 
 #[cfg(test)]

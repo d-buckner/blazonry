@@ -73,6 +73,12 @@ async fn main() -> anyhow::Result<()> {
     // kinds it cannot see. Off unless the operator names the socket, because code
     // from the data volume is code the operator chose to run.
     let ext_host = arg_after(&args, "--ext-host").map(std::path::PathBuf::from);
+    // The HTTP MCP endpoint runs a tool by calling this server's own admin API.
+    // `--addr` may be a wildcard, so dial loopback on the port that was asked for.
+    let self_url = format!(
+        "http://127.0.0.1:{}",
+        addr.rsplit(':').next().unwrap_or("2301")
+    );
     let state = Arc::new(blazonry::api::AppState {
         pool: pool.clone(),
         backends: backends.clone(),
@@ -80,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
         auth: Arc::new(auth_cfg),
         pending_oidc: Arc::new(blazonry::auth_core::PendingOidc::new()),
         ext_host: ext_host.clone(),
+        self_url,
     });
 
     // background refresh loop (replaces Sidekiq + poller procs)
@@ -211,6 +218,10 @@ async fn main() -> anyhow::Result<()> {
                 .post(blazonry::admin_provider::create_extension),
         )
         .route("/kinds", get(blazonry::admin_provider::kinds))
+        // The authoring tools over streamable HTTP, so a client that cannot
+        // spawn `blazonry_mcp` still gets them. Inside this nest it inherits
+        // `require_admin`, which is what gates every other authoring route.
+        .route("/mcp", post(blazonry::mcp::http_post))
         .route(
             "/extensions/write",
             post(blazonry::admin_provider::ext_write),
