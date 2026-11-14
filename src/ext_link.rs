@@ -36,6 +36,9 @@ pub enum HostRequest {
     Kinds,
     /// Rescan the folder. Refusals come back in the same report.
     Reload,
+    /// Every text file in one folder, so an author can read what is there before
+    /// it edits.
+    Read { kind: String },
     /// Vars for one rebuild.
     Vars { req: VarsRequest },
     /// Write source, manifest, template, and fixtures into one folder.
@@ -65,6 +68,7 @@ impl HostRequest {
             HostRequest::Ping => "ping",
             HostRequest::Kinds => "kinds",
             HostRequest::Reload => "reload",
+            HostRequest::Read { .. } => "read",
             HostRequest::Vars { .. } => "vars",
             HostRequest::Write { .. } => "write",
             HostRequest::Build { .. } => "build",
@@ -87,6 +91,7 @@ impl HostRequest {
             // First kinds call loads every library on disk.
             HostRequest::Kinds => 30,
             HostRequest::Reload => 60,
+            HostRequest::Read { .. } => 30,
             HostRequest::Vars { .. } => 30,
             HostRequest::Write { .. } => 30,
             // A cold cargo build of a plugin with serde and chrono, on a Pi.

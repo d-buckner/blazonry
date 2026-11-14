@@ -27,6 +27,7 @@ pub mod extensions;
 pub mod firmware;
 pub mod liquid_compat;
 pub mod markup;
+pub mod mcp;
 pub mod models;
 pub mod playlists;
 pub mod providers;

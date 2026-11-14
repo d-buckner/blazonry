@@ -255,6 +255,38 @@ blazonry serve --ext-host /data/run/exthost.sock
 dev mode. It needs the `blazonry-ext-api` source too: pass `--ext-api DIR` or set
 `BLAZONRY_EXT_API`.
 
+## MCP server
+
+`blazonry_mcp` speaks MCP over stdio and maps the authoring endpoints onto tools,
+so an agent can write, build, look at, and ship an extension without a shell on the
+device. It holds no state: every tool is one POST to the admin API, so it can be
+restarted at any point in a session.
+
+It needs the server URL and an admin token. A client config looks like this:
+
+```json
+{
+  "mcpServers": {
+    "blazonry": {
+      "command": "blazonry_mcp",
+      "env": {
+        "BLAZONRY_URL": "http://127.0.0.1:2301",
+        "BLAZONRY_ADMIN_TOKEN": "at-least-32-characters-of-secret"
+      }
+    }
+  }
+}
+```
+
+Seven tools: `ext_kinds`, `ext_read`, `ext_write`, `ext_build`, `ext_check`,
+`ext_apply`, `ext_rollback`. `ext_check` returns the painted screen as an MCP image,
+which is the part that makes iteration work: a layout that reads fine as text can
+still overflow the panel, and the picture shows it.
+
+The token is the same `BLAZONRY_ADMIN_TOKEN` the server was started with, and the
+server refuses a shorter one at boot, so the MCP refuses it at startup too rather
+than failing every call with 401.
+
 ## Authoring templates
 
 Screens are HTML + Liquid using the TRMNL framework class vocabulary

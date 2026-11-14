@@ -320,6 +320,13 @@ async fn dispatch(req: HostRequest, live: &Live, dir: &Path, api: Option<&Path>)
             Ok(folder) => swapped(ext_host::rollback(&folder), live, dir),
             Err(e) => json!({"ok": false, "error": e.to_string()}),
         },
+        HostRequest::Read { kind } => match ext_host::folder_for(dir, &kind) {
+            Err(e) => json!({"error": e.to_string()}),
+            Ok(folder) => match ext_host::read_folder(&folder) {
+                Ok(files) => json!({"ok": true, "files": files}),
+                Err(e) => json!({"error": e.to_string()}),
+            },
+        },
         HostRequest::Vars { req } => {
             let kind = req.kind.clone();
             let found = live
@@ -374,6 +381,7 @@ async fn child_check(folder: &Path) -> Value {
         Err(e) => return json!({"ok": false, "error": format!("cannot find this binary: {e}")}),
     };
     let folder = folder.to_path_buf();
+    let exe_for_msg = exe.clone();
     let ran = tokio::task::spawn_blocking(move || {
         std::process::Command::new(exe)
             .arg("check")
@@ -384,7 +392,15 @@ async fn child_check(folder: &Path) -> Value {
     let out = match ran {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
-            return json!({"ok": false, "error": format!("could not run the check: {e}")});
+            // A host binary replaced while it ran reports its path with " (deleted)"
+            // on Linux, and the child cannot be spawned from it. Saying so beats
+            // "No such file or directory", which reads like a broken folder.
+            let note = if exe_for_msg.to_string_lossy().contains("(deleted)") {
+                " this host binary was replaced while it was running; restart the host."
+            } else {
+                ""
+            };
+            return json!({"ok": false, "error": format!("could not run the check: {e}{note}")});
         }
         Err(e) => return json!({"ok": false, "error": format!("check task failed: {e}")}),
     };

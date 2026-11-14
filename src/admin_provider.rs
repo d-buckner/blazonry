@@ -293,6 +293,16 @@ pub async fn ext_write(State(st): State<SharedState>, Json(b): Json<Value>) -> R
     ))
 }
 
+pub async fn ext_read(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
+    let kind = kind_of(&b)?;
+    Ok(Json(
+        host(&st)?
+            .call(HostRequest::Read { kind })
+            .await
+            .map_err(refused)?,
+    ))
+}
+
 pub async fn ext_build(State(st): State<SharedState>, Json(b): Json<Value>) -> Res {
     let kind = kind_of(&b)?;
     Ok(Json(

@@ -26,6 +26,7 @@ use blazonry_ext_api::{ABI_VERSION, ARCH, HostFns, Meta, RUSTC_VERSION, VarsResp
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
@@ -195,6 +196,70 @@ impl Loaded {
             VarsResponse::Error(e) => Err(e),
         }
     }
+}
+
+/// The largest file `read_folder` returns, and the largest total. An author who
+/// points this at a directory of artifacts should get the source back, not a
+/// gigabyte of build output in one JSON answer.
+const READ_FILE_MAX: u64 = 256 * 1024;
+const READ_TOTAL_MAX: u64 = 2 * 1024 * 1024;
+
+/// The text files in one extension folder, keyed by path inside it.
+///
+/// `build/` and dot directories are scratch, and a binary in there is not
+/// something an author reads, so both are skipped. A file that is too big or not
+/// UTF-8 is reported rather than dropped in silence.
+pub fn read_folder(folder: &Path) -> anyhow::Result<BTreeMap<String, String>> {
+    if !folder.is_dir() {
+        anyhow::bail!("no extension folder at {}", folder.display());
+    }
+    let mut out = BTreeMap::new();
+    let mut total = 0u64;
+    let mut stack = vec![folder.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let rel = path
+                .strip_prefix(folder)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                if name.starts_with('.') || name == "build" || name == "target" {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            let Ok(meta) = path.metadata() else { continue };
+            if meta.len() > READ_FILE_MAX {
+                out.insert(
+                    rel,
+                    format!("<skipped: {} bytes, over the limit>", meta.len()),
+                );
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok(text) = String::from_utf8(bytes.clone()) else {
+                out.insert(rel, format!("<skipped: {} bytes, not text>", bytes.len()));
+                continue;
+            };
+            total += meta.len();
+            if total > READ_TOTAL_MAX {
+                out.insert(rel, "<skipped: folder total over the limit>".to_string());
+                continue;
+            }
+            out.insert(rel, text);
+        }
+    }
+    Ok(out)
 }
 
 /// Width of a C string, measured with the core's own fonts.
