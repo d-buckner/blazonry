@@ -73,6 +73,34 @@ async fn main() -> anyhow::Result<()> {
     // kinds it cannot see. Off unless the operator names the socket, because code
     // from the data volume is code the operator chose to run.
     let ext_host = arg_after(&args, "--ext-host").map(std::path::PathBuf::from);
+    // ADR-0004: one container runs both processes. The server is PID 1, so it
+    // owns the host's lifecycle and a plugin that segfaults gets a host again
+    // without anyone restarting a container. The child dials the same socket this
+    // server dials, so `--ext-host` must name it too.
+    if let Some(program) = arg_after(&args, "--ext-host-spawn").map(std::path::PathBuf::from) {
+        let socket = ext_host
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from("/data/run/exthost.sock"));
+        let sup = blazonry::ext_supervise::Supervisor::start(
+            program,
+            vec![
+                "serve".to_string(),
+                "--socket".to_string(),
+                socket.display().to_string(),
+            ],
+        );
+        // A container signals PID 1 and PID 1's children get nothing, so the host
+        // is taken down here rather than left holding a stale socket.
+        tokio::spawn(async move {
+            use tokio::signal::unix::{SignalKind, signal};
+            let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            }
+            sup.stop();
+        });
+    }
     // The HTTP MCP endpoint runs a tool by calling this server's own admin API.
     // `--addr` may be a wildcard, so dial loopback on the port that was asked for.
     let self_url = format!(

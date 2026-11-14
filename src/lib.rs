@@ -23,6 +23,7 @@ pub mod dither;
 pub mod ext_dev;
 pub mod ext_host;
 pub mod ext_link;
+pub mod ext_supervise;
 pub mod extensions;
 pub mod firmware;
 pub mod liquid_compat;
