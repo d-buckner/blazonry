@@ -309,6 +309,26 @@ The token is the same `BLAZONRY_ADMIN_TOKEN` the server was started with, and th
 server refuses a shorter one at boot, so the MCP refuses it at startup too rather
 than failing every call with 401.
 
+The published image carries `blazonry_mcp` next to the server, so an agent on the
+host authors through a running container:
+
+```sh
+docker exec -i -e BLAZONRY_ADMIN_TOKEN blazonry /blazonry_mcp
+```
+
+Inside the container the server listens on loopback, so the default
+`BLAZONRY_URL` of `http://127.0.0.1:2301` needs no override.
+
+Log lines go to stderr. stdout is the transport, and a log line there reaches the
+client as a message it cannot parse. `RUST_LOG` sets the level.
+
+Four protocol revisions are answered: `2025-11-25`, `2025-06-18`, `2025-03-26`, and
+`2024-11-05`. A client that asks for any other string gets `2025-11-25`. The
+`2026-07-28` revision is not implemented, because it drops the `initialize`
+handshake and requires a `server/discover` RPC. A client that speaks both eras
+probes `server/discover`, gets `-32601`, and falls back to `initialize`, so it
+works here. A client that speaks only `2026-07-28` does not.
+
 ## Authoring templates
 
 Screens are HTML + Liquid using the TRMNL framework class vocabulary

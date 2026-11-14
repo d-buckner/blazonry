@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! `blazonry-mcp` — the authoring API as an MCP server.
+//! `blazonry_mcp` — the authoring API as an MCP server.
 //!
 //! A client spawns this over stdio. It needs two things: where blazonry is, and an
 //! admin token. Both come from the environment, which is how a client config passes
@@ -10,7 +10,7 @@
 //! BLAZONRY_ADMIN_TOKEN=<32+ characters, the same one the server was started with>
 //! ```
 //!
-//! Or on the command line: `blazonry-mcp --url http://host:2301 --token ...`.
+//! Or on the command line: `blazonry_mcp --url http://host:2301 --token ...`.
 //!
 //! Every tool is a POST to the admin API, so this binary holds no state and can be
 //! restarted at any point in an authoring session.
@@ -20,10 +20,19 @@ use serde_json::Value;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // stdout is the transport, so every log line goes to stderr. A log line on
+    // stdout arrives at the client as a JSON-RPC message it cannot parse.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "usage: blazonry-mcp [--url URL] [--token TOKEN]\n\
+            "usage: blazonry_mcp [--url URL] [--token TOKEN]\n\
              \n\
              Environment: BLAZONRY_URL, BLAZONRY_ADMIN_TOKEN.\n\
              Speaks newline-delimited JSON-RPC 2.0 on stdin and stdout."
@@ -38,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
         .timeout(std::time::Duration::from_secs(1200))
         .build()?;
 
-    tracing::info!(url = %cfg.url, "blazonry-mcp: serving tools over stdio");
+    tracing::info!(url = %cfg.url, "blazonry_mcp: serving tools over stdio");
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
@@ -48,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         while let Some(body) = rx.recv().await {
             let line = format!("{body}\n");
             if let Err(e) = out.write_all(line.as_bytes()).await {
-                tracing::error!("blazonry-mcp: stdout closed: {e}");
+                tracing::error!("blazonry_mcp: stdout closed: {e}");
                 break;
             }
             let _ = out.flush().await;
@@ -64,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
             // The client closed its side, which is how stdio sessions end.
             Ok(None) => break,
             Err(e) => {
-                tracing::error!("blazonry-mcp: stdin error: {e}");
+                tracing::error!("blazonry_mcp: stdin error: {e}");
                 break;
             }
         };
