@@ -9,8 +9,14 @@
 //! client spawns a local server with. Only the four methods a tools-only server
 //! needs are implemented: `initialize`, `tools/list`, `tools/call`, and `ping`.
 //!
-//! Shapes follow the 2025-06-18 specification:
-//! <https://modelcontextprotocol.io/specification/2025-06-18/server/tools>
+//! Shapes follow the 2025-11-25 specification:
+//! <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
+//!
+//! This is a legacy-era server on purpose. The 2026-07-28 revision drops the
+//! `initialize` handshake, makes `server/discover` required, and puts a
+//! `resultType` on every result. A dual-era client probes `server/discover`,
+//! gets `-32601`, and falls back to `initialize`, so it works here. A client
+//! that speaks only 2026-07-28 does not.
 
 use base64::Engine as _;
 use serde_json::{Value, json};
@@ -18,7 +24,7 @@ use std::io::Write;
 
 /// Protocol versions this server will answer with, newest first. A client that
 /// asks for one of these gets it back; any other string gets the newest.
-pub const PROTOCOLS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
+pub const PROTOCOLS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 /// Where the admin API is, and how to prove who is asking.
 #[derive(Clone)]
@@ -119,13 +125,13 @@ pub fn tools() -> Value {
         "additionalProperties": false,
     });
     json!({"tools": [
-        {"name": "ext_kinds",
+        {"name": "ext_kinds", "title": "List screen kinds",
          "description": "List every screen kind: the ones built into blazonry and the ones loaded from the data volume. Call this first to see what already exists.",
          "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}},
-        {"name": "ext_read",
+        {"name": "ext_read", "title": "Read an extension folder",
          "description": "Read every text file in one extension folder: Cargo.toml, src/lib.rs, manifest.json, template.liquid, and the check fixture. Call this before editing an extension you did not write.",
          "inputSchema": kind_only.clone()},
-        {"name": "ext_write",
+        {"name": "ext_write", "title": "Write an extension folder",
          "description": "Write files into one extension folder. Paths are inside the folder, so 'src/lib.rs'. This does not build or apply anything; it only puts text on disk. A new kind needs Cargo.toml, src/lib.rs, manifest.json, and template.liquid, and the folder name must equal the crate name.",
          "inputSchema": {
             "type": "object",
@@ -137,16 +143,16 @@ pub fn tools() -> Value {
             "required": ["kind", "files"],
             "additionalProperties": false,
         }},
-        {"name": "ext_build",
+        {"name": "ext_build", "title": "Build an extension",
          "description": "Compile one extension into its staging directory. Nothing live changes. On a failure the answer carries the compiler's own output, which is the thing to read. A cold build of a new kind can take a minute.",
          "inputSchema": kind_only.clone()},
-        {"name": "ext_check",
+        {"name": "ext_check", "title": "Check an extension and paint it",
          "description": "Run the staged build against its fixture and paint the result. The answer carries the vars as text and the painted screen as an image, so look at the image before you apply: it is what the panel will show. Nothing live changes.",
          "inputSchema": kind_only.clone()},
-        {"name": "ext_apply",
+        {"name": "ext_apply", "title": "Apply an extension",
          "description": "Promote the staged build so screens start using it, and repaint the screens bound to this kind. Refused unless the newest build and check are both green and still match the staged bytes, so an edit after a check means building again. The previous generation stays available to ext_rollback.",
          "inputSchema": kind_only.clone()},
-        {"name": "ext_rollback",
+        {"name": "ext_rollback", "title": "Roll back an extension",
          "description": "Put back the generation the last apply displaced, and repaint. Use this when an applied extension paints something wrong and you cannot fix it quickly.",
          "inputSchema": kind_only},
     ]})
@@ -400,6 +406,7 @@ mod tests {
         for t in tools {
             assert!(t["inputSchema"]["type"] == "object", "{t}");
             assert!(!t["description"].as_str().unwrap().is_empty());
+            assert!(!t["title"].as_str().unwrap_or("").is_empty(), "{t}");
         }
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"ext_check"));
