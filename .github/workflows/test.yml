@@ -14,6 +14,9 @@ name: test
 # No SQLite apt package: libsqlite3-sys resolves to the bundled feature, so
 # SQLite compiles from source. cmake and perl are for aws-lc-sys, the rustls
 # backend, and match the apt list in the Dockerfile.
+#
+# The image installs the toolchain without rustfmt or clippy, so the job adds
+# both. Without them `cargo fmt` fails with "'cargo-fmt' is not installed".
 
 on:
   pull_request:
@@ -31,6 +34,9 @@ jobs:
 
       - name: System dependencies
         run: apt-get update && apt-get install -y --no-install-recommends cmake perl
+
+      - name: Toolchain components
+        run: rustup component add rustfmt clippy
 
       - name: Cache the crate registry
         uses: actions/cache@v4
