@@ -591,6 +591,51 @@ async fn admin_token_opens_admin_plane_under_oidc() {
     child.kill().await.unwrap();
 }
 
+/// The authoring endpoints are the ones a machine caller uses, so the static
+/// bearer has to reach them. No --ext-host is passed here on purpose: the handler
+/// then answers 400 "no extension host", which is proof the request cleared the
+/// auth middleware and reached the handler. A 401 would mean the token failed.
+#[tokio::test]
+async fn admin_token_reaches_the_authoring_endpoints() {
+    let token = "0123456789abcdef0123456789abcdef";
+    let envs: Vec<(&str, String)> = vec![
+        ("BLAZONRY_AUTH", "local".into()),
+        ("BLAZONRY_ADMIN_TOKEN", token.into()),
+    ];
+    let (mut child, addr) = spawn_server_env("auth-authoring", 2397, &envs).await;
+    let cli = reqwest::Client::new();
+    for ep in ["write", "build", "check", "apply", "rollback"] {
+        let body = if ep == "write" {
+            serde_json::json!({"kind": "x", "files": {"a": "b"}})
+        } else {
+            serde_json::json!({"kind": "x"})
+        };
+        let no = cli
+            .post(format!("http://{addr}/admin/extensions/{ep}"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(no, 401, "{ep} must refuse an anonymous author");
+        let yes = cli
+            .post(format!("http://{addr}/admin/extensions/{ep}"))
+            .header("authorization", format!("Bearer {token}"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        let status = yes.status();
+        let text = yes.text().await.unwrap();
+        assert_eq!(status, 400, "{ep} said {status} {text}");
+        assert!(
+            text.contains("no extension host"),
+            "{ep} reached the wrong handler: {text}"
+        );
+    }
+    child.kill().await.unwrap();
+}
+
 /// A short static bearer is a weak credential, and a server that starts with one
 /// looks healthy while it is guessable. Startup refuses it instead.
 #[tokio::test]
