@@ -214,6 +214,11 @@ A runtime extension is a Rust cdylib that links `blazonry-ext-api` and nothing
 else from blazonry. `examples/extensions/quote` is the worked example: 60 lines
 of Rust, a manifest, and a template.
 
+A plugin gets one synchronous call, `vars(req, host)`. The `host` argument lends
+the core's own text metrics, so `host.text_width` and `host.wrap` break a line
+where the renderer will break it. Measure the weight your template paints: bold
+DejaVu is wider than regular.
+
 ```sh
 ext_host build   examples/extensions/quote   # compile into the staging directory
 ext_host check   examples/extensions/quote   # run the staged build and paint it

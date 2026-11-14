@@ -155,9 +155,18 @@ Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
   invisible. `Client::call` now turns any answer with a top-level `error` into a
   failure, and the admin layer maps that to 409 rather than 500, because a refused
   apply is a precondition the author can fix, not a server fault.
-- **Text metrics do not cross the boundary.** `render::text_width`, `fit`, and
-  `fit_size` measure with the embedded DejaVu fonts, and they live in the core. A
-  plugin links only `blazonry-ext-api`, so it cannot measure, and the renderer
-  never wraps. `examples/extensions/quote` wraps on a 0.62 em estimate instead.
-  A follow-up must choose: move the helpers and the fonts into `blazonry-ext-api`
-  (about 1.4 MB per plugin), or add a fit call to the host protocol.
+- **Text metrics cross the boundary by callback, not by copy.**
+  `render::text_width` measures with the embedded DejaVu fonts, and those fonts
+  live in the core. Shipping them into `blazonry-ext-api` would cost about 1.4 MB
+  per plugin, and a plugin that linked its own copy would break lines somewhere
+  other than where the renderer breaks them. So `blazonry_ext_vars` takes a second
+  argument, a `#[repr(C)]` struct of function pointers the host fills from its own
+  `render` module, and a plugin calls `host.text_width` or `host.wrap`. The host
+  links the core, so the measurement is the server's own. This is why ABI_VERSION
+  is 2.
+- The pointers carry no captured state, so a plugin may call them whenever it
+  likes; there is nothing to outlive. A null struct falls back to the same 0.62 em
+  estimate the core uses when its fonts fail to load, rather than failing the
+  rebuild.
+- A plugin must measure the weight its template paints. The example first measured
+  regular and painted bold, which under-filled every line.

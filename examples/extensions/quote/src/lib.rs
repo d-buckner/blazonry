@@ -9,7 +9,7 @@
 //! ext_host probe examples/extensions/quote
 //! ```
 
-use blazonry_ext_api::{Extension, VarsRequest, export_extension};
+use blazonry_ext_api::{Extension, Host, VarsRequest, export_extension};
 use chrono::Datelike;
 use serde_json::{Value, json};
 use std::num::NonZeroUsize;
@@ -18,32 +18,12 @@ const MANIFEST: &str = include_str!("../manifest.json");
 const TEMPLATE: &str = include_str!("../template.liquid");
 
 /// The renderer paints one line per text node and never wraps, so the extension
-/// cuts the quote itself. A plugin cannot measure with the core's fonts, so this
-/// uses the advance estimate DejaVu averages: 0.62 em.
+/// cuts the quote itself. `host.wrap` measures with the fonts the renderer will
+/// paint with, so the break lands where the panel breaks it. Measure the weight the
+/// template paints: bold DejaVu is wider, and measuring regular under-fills a line.
 const QUOTE_PX: f32 = 38.0;
+const QUOTE_BOLD: bool = true;
 const QUOTE_MAX_PX: f32 = 672.0;
-
-/// Greedy word wrap at [`QUOTE_MAX_PX`]. A word longer than the budget overflows
-/// rather than breaking mid-word.
-fn wrap(text: &str) -> Vec<String> {
-    let budget = (QUOTE_MAX_PX / (QUOTE_PX * 0.62)) as usize;
-    let mut lines: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    for word in text.split_whitespace() {
-        let width = cur.chars().count() + 1 + word.chars().count();
-        if !cur.is_empty() && width > budget {
-            lines.push(std::mem::take(&mut cur));
-        }
-        if !cur.is_empty() {
-            cur.push(' ');
-        }
-        cur.push_str(word);
-    }
-    if !cur.is_empty() {
-        lines.push(cur);
-    }
-    lines
-}
 
 struct Quote;
 
@@ -58,7 +38,7 @@ impl Extension for Quote {
         TEMPLATE.to_string()
     }
 
-    fn vars(&self, req: VarsRequest) -> Result<Value, String> {
+    fn vars(&self, req: VarsRequest, host: &Host) -> Result<Value, String> {
         let title = req
             .settings
             .get("title")
@@ -96,7 +76,7 @@ impl Extension for Quote {
         let quote = format!("“{text}”");
         Ok(json!({
             "title": title,
-            "lines": wrap(&quote),
+            "lines": host.wrap(&quote, QUOTE_MAX_PX, QUOTE_PX, QUOTE_BOLD),
             "author": author,
             "footer": req.local_date()?.format("%a %b %-d").to_string(),
         }))

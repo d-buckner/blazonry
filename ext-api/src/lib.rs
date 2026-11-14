@@ -29,7 +29,7 @@ use std::os::raw::c_char;
 
 /// The ABI this crate implements. A host refuses a plugin that reports any other
 /// value.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 /// The compiler that built this copy of the crate. The host and the plugin each
 /// carry their own, so a mismatch shows up at load time instead of as undefined
@@ -106,6 +106,82 @@ pub enum VarsResponse {
     Error(String),
 }
 
+/// What the host lends a plugin for the duration of one call.
+///
+/// Text metrics live in the core: `render::text_width` measures with the embedded
+/// DejaVu fonts, and a plugin that linked its own copy of those fonts would wrap
+/// lines somewhere other than where the renderer will break them. So the host hands
+/// over its own function instead of a copy of the data.
+///
+/// A `#[repr(C)]` struct of plain function pointers, with no captured state, so a
+/// plugin may call it whenever it likes. Fields may only be appended: a plugin built
+/// against an older layout reads the prefix and never the new field.
+#[repr(C)]
+pub struct HostFns {
+    /// Width of a NUL-terminated string at `px`, in the same pixels the renderer
+    /// will paint. `bold` is 0 or 1.
+    pub text_width: extern "C" fn(text: *const c_char, px: f32, bold: u8) -> f32,
+}
+
+/// The borrowed metrics. See [`HostFns`].
+pub struct Host {
+    fns: Option<&'static HostFns>,
+}
+
+impl Host {
+    /// Wrap for a host that supplied no functions. Only reachable if a host calls a
+    /// v2 plugin without a [`HostFns`], which the ABI check prevents. The estimate
+    /// is the one the core itself falls back to when its fonts fail to load.
+    #[doc(hidden)]
+    pub const NONE: Host = Host { fns: None };
+
+    #[doc(hidden)]
+    pub fn from_fns(fns: Option<&'static HostFns>) -> Host {
+        Host { fns }
+    }
+
+    /// Width of `text` at `px`, measured with the fonts the renderer uses.
+    pub fn text_width(&self, text: &str, px: f32, bold: bool) -> f32 {
+        match self.fns {
+            Some(fns) => {
+                let Ok(c) = CString::new(text) else {
+                    return px * 0.62 * text.chars().count() as f32;
+                };
+                (fns.text_width)(c.as_ptr(), px, u8::from(bold))
+            }
+            None => px * 0.62 * text.chars().count() as f32,
+        }
+    }
+
+    /// Split `text` into lines no wider than `max_px`. The renderer never wraps, so
+    /// a plugin that wants more than one line has to do it, and this is the wrap
+    /// that matches what the panel will show.
+    pub fn wrap(&self, text: &str, max_px: f32, px: f32, bold: bool) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut line = String::new();
+        for word in text.split_whitespace() {
+            let trial = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{line} {word}")
+            };
+            if !line.is_empty() && self.text_width(&trial, px, bold) > max_px {
+                lines.push(std::mem::take(&mut line));
+                line.push_str(word);
+            } else {
+                if !line.is_empty() {
+                    line.push(' ');
+                }
+                line.push_str(word);
+            }
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+        lines
+    }
+}
+
 /// What a compiled extension implements.
 pub trait Extension {
     /// The folder's `manifest.json`: kind, label, blurb, consumes, settings.
@@ -113,7 +189,7 @@ pub trait Extension {
     /// The folder's `template.liquid`.
     fn template(&self) -> String;
     /// Liquid vars for one rebuild. The error text reaches the admin UI.
-    fn vars(&self, req: VarsRequest) -> Result<Value, String>;
+    fn vars(&self, req: VarsRequest, host: &Host) -> Result<Value, String>;
 }
 
 /// What a plugin reports before the host calls anything else.
@@ -164,7 +240,11 @@ pub unsafe fn free(p: *mut c_char) {
 ///
 /// `req` must be null or a valid NUL-terminated UTF-8 string.
 #[doc(hidden)]
-pub unsafe fn call_vars<E: Extension + ?Sized>(ext: &E, req: *const c_char) -> *mut c_char {
+pub unsafe fn call_vars<E: Extension + ?Sized>(
+    ext: &E,
+    req: *const c_char,
+    host: *const HostFns,
+) -> *mut c_char {
     let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if req.is_null() {
             return Err("no request".to_string());
@@ -174,7 +254,11 @@ pub unsafe fn call_vars<E: Extension + ?Sized>(ext: &E, req: *const c_char) -> *
             .map_err(|e| format!("request is not UTF-8: {e}"))?;
         let req: VarsRequest =
             serde_json::from_str(text).map_err(|e| format!("request is not a VarsRequest: {e}"))?;
-        ext.vars(req)
+        // A null host pointer is tolerated rather than fatal: the metrics are a
+        // convenience, and losing them must not blank a screen.
+        // SAFETY: the caller promises `host` is null or a valid HostFns.
+        let host_fns = unsafe { host.as_ref() };
+        ext.vars(req, &Host::from_fns(host_fns))
     }));
     match answer {
         Ok(Ok(vars)) => json_to_c(&VarsResponse::Vars(vars)),
@@ -211,9 +295,11 @@ macro_rules! export_extension {
         #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_vars(
             req: *const ::std::os::raw::c_char,
+            host: *const $crate::HostFns,
         ) -> *mut ::std::os::raw::c_char {
-            // SAFETY: the host passes a valid NUL-terminated request.
-            unsafe { $crate::call_vars(&$ext, req) }
+            // SAFETY: the host passes a valid NUL-terminated request and either a
+            // valid HostFns or null.
+            unsafe { $crate::call_vars(&$ext, req, host) }
         }
 
         /// Frees a string this extension returned. The host must call this
@@ -239,7 +325,7 @@ mod tests {
         fn template(&self) -> String {
             "hi".to_string()
         }
-        fn vars(&self, req: VarsRequest) -> Result<Value, String> {
+        fn vars(&self, req: VarsRequest, _host: &Host) -> Result<Value, String> {
             Ok(json!({"n": req.snapshots.len()}))
         }
     }
@@ -251,7 +337,7 @@ mod tests {
         fn template(&self) -> String {
             String::new()
         }
-        fn vars(&self, _req: VarsRequest) -> Result<Value, String> {
+        fn vars(&self, _req: VarsRequest, _host: &Host) -> Result<Value, String> {
             panic!("boom")
         }
     }
@@ -276,25 +362,52 @@ mod tests {
     #[test]
     fn vars_round_trips_over_the_abi() {
         let r = c(&req());
-        let out = take(unsafe { call_vars(&Counting, r.as_ptr()) });
+        let out = take(unsafe { call_vars(&Counting, r.as_ptr(), std::ptr::null()) });
         assert_eq!(out, r#"{"vars":{"n":0}}"#);
     }
 
     #[test]
     fn a_bad_request_is_an_error_not_a_panic() {
         let r = c("{not json");
-        let out: VarsResponse =
-            serde_json::from_str(&take(unsafe { call_vars(&Counting, r.as_ptr()) })).unwrap();
+        let out: VarsResponse = serde_json::from_str(&take(unsafe {
+            call_vars(&Counting, r.as_ptr(), std::ptr::null())
+        }))
+        .unwrap();
         assert!(matches!(out, VarsResponse::Error(_)));
-        let out = take(unsafe { call_vars(&Counting, std::ptr::null()) });
+        let out = take(unsafe { call_vars(&Counting, std::ptr::null(), std::ptr::null()) });
         assert!(out.contains("no request"));
+    }
+
+    /// A host that lends metrics gets them back verbatim; a host that lends
+    /// nothing falls back instead of failing the whole rebuild.
+    #[test]
+    fn the_host_lends_text_metrics() {
+        extern "C" fn width(text: *const c_char, px: f32, _bold: u8) -> f32 {
+            let n = unsafe { CStr::from_ptr(text) }
+                .to_str()
+                .unwrap()
+                .chars()
+                .count();
+            px * 0.5 * n as f32
+        }
+        static FNS: HostFns = HostFns { text_width: width };
+        let host = Host::from_fns(Some(&FNS));
+        // "abcd" at 10px is 4 chars at 5px each.
+        assert_eq!(host.text_width("abcd", 10.0, false), 20.0);
+        assert_eq!(
+            host.wrap("aa bb cc", 25.0, 10.0, false),
+            vec!["aa bb", "cc"]
+        );
+        assert_eq!(Host::NONE.text_width("abcd", 10.0, false), 24.8);
     }
 
     #[test]
     fn a_panicking_extension_reports_an_error() {
         let r = c(&req());
-        let out: VarsResponse =
-            serde_json::from_str(&take(unsafe { call_vars(&Boom, r.as_ptr()) })).unwrap();
+        let out: VarsResponse = serde_json::from_str(&take(unsafe {
+            call_vars(&Boom, r.as_ptr(), std::ptr::null())
+        }))
+        .unwrap();
         assert!(matches!(&out, VarsResponse::Error(m) if m.contains("panicked")));
     }
 
