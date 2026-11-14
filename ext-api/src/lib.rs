@@ -231,6 +231,24 @@ pub unsafe fn free(p: *mut c_char) {
     }
 }
 
+/// Runs one of the no-argument entry points, and answers null if it panics.
+///
+/// A panic that reaches an `extern "C"` boundary aborts the process, so the catch
+/// has to sit inside that boundary. Null is a value the host already handles: it
+/// refuses the folder with a named reason instead of dying. `vars` has its own
+/// catch, because it has an error variant to answer with and these two do not.
+#[doc(hidden)]
+pub fn guarded_c_string(what: &str, f: impl FnOnce() -> *mut c_char) -> *mut c_char {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(p) => p,
+        Err(_) => {
+            // The host's stderr is the only channel to an operator at load time.
+            eprintln!("blazonry extension panicked in {what}()");
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// Decodes a request, calls [`Extension::vars`], and encodes the answer. A
 /// panic stays inside this function: an extension that panics reports an error,
 /// it does not take the host down. That needs the extension to unwind, so an
@@ -277,18 +295,22 @@ macro_rules! export_extension {
         /// The ABI check plus the manifest, in one call.
         #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_meta() -> *mut ::std::os::raw::c_char {
-            $crate::json_to_c(&$crate::Meta {
-                abi: $crate::ABI_VERSION,
-                rustc: $crate::RUSTC_VERSION.to_string(),
-                arch: $crate::ARCH.to_string(),
-                manifest: $ext.manifest(),
+            $crate::guarded_c_string("blazonry_ext_meta", || {
+                $crate::json_to_c(&$crate::Meta {
+                    abi: $crate::ABI_VERSION,
+                    rustc: $crate::RUSTC_VERSION.to_string(),
+                    arch: $crate::ARCH.to_string(),
+                    manifest: $ext.manifest(),
+                })
             })
         }
 
         /// The folder's template, as raw text.
         #[unsafe(no_mangle)]
         pub extern "C" fn blazonry_ext_template() -> *mut ::std::os::raw::c_char {
-            $crate::text_to_c($ext.template())
+            $crate::guarded_c_string("blazonry_ext_template", || {
+                $crate::text_to_c($ext.template())
+            })
         }
 
         /// Vars for one rebuild. `req` is a `VarsRequest` as JSON text.
@@ -409,6 +431,30 @@ mod tests {
         }))
         .unwrap();
         assert!(matches!(&out, VarsResponse::Error(m) if m.contains("panicked")));
+    }
+
+    struct BoomMeta;
+    impl Extension for BoomMeta {
+        fn manifest(&self) -> Value {
+            panic!("no manifest")
+        }
+        fn template(&self) -> String {
+            panic!("no template")
+        }
+        fn vars(&self, _req: VarsRequest, _host: &Host) -> Result<Value, String> {
+            Ok(json!({}))
+        }
+    }
+    export_extension!(BoomMeta);
+
+    /// `manifest()` and `template()` have no error variant to answer with, so a
+    /// panic there answers null. The host refuses the folder on a null, so the
+    /// host survives; an uncaught panic would reach the `extern "C"` boundary and
+    /// abort it.
+    #[test]
+    fn a_panicking_meta_or_template_answers_null() {
+        assert!(blazonry_ext_meta().is_null());
+        assert!(blazonry_ext_template().is_null());
     }
 
     #[test]
