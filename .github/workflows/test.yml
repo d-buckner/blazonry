@@ -1,0 +1,54 @@
+name: test
+
+# The gate that was only running on laptops. container.yml builds the image but
+# runs no tests, so fmt, clippy, and the suite were unenforced on a PR.
+#
+# Runs in the same toolchain image the release build uses (Dockerfile pins
+# rust:1.99.1-bookworm), so CI cannot pass on a compiler the release does not use.
+# The repo needs a recent stable: edition 2024 plus let-chains.
+#
+# No npm step. src/bin/blazonry.rs embeds web/index.html and the icon PNGs with
+# include_str!/include_bytes!, and all of those are tracked, so a plain clone
+# compiles. `just web` and `just icons` refresh them for local dev.
+#
+# No SQLite apt package: libsqlite3-sys resolves to the bundled feature, so
+# SQLite compiles from source. cmake and perl are for aws-lc-sys, the rustls
+# backend, and match the apt list in the Dockerfile.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends cmake perl
+
+      - name: Cache the crate registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/index
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Four threads, same as the justfile: the integration tests spawn servers,
+      # and more parallelism makes a port or temp-dir collision look like a bug.
+      - name: Test
+        run: cargo test --workspace --locked -- --test-threads=4
