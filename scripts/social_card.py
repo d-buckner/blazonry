@@ -43,8 +43,8 @@ border-top:1px solid var(--ln2);padding-top:14px}
 </style></head><body>
 <div class="left">
   <div class="wm">blazonry</div>
-  <div class="pitch">A <b>TRMNL BYOS server</b> in Rust. One 13&nbsp;MB binary, your LAN, your screens.</div>
-  <div class="specline">4 gray levels · 800×480 · native render · no cloud · no containers</div>
+  <div class="pitch">A <b>TRMNL BYOS server</b> in Rust. Your LAN, your screens, your server.</div>
+  <div class="specline">4 gray levels · 800×480 · native render · no cloud · no database server</div>
 </div>
 <div class="right"><div class="panel">
   <div>

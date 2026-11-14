@@ -1,12 +1,15 @@
 name: container
 
-# Builds the multi-arch (amd64+arm64) core image and publishes it to GHCR:
-#   ghcr.io/<owner>/blazonry:latest   (FROM scratch, native only)
-# On v* tags the same image publishes as :<tag>.
+# Builds the multi-arch (amd64+arm64) images and publishes them to GHCR:
+#   ghcr.io/<owner>/blazonry:latest      (FROM scratch, server + MCP only)
+#   ghcr.io/<owner>/blazonry:toolchain   (server + extension host + Rust toolchain)
+# On v* tags the same two images publish as :<tag> and :<tag>-toolchain.
+#
+# Both come from one Dockerfile, so the two tags cannot drift: the toolchain tag
+# copies its server binary from the same musl build the scratch tag ships.
 #
 # Dockerfile.browser is not published here. Build it by hand if you need the
-# Chromium render backend. Neither is Dockerfile.exthost, the extension host and
-# builder sidecar; it carries a Rust toolchain and only dev mode needs it.
+# Chromium render backend.
 #
 # No secrets needed: GITHUB_TOKEN has write:packages for this repo's registry.
 on:
@@ -31,8 +34,10 @@ jobs:
           IMAGE="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "TAGS=${IMAGE}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "TOOLCHAIN_TAGS=${IMAGE}:${GITHUB_REF_NAME}-toolchain" >> "$GITHUB_OUTPUT"
           else
             echo "TAGS=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+            echo "TOOLCHAIN_TAGS=${IMAGE}:toolchain" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up QEMU
@@ -41,7 +46,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: "Build (PRs: local only)"
+      # Separate cache scopes: the two targets build the crate against different
+      # libcs, so sharing one cache would thrash it on every alternation.
+      - name: "Build scratch (PRs: local only)"
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
@@ -51,6 +58,18 @@ jobs:
           tags: blazonry:pr
           cache-from: type=gha,scope=core
           cache-to: type=gha,scope=core,mode=max
+
+      - name: "Build toolchain (PRs: local only)"
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          file: Dockerfile
+          target: toolchain
+          platforms: linux/amd64
+          load: true
+          tags: blazonry-toolchain:pr
+          cache-from: type=gha,scope=toolchain
+          cache-to: type=gha,scope=toolchain,mode=max
 
       - name: Login to GHCR
         if: github.event_name == 'push'
@@ -70,3 +89,15 @@ jobs:
           tags: ${{ steps.meta.outputs.TAGS }}
           cache-from: type=gha,scope=core
           cache-to: type=gha,scope=core,mode=max
+
+      - name: Build & push toolchain
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          file: Dockerfile
+          target: toolchain
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.TOOLCHAIN_TAGS }}
+          cache-from: type=gha,scope=toolchain
+          cache-to: type=gha,scope=toolchain,mode=max

@@ -4,7 +4,7 @@
   <img src="docs/img/social-card.png" alt="blazonry — a TRMNL BYOS server in Rust" width="860">
 </p>
 
-**A TRMNL BYOS server in Rust. One 13 MB binary, no Chrome.**
+**A TRMNL BYOS server in Rust. One binary, no Chrome.**
 
 Point your TRMNL (or any TRMNL-compatible ESP32 e-ink
 display) at `http://your-server:2301` and you own the whole stack: screens,
@@ -19,17 +19,6 @@ single static binary with an embedded web UI.
   fontdue, ~5 ms per 800×480 frame, release build). No browser anywhere in the stack.
 - **Your LAN works.** The device talks directly to your server. No cloud
   round-trip, no vendor in the middle.
-
-Measured against the official Terminus Docker stack (three containers:
-terminus, Postgres, Valkey):
-
-| Stack | `docker pull` | On disk |
-|---|---|---|
-| Terminus (3 containers) | ~746 MB | ~1.84 GB |
-| blazonry (1 container) | 6.3 MB | 15.7 MB |
-
-~118× smaller to pull, and where Terminus's compose file budgets up to 4.5 GB
-of memory across its services, blazonry idles in the tens of megabytes.
 
 ## Quick start
 
@@ -55,12 +44,22 @@ docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data \
   ghcr.io/bloud-os/blazonry:latest
 ```
 
-The image is a `FROM scratch` container around the static musl binary —
-6.3 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
+The image is a `FROM scratch` container around the static musl binary: no shell,
+no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
 The SQLite DB lives in the `/data` volume. To build locally:
 `docker buildx build -t blazonry .` (multi-arch: `--platform linux/amd64,linux/arm64`).
-Runtime extensions need a second image that carries a toolchain, see
-[Runtime extensions](#runtime-extensions).
+
+To author extensions at runtime you need a Rust toolchain inside the running
+container, and that is a second tag from the same build:
+
+```bash
+docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data \
+  ghcr.io/bloud-os/blazonry:toolchain
+```
+
+`:toolchain` carries the server, the extension host, and `cargo`, so it is far
+larger than `:latest`, and the compiler is the whole difference. Both tags run one
+container. See [Runtime extensions](#runtime-extensions).
 
 ## What you get
 
@@ -205,11 +204,11 @@ publishes, and every bundled template renders against its bundled fixture.
 
 ### Design records
 
-`docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0003 record
+`docs/adr/` holds the architecture decision records. ADR-0001 to ADR-0004 record
 the accepted design for loading a Rust extension from the `/data` volume at
 runtime, so an author or an MCP can write, build, and apply an extension without
-a new image. All of it is built: the load path, the apply gate, the builder image
-(`Dockerfile.exthost`), and the MCP server.
+a new image. All of it is built: the load path, the apply gate, the toolchain
+image, and the MCP server.
 
 ## Runtime extensions
 
@@ -246,36 +245,44 @@ POST /admin/extensions/rollback  put back what apply displaced
 after either one. `check` answers with the painted PNG inline, because the author
 is often a model that reads images.
 
-The server reads runtime kinds only when you name the socket. Code from the data
-volume runs as the server user, with the database and every stored provider token
-in reach, so this is opt-in and belongs on a device you control:
+The server reads runtime kinds only when you name the socket, and it starts the
+host only when you also name the program that owns it. Code from the data volume
+runs as the server user, with the database and every stored provider token in
+reach, so this is opt-in and belongs on a device you control:
 
 ```sh
-blazonry serve --ext-host /data/run/exthost.sock
+blazonry serve \
+  --ext-host /data/run/exthost.sock \
+  --ext-host-spawn /usr/local/bin/ext_host
 ```
 
-`ext_host build` needs a Rust toolchain, so it runs in a sidecar container and
-never in the server image. `Dockerfile.exthost` builds one image that serves and
-builds, because the loader rejects an artifact built by a different `rustc`:
+With `--ext-host-spawn` the server supervises the host: it starts it, restarts it
+with backoff when it dies, and takes it down on SIGINT and SIGTERM so stopping a
+container cannot leave a stale socket behind. A host that restarts three times
+without staying up logs a warning, because that is what a plugin that will not
+load looks like. Without the flag you run the host yourself and own its restart
+policy:
 
 ```sh
-docker build -f Dockerfile.exthost -t blazonry-exthost .
-docker run -d --name blazonry-exthost --restart unless-stopped \
-  -v blazonry-data:/data blazonry-exthost
+ext_host serve --extensions /data/extensions --socket /data/run/exthost.sock
 ```
 
-The two containers share the `/data` volume, so the socket named above is the one
-the host creates there. The image carries a copy of the `blazonry-ext-api` source
-and points `BLAZONRY_EXT_API` at it, so an extension folder declares the crate by
-version and builds wherever it lands in the volume. Pass `--ext-api DIR` to point
-it somewhere else. CI does not publish this image; build it by hand.
+The `:toolchain` image carries the Rust toolchain `ext_host build` needs, so one
+container does all of it, and its default command passes both flags. The loader
+rejects an artifact built by a different `rustc`, so the builder and the host
+cannot be separate images that drift. The image carries a copy of the
+`blazonry-ext-api` source and points `BLAZONRY_EXT_API` at it, so an extension
+folder declares the crate by version and builds wherever it lands in the volume.
+Pass `--ext-api DIR` to point it somewhere else.
 
-Nothing in blazonry starts the host, and nothing brings it back. A plugin that
-segfaults, aborts, or wedges takes the host process down with it. The panels keep
-their last good paint and the server logs a failed sync until the host returns, so
-the restart policy has to come from the supervisor: `--restart unless-stopped`
-above, or `Restart=on-failure` in a systemd unit. A panic is a different case: the
-extension catches it and answers an error, so the host stays up.
+A plugin that segfaults, aborts, or wedges takes the host process down with it.
+The panels keep their last good paint, the server logs a failed sync, and the
+supervisor brings the host back. A panic is a different case: the extension
+catches it and answers an error, so the host stays up.
+
+A host restart clears the staged artifact, so `apply` after one asks for a build
+again. That is the safe direction: an artifact a crashed host left half-written is
+not one to promote onto a live panel.
 
 ## MCP server
 
