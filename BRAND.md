@@ -106,8 +106,8 @@ Brand-visible items only; the git/container mechanics live elsewhere.
       `bloud-os/.github` profile repo (house position in §1's voice, voice
       rules §2, token spec, one-accent rule §5).
 - [x] Repo name `blazonry` (lowercase), description in house voice, one line,
-      no hype: *"a TRMNL BYOS server in Rust — one 13 MB binary, your LAN,
-      your screens."* (set on Forgejo; mirror on the GitHub org repo).
+      no hype: *"a TRMNL BYOS server in Rust — your LAN, your screens, your
+      server."* (set on Forgejo; mirror on the GitHub org repo).
 - [ ] Topics: `self-hosted`, `e-ink`, `trmnl`, `rust`, `dashboard` (+
       `bloud-os` if the org adopts a family topic). Not settable via the `fj`
       CLI — set in the repo settings UI or via API token.

@@ -105,12 +105,10 @@ contents change.
 ### Alternative 2: one published image, fat
 
 - **Pros**: One tag, no choice to make, and the loop works everywhere.
-- **Cons**: Every install pays about 950 MB for a compiler it may never run, and
-  the project's published size stops being its differentiator: the comparison the
-  README opens with is 6.3 MB against Terminus at 746 MB, and a single fat image
-  makes blazonry the larger pull.
-- **Why not**: Two tags from one build costs a second build step and keeps both
-  claims true.
+- **Cons**: Every install pays for a compiler it may never run, and a plain
+  display server stops being a small artifact.
+- **Why not**: Two tags from one build costs a second build step and keeps the
+  default tag small, which is what an install that only shows a screen wants.
 
 ### Alternative 3: compile inside the server process
 

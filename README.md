@@ -4,7 +4,7 @@
   <img src="docs/img/social-card.png" alt="blazonry — a TRMNL BYOS server in Rust" width="860">
 </p>
 
-**A TRMNL BYOS server in Rust. One 13 MB binary, no Chrome.**
+**A TRMNL BYOS server in Rust. One binary, no Chrome.**
 
 Point your TRMNL (or any TRMNL-compatible ESP32 e-ink
 display) at `http://your-server:2301` and you own the whole stack: screens,
@@ -44,8 +44,8 @@ docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data \
   ghcr.io/bloud-os/blazonry:latest
 ```
 
-The image is a `FROM scratch` container around the static musl binary —
-6.3 MB compressed, no shell, no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
+The image is a `FROM scratch` container around the static musl binary: no shell,
+no OS. `linux/amd64` and `linux/arm64` (Pi-friendly).
 The SQLite DB lives in the `/data` volume. To build locally:
 `docker buildx build -t blazonry .` (multi-arch: `--platform linux/amd64,linux/arm64`).
 
@@ -57,10 +57,9 @@ docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data \
   ghcr.io/bloud-os/blazonry:toolchain
 ```
 
-`:toolchain` is about 950 MB, and the toolchain is all of it: the Debian base that
-carries `cargo` measures 916 MB, so the compiler is the cost and no base image
-choice avoids it. `:latest` stays 6.3 MB and simply has no compiler in it. Both
-tags run one container. See [Runtime extensions](#runtime-extensions).
+`:toolchain` carries the server, the extension host, and `cargo`, so it is far
+larger than `:latest`, and the compiler is the whole difference. Both tags run one
+container. See [Runtime extensions](#runtime-extensions).
 
 ## What you get
 
