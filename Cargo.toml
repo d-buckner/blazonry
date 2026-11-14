@@ -6,6 +6,9 @@ edition = "2024"
 
 [workspace]
 members = ["ext-api"]
+# A package that is also the workspace root defaults to testing only itself, so
+# `cargo test` here skipped the ABI crate and its six tests.
+default-members = [".", "ext-api"]
 
 [dependencies]
 anyhow = "1.0.104"
