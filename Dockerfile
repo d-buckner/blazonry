@@ -2,7 +2,7 @@
 #
 # Multi-stage: the builder compiles a fully static musl binary (SQLite is
 # bundled, rustls needs only the system CA bundle), so the runtime stage is
-# `FROM scratch` — final image is ~7 MB compressed.
+# `FROM scratch` and carries the server, the MCP server, and a CA bundle.
 #
 # Build (plain docker):
 #   docker build -t blazonry .
@@ -12,6 +12,10 @@
 # Run:
 #   docker run -d --name blazonry -p 2301:2301 -v blazonry-data:/data blazonry
 #   # admin UI: http://localhost:2301/  (device API on the same port)
+#
+# The image carries the MCP server next to the server, so an agent on the host
+# authors extensions through the running container:
+#   docker exec -i -e BLAZONRY_ADMIN_TOKEN "$container" /blazonry_mcp
 
 FROM --platform=$BUILDPLATFORM rust:1.99.1-bookworm AS builder
 ARG TARGETPLATFORM
@@ -51,11 +55,13 @@ RUN set -e; \
       *) echo "unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
     esac; \
     cargo build --release --target "$T"; \
-    cp "target/$T/release/blazonry" /blazonry
+    cp "target/$T/release/blazonry" /blazonry; \
+    cp "target/$T/release/blazonry_mcp" /blazonry_mcp
 
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /blazonry /blazonry
+COPY --from=builder /blazonry_mcp /blazonry_mcp
 # SQLite DB + rendered screens live here — mount a volume at /data
 VOLUME /data
 ENV RUST_LOG=info
