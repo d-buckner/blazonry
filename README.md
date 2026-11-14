@@ -260,7 +260,8 @@ builds, because the loader rejects an artifact built by a different `rustc`:
 
 ```sh
 docker build -f Dockerfile.exthost -t blazonry-exthost .
-docker run -d --name blazonry-exthost -v blazonry-data:/data blazonry-exthost
+docker run -d --name blazonry-exthost --restart unless-stopped \
+  -v blazonry-data:/data blazonry-exthost
 ```
 
 The two containers share the `/data` volume, so the socket named above is the one
@@ -268,6 +269,13 @@ the host creates there. The image carries a copy of the `blazonry-ext-api` sourc
 and points `BLAZONRY_EXT_API` at it, so an extension folder declares the crate by
 version and builds wherever it lands in the volume. Pass `--ext-api DIR` to point
 it somewhere else. CI does not publish this image; build it by hand.
+
+Nothing in blazonry starts the host, and nothing brings it back. A plugin that
+segfaults, aborts, or wedges takes the host process down with it. The panels keep
+their last good paint and the server logs a failed sync until the host returns, so
+the restart policy has to come from the supervisor: `--restart unless-stopped`
+above, or `Restart=on-failure` in a systemd unit. A panic is a different case: the
+extension catches it and answers an error, so the host stays up.
 
 ## MCP server
 

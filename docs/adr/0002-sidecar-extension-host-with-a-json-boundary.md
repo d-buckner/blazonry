@@ -25,7 +25,8 @@ from the current build decide how that loading works.
 
 Load plugins in a separate **extension host** process. The server talks to it
 over a unix socket at `/data/run/exthost.sock`. The host holds the shared
-libraries, answers `vars` requests, and restarts on crash.
+libraries and answers `vars` requests. Nothing in blazonry starts the host, and
+nothing in blazonry restarts it: the operator's process supervisor does.
 
 Nothing but JSON crosses the boundary. The host fetches nothing and the plugin
 fetches nothing. The server resolves the snapshots and passes them in, because
@@ -95,8 +96,9 @@ chrono. It never links the `blazonry` crate.
 ### Positive
 
 - The core image stays `FROM scratch`, static, and small.
-- A plugin crash ends the host process. The server restarts it, and the BMP
-  cache keeps serving the last good image, so the panel does not go blank.
+- A plugin crash ends the host process, not the server. The BMP cache keeps
+  serving the last good image, so the panel does not go blank, and the server picks
+  the kinds up again on its next sync. Restarting the host is the supervisor's job.
 - The boundary is transport-independent. A later WASM host or an in-process host
   can replace the sidecar without changing what a plugin sees.
 - `blazonry-ext-api` stays tiny, so a plugin build takes seconds against a warm
@@ -115,7 +117,8 @@ chrono. It never links the `blazonry` crate.
 ### Risks
 
 - **A slow plugin blocks its host.** Mitigation: a per-request timeout in the
-  client, and a host that restarts on timeout.
+  client, so the server stops waiting. The wedged thread is not rescued; the
+  supervisor restarts the process.
 - **A plugin panics on every request.** Mitigation: the apply gate in ADR-0003
   runs the plugin against its fixture before it goes live.
 - **Protocol drift between the server and the host.** Both are built from one
@@ -129,6 +132,11 @@ Built in `ext-api/`, `src/ext_host.rs`, `src/ext_link.rs`, and
 
 - The four entry points compile as `#[unsafe(no_mangle)]`. Edition 2024 rejects
   the bare attribute.
+- A panic is caught inside the plugin, not inside the host. `call_vars` wraps
+  `vars()`, and a panic there answers an error. `meta` and `template` have no error
+  to answer with, so a panic there answers null, and the host reads a null as a
+  refused folder. A panic that reaches an `extern "C"` boundary aborts the process,
+  which is why the catch sits inside that boundary.
 - The server opens one connection per request and closes it. A rebuild is seconds
   apart, and a kept-alive socket would have to notice a restarted host for no
   gain.

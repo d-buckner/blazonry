@@ -16,8 +16,10 @@
 #
 # Build (CI does not publish this image, same as Dockerfile.browser):
 #   docker build -f Dockerfile.exthost -t blazonry-exthost .
-# Run (the volume holds the extension folders and their builds):
-#   docker run -d --name blazonry-exthost \
+# Run (the volume holds the extension folders and their builds). The restart
+# policy is not decoration: a plugin that segfaults takes this process down, and
+# nothing in blazonry brings it back.
+#   docker run -d --name blazonry-exthost --restart unless-stopped \
 #     -v blazonry-data:/data blazonry-exthost \
 #     serve --extensions /data/extensions --socket /data/run/exthost.sock
 # The server then opts in:
